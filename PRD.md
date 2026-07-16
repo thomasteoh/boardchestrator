@@ -167,7 +167,7 @@ Roles are **configurable**: a role is a named set of permission grants. Permissi
 
 - Configured by **Platform Admin**: providers are either **Codex SSO** (OAuth to an OpenAI/ChatGPT account) or any **OpenAI-compatible API** (base URL + key + model list).
 - Org owners select from providers made available to their org.
-- *(Open item: confirm Codex SSO auth flow is permitted for programmatic use; see review notes.)*
+- Codex SSO is **stubbed in v1** (provider kind registered, returns "not yet supported"); OpenAI-compatible keys are the supported path (QUESTIONS.md Q1).
 
 ### Agents
 
@@ -260,7 +260,7 @@ Boardchestrator is both an **agent host** (consumes providers) and an **MCP host
 
 - Per **project**, backed by a git repo. Org owners set the repo; **team admins set the branch/ref and path** the wiki reads from.
 - Markdown rendering with **mermaid** and sanitised **SVG**; relative links and images resolved from the repo.
-- **Edit through the UI**: edits commit back using the editing user's GitHub credentials, falling back to an org-configured bot token (required for Google-only users who have no GitHub link). Commit message auto-generated, user-overridable.
+- **Edit through the UI**: edits commit back using the editing user's linked GitHub account, configured in personal settings (OAuth link or PAT). No bot-token fallback: users without a linked account see the wiki read-only with a prompt to connect GitHub in settings. Commit message auto-generated, user-overridable.
 - Version history from git log; view any revision.
 - Full-text searchable (§13).
 - Wiki pages link to tasks (`KEY-<n>`) and tasks link to wiki pages.
@@ -323,7 +323,7 @@ Boardchestrator is both an **agent host** (consumes providers) and an **MCP host
 - **CSRF**: SameSite=Lax cookies plus a per-session token on all state-changing HTMX requests.
 - **CSP**: strict, nonce-based; no un-nonced inline script; `frame-ancestors 'none'`.
 - **Attachments**: served with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`, ideally from a distinct origin; images validated/re-encoded; SVG sanitised (scripts and `foreignObject` stripped) before render.
-- **Secrets** (provider keys, S3 creds, GitHub bot token, webhook secrets) encrypted at rest with `BC_SECRET_KEY`.
+- **Secrets** (provider keys, S3 creds, user GitHub tokens, webhook secrets) encrypted at rest with `BC_SECRET_KEY`.
 - **Org audit log**: security-relevant events (logins, role/permission changes, API key create/revoke, integration and agent config changes, member add/remove, high-impact agent actions) with actor, IP, timestamp; exportable; distinct from per-task activity.
 - **Webhook/SSRF**: outbound URLs validated and internal ranges blocked.
 - **Privacy**: per-user and per-org data export; account deletion.
@@ -384,6 +384,6 @@ Boardchestrator is both an **agent host** (consumes providers) and an **MCP host
 
 **Phase 4 — API Surface.** REST API + OpenAPI, MCP server (tools/resources/prompts/approvals), API-key auth + rate limiting, outbound webhooks (retry/DLQ/SSRF guard), GitHub integration (links, inbound webhooks, transitions), scheduled agent triggers.
 
-**Phase 5 — Wiki & Reporting.** Wiki (read, render, edit-commits, history, per-team ref config, bot-token fallback), sprint charts, cycle/lead time, agent usage dashboard, CSV export, S3 attachment backend, backup subcommand.
+**Phase 5 — Wiki & Reporting.** Wiki (read, render, edit-commits as linked user, history, per-team ref config), sprint charts, cycle/lead time, agent usage dashboard, CSV export, S3 attachment backend, backup subcommand.
 
 Each phase lands as PRs to `main` for review.

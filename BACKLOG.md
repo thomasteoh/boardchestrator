@@ -305,8 +305,8 @@ AC: checkout/refresh tests against local fixture repo; traversal attempt blocked
 
 ### WU-502 · Wiki edit + history — `ready`
 Deps: 501, 406.
-UI editor with live preview; commit as user's GitHub token, fallback org bot token with `Co-authored-by`; commit message editable; non-FF retry-once then conflict UI; history view (log per file) + read-only revision render; create/rename/delete page.
-AC: commit-as-user vs bot fallback tests (fixture remote); conflict path test; history render.
+UI editor with live preview; commit as the user's linked GitHub token (WU-406); users without a linked token get read-only wiki + "connect GitHub in settings" prompt (Q2); commit message editable; non-FF retry-once then conflict UI; history view (log per file) + read-only revision render; create/rename/delete page.
+AC: commit-as-user test (fixture remote); unlinked user sees read-only + prompt, edit endpoint rejects; conflict path test; history render.
 
 ### WU-503 · Wiki search + task↔wiki links — `ready`
 Deps: 501, 208.

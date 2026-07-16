@@ -125,7 +125,7 @@ platform_settings(id=1, context, bootstrap_done, settings_json)
 **Tenancy**
 ```
 orgs(id, name, slug UNIQUE, context, settings_json, created_at)         -- settings: attachment limits, spend cap
-org_secrets(org_id, kind, value_enc)                                    -- s3 creds, github bot token
+org_secrets(org_id, kind, value_enc)                                    -- s3 creds, etc.
 teams(id, org_id, name, context, created_at)
 projects(id, org_id, team_id, key, name, context, visibility, swimlane_json,
          next_task_num INT, archived_at, UNIQUE(org_id,key))
@@ -260,7 +260,7 @@ type Store interface {
 
 - Per-project checkout cache under `BC_DATA_DIR/wiki/<project>` (go-git, shallow, single ref); refreshed on read if older than 60s (config) or on webhook.
 - Render: goldmark (GFM, task lists) + `mermaid` fenced blocks → client-side render; SVG through the shared sanitiser; relative links/images resolved within the configured path (no traversal above it).
-- Edit: UI editor (textarea + preview) → commit to `ref` using the editor's GitHub identity token; fallback org bot token with `Co-authored-by` the user; push; on non-fast-forward, re-pull and retry once, else surface conflict.
+- Edit: UI editor (textarea + preview) → commit to `ref` using the editor's linked GitHub token (from user settings, WU-406); no linked token ⇒ wiki is read-only for that user with a "connect GitHub in settings" prompt; push; on non-fast-forward, re-pull and retry once, else surface conflict.
 - History: `git log` for the file; render any revision read-only.
 
 ## 14. Search (internal/search)
