@@ -8,8 +8,10 @@ Rules: pick the **first `ready` WU whose deps are all `done`**, top to bottom. U
 
 ## Phase 0 — Foundation (branch `build/phase-0`)
 
-### WU-001 · Repo scaffold — `ready`
+### WU-001 · Repo scaffold — `done 2026-07-17 WU-001: repo scaffold`
 Deps: none.
+
+Initial scaffold: Go module, cmd/bc entry point with serve/backup subcommands, config loading, Makefile, golangci-lint, .gitignore. Worker subagent created cmd/ and go.mod; orchestrator completed config/tests/Makefile/ignore/lint and fixed golangci-lint compat issues.
 Go module `github.com/thomasteoh/boardchestrator`; `cmd/bc` with `serve` (flag/env parse, hello handler) and stub `backup`; `internal/config` loading all `BC_*` vars with defaults + validation; slog JSON logger with level from env; Makefile (`gen`, `check`, `check-scope` [placeholder pass], `dev`, `build`); `.gitignore`; golangci-lint config.
 AC: `make check` green; `config.Load` unit tests cover defaults, overrides, invalid values; `bc serve` starts and logs a structured startup line. Manual: curl `/` returns placeholder.
 
