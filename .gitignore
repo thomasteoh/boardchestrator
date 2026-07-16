@@ -1,0 +1,23 @@
+# Binaries
+/bc
+*.out
+*.test
+*.test.exe
+
+# Data
+bc.db*
+data/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go vendor (we don't vendor)
+vendor/
