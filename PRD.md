@@ -6,7 +6,7 @@
 
 Boardchestrator is a self-hostable, agent-native project management platform. It provides a fully customisable board interface (agile-like defaults, simplified Azure DevOps functionality) where AI agents are first-class actors alongside humans. The web UI, the REST API, the MCP server, and agents themselves are all clients of one internal action layer with one permission model.
 
-This document governs scope. Anything not in here is out of scope until added here.
+This document governs scope. Anything not in here is out of scope until added here. Implementation detail lives in SPEC.md; build sequencing in BACKLOG.md; build-agent operating instructions in WORKER.md; open decisions in QUESTIONS.md.
 
 ---
 
