@@ -26,10 +26,11 @@ Deps: 001.
 AC: dbtest spins/uses/destroys a DB in tests; migration up+down round-trips; WAL confirmed via pragma test; check-scope fails on a deliberate fixture and passes on the repo.
 Notes: driver is modernc.org/sqlite v1.46.1 (pure Go — see Q3; newest version whose dep closure keeps `go 1.25` under the pinned local toolchain). sqlc pinned at v1.30.0 in the Makefile (`go run mod@version`; v1.31.x needs go ≥ 1.26); `make gen` skips sqlc until the first query file lands but the config was validated end-to-end with a throwaway query. Tenant-table list lives in `scripts/check-scope.sh` (empty for now — the 0001 tables are platform-scoped); grow it in the same commit as any migration adding an org_id table. check-scope self-tests against committed fixtures in `scripts/testdata/check-scope/` on every run. Manual: `bc serve` against a fresh DB logged "database ready", created all four tables + seeded platform_settings(id=1, bootstrap_done=0), healthz 200, clean shutdown.
 
-### WU-004 · App shell (templ + HTMX, responsive) — `ready`
+### WU-004 · App shell (templ + HTMX, responsive) — `done 2026-07-20 WU-004: app shell (templ layout, vendored htmx/Alpine-CSP, responsive tokens)`
 Deps: 002.
 templ base layout: header, sidebar (desktop) / bottom-nav + drawer (mobile), main slot; embedded static assets with cache-busting hashes; vendored htmx, Alpine, app.js (SSE helper stub); `app.css` design tokens, dark/light via `data-theme` + `prefers-color-scheme`; breakpoints 640/1024.
 AC: layout renders (templ unit test on rendered HTML: nav present, nonce attr present); static served with immutable cache headers (handler test); `make check` includes templ generate diff-clean. Manual: shell verified at 375px and 1280px widths.
+Notes: templ v0.3.1001 pinned in Makefile (CLI + runtime module must match); `make gen` now runs templ generate, `make check` enforces `*_templ.go` diff-clean. Vendored Alpine **CSP build** (`@alpinejs/csp` 3.15.8) not standard Alpine — standard Alpine's `new Function()` eval violates the nonce-CSP of SPEC §15; all component logic must live in app.js via `Alpine.data(...)`, templates only reference names. See static/vendor/VENDOR.md. Nonce passed into `Base(Shell)` as a param; real per-request source lands in WU-005. templ emits lowercase `<!doctype html>` (valid HTML5); test asserts lowercase. Manual note: mobile/desktop verified by CSS inspection (breakpoint rules at 640/1024 present, drawer + bottom-nav rules exist), not a headless visual render.
 
 ### WU-005 · Sessions, CSRF, CSP — `ready`
 Deps: 003, 004.

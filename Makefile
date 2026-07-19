@@ -9,8 +9,12 @@ GOLANGCI_LINT := $(shell go env GOPATH)/bin/golangci-lint
 # sqlc v1.30.0 is the newest release whose go directive builds under the
 # repo's Go 1.25 toolchain (v1.31.x requires go >= 1.26).
 SQLC_VERSION := v1.30.0
+# templ CLI and the templ runtime module (go.mod) must be the same version.
+TEMPL_VERSION := v0.3.1001
 
 gen:
+	@echo "--- templ generate ---"
+	$(GO) run github.com/a-h/templ/cmd/templ@$(TEMPL_VERSION) generate
 	@echo "--- sqlc generate ---"
 	@if ls internal/db/queries/*.sql >/dev/null 2>&1; then \
 		$(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate; \
@@ -21,6 +25,7 @@ gen:
 check: gen check-scope
 	@echo "--- generated files diff-clean ---"
 	git diff --exit-code -- internal/db/sqlc || { echo "sqlc output out of date — run make gen and commit"; exit 1; }
+	git diff --exit-code -- '*_templ.go' || { echo "templ output out of date — run make gen and commit"; exit 1; }
 	@echo "--- gofmt ---"
 	$(GOFMT) -d -l . | awk '{print} END{exit NR>0}'
 	@echo "--- go vet ---"

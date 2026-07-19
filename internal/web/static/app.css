@@ -1,0 +1,333 @@
+/* Boardchestrator app shell styles.
+ *
+ * Conventions (SPEC §3): single stylesheet, design tokens as --bc-* custom
+ * properties, dark/light via the data-theme attribute on <html> with
+ * prefers-color-scheme as the fallback, mobile-first with breakpoints at
+ * 640px and 1024px.
+ */
+
+/* ---------- Design tokens ---------- */
+
+:root {
+  /* colour */
+  --bc-bg: #f6f7f9;
+  --bc-surface: #ffffff;
+  --bc-surface-raised: #ffffff;
+  --bc-text: #1a2029;
+  --bc-text-muted: #5b6472;
+  --bc-border: #d8dde4;
+  --bc-accent: #2f6fed;
+  --bc-accent-contrast: #ffffff;
+  --bc-accent-soft: #e3ecfd;
+  --bc-danger: #c62828;
+  --bc-success: #2e7d32;
+  --bc-warning: #b26a00;
+  --bc-focus-ring: #2f6fed;
+  --bc-backdrop: rgba(16, 20, 26, 0.45);
+  --bc-shadow: 0 1px 3px rgba(16, 20, 26, 0.12);
+
+  /* typography */
+  --bc-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --bc-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --bc-text-sm: 0.875rem;
+  --bc-text-base: 1rem;
+  --bc-text-lg: 1.125rem;
+
+  /* spacing & shape */
+  --bc-space-1: 0.25rem;
+  --bc-space-2: 0.5rem;
+  --bc-space-3: 0.75rem;
+  --bc-space-4: 1rem;
+  --bc-space-6: 1.5rem;
+  --bc-space-8: 2rem;
+  --bc-radius: 8px;
+  --bc-radius-sm: 4px;
+
+  /* layout */
+  --bc-header-h: 3.25rem;
+  --bc-bottomnav-h: 3.5rem;
+  --bc-sidebar-w: 15rem;
+  --bc-drawer-w: 17rem;
+
+  color-scheme: light;
+}
+
+/* Dark tokens, applied two ways: explicit user choice via data-theme, and
+   OS preference when the user has not chosen. Keep both blocks in sync. */
+[data-theme="dark"] {
+  --bc-bg: #12161c;
+  --bc-surface: #1a202a;
+  --bc-surface-raised: #212936;
+  --bc-text: #e6eaf0;
+  --bc-text-muted: #98a2b3;
+  --bc-border: #313b49;
+  --bc-accent: #5b8ff5;
+  --bc-accent-contrast: #0d1117;
+  --bc-accent-soft: #23324d;
+  --bc-danger: #ef5350;
+  --bc-success: #66bb6a;
+  --bc-warning: #ffb74d;
+  --bc-focus-ring: #5b8ff5;
+  --bc-backdrop: rgba(0, 0, 0, 0.6);
+  --bc-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bc-bg: #12161c;
+    --bc-surface: #1a202a;
+    --bc-surface-raised: #212936;
+    --bc-text: #e6eaf0;
+    --bc-text-muted: #98a2b3;
+    --bc-border: #313b49;
+    --bc-accent: #5b8ff5;
+    --bc-accent-contrast: #0d1117;
+    --bc-accent-soft: #23324d;
+    --bc-danger: #ef5350;
+    --bc-success: #66bb6a;
+    --bc-warning: #ffb74d;
+    --bc-focus-ring: #5b8ff5;
+    --bc-backdrop: rgba(0, 0, 0, 0.6);
+    --bc-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+
+    color-scheme: dark;
+  }
+}
+
+/* ---------- Base ---------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  font-family: var(--bc-font);
+  font-size: var(--bc-text-base);
+  line-height: 1.5;
+  color: var(--bc-text);
+  background: var(--bc-bg);
+}
+
+a {
+  color: var(--bc-accent);
+}
+
+[x-cloak] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--bc-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.bc-skip-link {
+  position: absolute;
+  left: var(--bc-space-2);
+  top: var(--bc-space-2);
+  z-index: 100;
+  padding: var(--bc-space-2) var(--bc-space-3);
+  background: var(--bc-surface);
+  border-radius: var(--bc-radius-sm);
+  transform: translateY(-200%);
+}
+
+.bc-skip-link:focus {
+  transform: none;
+}
+
+/* ---------- Header ---------- */
+
+.bc-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--bc-space-2);
+  height: var(--bc-header-h);
+  padding: 0 var(--bc-space-3);
+  background: var(--bc-surface);
+  border-bottom: 1px solid var(--bc-border);
+}
+
+.bc-brand {
+  font-weight: 600;
+  font-size: var(--bc-text-lg);
+  margin-right: auto;
+}
+
+.bc-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--bc-radius-sm);
+  background: none;
+  color: var(--bc-text);
+  font-size: var(--bc-text-lg);
+  cursor: pointer;
+}
+
+.bc-icon-btn:hover {
+  background: var(--bc-accent-soft);
+}
+
+/* ---------- Shell grid ---------- */
+
+.bc-shell {
+  display: block;
+  min-height: calc(100vh - var(--bc-header-h));
+}
+
+.bc-main {
+  padding: var(--bc-space-4);
+  /* keep content clear of the fixed bottom nav on mobile */
+  padding-bottom: calc(var(--bc-bottomnav-h) + var(--bc-space-4));
+}
+
+/* ---------- Navigation (shared link styles) ---------- */
+
+.bc-nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--bc-space-2);
+  padding: var(--bc-space-2) var(--bc-space-3);
+  border-radius: var(--bc-radius-sm);
+  color: var(--bc-text);
+  text-decoration: none;
+}
+
+.bc-nav-link:hover {
+  background: var(--bc-accent-soft);
+}
+
+.bc-nav-link[aria-current="page"] {
+  background: var(--bc-accent-soft);
+  color: var(--bc-accent);
+  font-weight: 600;
+}
+
+/* ---------- Sidebar (desktop only) ---------- */
+
+.bc-sidebar {
+  display: none;
+}
+
+/* ---------- Bottom nav (mobile only) ---------- */
+
+.bc-bottom-nav {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  height: var(--bc-bottomnav-h);
+  background: var(--bc-surface);
+  border-top: 1px solid var(--bc-border);
+}
+
+.bc-bottom-nav .bc-nav-link {
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  padding: var(--bc-space-1);
+  border-radius: 0;
+  font-size: var(--bc-text-sm);
+  color: var(--bc-text-muted);
+}
+
+.bc-bottom-nav .bc-nav-link[aria-current="page"] {
+  color: var(--bc-accent);
+  background: none;
+}
+
+/* ---------- Drawer (mobile only) ---------- */
+
+.bc-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+
+.bc-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--bc-backdrop);
+}
+
+.bc-drawer-panel {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: min(var(--bc-drawer-w), 85vw);
+  padding: var(--bc-space-4) var(--bc-space-2);
+  background: var(--bc-surface);
+  border-right: 1px solid var(--bc-border);
+  box-shadow: var(--bc-shadow);
+  overflow-y: auto;
+}
+
+/* ---------- Breakpoint: ≥640px (large phones / small tablets) ---------- */
+
+@media (min-width: 640px) {
+  .bc-main {
+    padding: var(--bc-space-6);
+    padding-bottom: calc(var(--bc-bottomnav-h) + var(--bc-space-6));
+  }
+
+  .bc-header {
+    padding: 0 var(--bc-space-4);
+  }
+}
+
+/* ---------- Breakpoint: ≥1024px (desktop) ---------- */
+
+@media (min-width: 1024px) {
+  .bc-shell {
+    display: grid;
+    grid-template-columns: var(--bc-sidebar-w) minmax(0, 1fr);
+  }
+
+  .bc-sidebar {
+    display: block;
+    padding: var(--bc-space-4) var(--bc-space-2);
+    border-right: 1px solid var(--bc-border);
+    background: var(--bc-surface);
+  }
+
+  .bc-main {
+    padding: var(--bc-space-8);
+  }
+
+  /* desktop uses the sidebar; hide the mobile chrome */
+  .bc-bottom-nav,
+  .bc-drawer,
+  .bc-drawer-btn {
+    display: none;
+  }
+}

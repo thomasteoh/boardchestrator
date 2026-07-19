@@ -1,0 +1,100 @@
+package views
+
+// Base is the app shell layout: header, desktop sidebar, mobile bottom nav +
+// drawer, and a main slot filled by { children... }. All script tags carry
+// the per-request CSP nonce from Shell.Nonce.
+templ Base(s Shell) {
+	<!DOCTYPE html>
+	<html lang="en-AU">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ s.Title } · Boardchestrator</title>
+			<link rel="stylesheet" href={ templ.URL(s.Assets.AppCSS) }/>
+			// Nonced theme bootstrap: applies the persisted theme before first
+			// paint so a dark-theme user never sees a light flash. The only
+			// inline script permitted by SPEC §15.
+			<script nonce={ s.Nonce }>
+				(function () {
+					try {
+						var t = localStorage.getItem("bc-theme");
+						if (t === "dark" || t === "light") {
+							document.documentElement.setAttribute("data-theme", t);
+						}
+					} catch (e) { /* storage unavailable: fall back to prefers-color-scheme */ }
+				})();
+			</script>
+		</head>
+		<body hx-boost="true" x-data="shell">
+			<a class="bc-skip-link" href="#main">Skip to content</a>
+			<header class="bc-header">
+				<button
+					class="bc-icon-btn bc-drawer-btn"
+					type="button"
+					aria-label="Open navigation menu"
+					x-on:click="openDrawer"
+				>
+					<span aria-hidden="true">☰</span>
+				</button>
+				<span class="bc-brand">Boardchestrator</span>
+				<button
+					class="bc-icon-btn"
+					type="button"
+					aria-label="Toggle colour theme"
+					x-on:click="toggleTheme"
+				>
+					<span aria-hidden="true">◐</span>
+				</button>
+			</header>
+			<div class="bc-shell">
+				<nav class="bc-sidebar" aria-label="Primary">
+					@navLinks(s.Active, false)
+				</nav>
+				<main id="main" class="bc-main" tabindex="-1">
+					{ children... }
+				</main>
+			</div>
+			<nav class="bc-bottom-nav" aria-label="Primary">
+				@navLinks(s.Active, true)
+			</nav>
+			<div class="bc-drawer" x-show="drawerOpen" x-cloak>
+				<div class="bc-drawer-backdrop" x-on:click="closeDrawer"></div>
+				<nav class="bc-drawer-panel" aria-label="Primary">
+					@navLinks(s.Active, false)
+				</nav>
+			</div>
+			<script src={ templ.URL(s.Assets.HTMX) } nonce={ s.Nonce } defer></script>
+			// app.js registers Alpine components on alpine:init, so it must
+			// execute before Alpine (defer preserves this order).
+			<script src={ templ.URL(s.Assets.AppJS) } nonce={ s.Nonce } defer></script>
+			<script src={ templ.URL(s.Assets.Alpine) } nonce={ s.Nonce } defer></script>
+		</body>
+	</html>
+}
+
+// navLinks renders the primary navigation; mobileOnly restricts to the five
+// bottom-nav destinations.
+templ navLinks(active string, mobileOnly bool) {
+	for _, it := range navItems {
+		if !mobileOnly || it.Mobile {
+			<a
+				class="bc-nav-link"
+				href={ templ.URL(it.Href) }
+				if it.Href == active {
+					aria-current="page"
+				}
+			>
+				{ it.Label }
+			</a>
+		}
+	}
+}
+
+// Home is the placeholder main-slot content served at /app until real pages
+// arrive in later WUs.
+templ Home(s Shell) {
+	@Base(s) {
+		<h1>Welcome to Boardchestrator</h1>
+		<p>The app shell is up. Boards, backlog, chat and search arrive in later work units.</p>
+	}
+}

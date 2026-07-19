@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/thomasteoh/boardchestrator/internal/config"
+	"github.com/thomasteoh/boardchestrator/internal/web"
 )
 
 // metrics for Prometheus /metrics endpoint.
@@ -78,6 +79,7 @@ func (s *Server) setupRoutes() {
 	s.mux.Get("/healthz", s.handleHealthz)
 	s.mux.Get("/readyz", s.handleReadyz)
 	s.mux.Handle("/metrics", promhttp.Handler())
+	web.Routes(s.mux)
 }
 
 // RegisterForTest mounts a handler on a path for testing.
