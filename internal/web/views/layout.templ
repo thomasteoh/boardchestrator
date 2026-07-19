@@ -25,7 +25,7 @@ templ Base(s Shell) {
 				})();
 			</script>
 		</head>
-		<body hx-boost="true" x-data="shell">
+		<body hx-boost="true" x-data="shell" hx-headers={ hxHeaders(s.CSRF) }>
 			<a class="bc-skip-link" href="#main">Skip to content</a>
 			<header class="bc-header">
 				<button

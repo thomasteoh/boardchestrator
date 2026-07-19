@@ -77,6 +77,27 @@ func TestBaseLayoutNoncePerRequest(t *testing.T) {
 	}
 }
 
+func TestBaseLayoutCSRFHeader(t *testing.T) {
+	s := testShell()
+	s.CSRF = "csrf-token-xyz"
+	html := renderBase(t, s, "")
+	// The CSRF token rides in the body's hx-headers so every HTMX mutating
+	// request carries it. templ HTML-escapes the JSON quotes in the attribute.
+	if !strings.Contains(html, "hx-headers=") {
+		t.Fatal("body missing hx-headers attribute")
+	}
+	if !strings.Contains(html, "X-CSRF-Token") || !strings.Contains(html, "csrf-token-xyz") {
+		t.Errorf("hx-headers missing CSRF token; got %q", html)
+	}
+
+	// Unauthenticated shell: empty token yields an empty header object.
+	s.CSRF = ""
+	html = renderBase(t, s, "")
+	if strings.Contains(html, "X-CSRF-Token") {
+		t.Error("empty CSRF token must not emit an X-CSRF-Token header")
+	}
+}
+
 func TestBaseLayoutEscapesTitle(t *testing.T) {
 	s := testShell()
 	s.Title = `<script>alert(1)</script>`

@@ -1,12 +1,11 @@
 package web
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
 )
 
@@ -17,12 +16,14 @@ func Routes(r chi.Router) {
 	r.Get("/app", handleAppShell)
 }
 
-// shellData assembles the layout inputs for a request. The nonce comes from
-// requestNonce until WU-005's CSP middleware provides the real one.
+// shellData assembles the layout inputs for a request. The nonce and CSRF
+// token are sourced from the request context, populated by the CSP and session
+// middleware (WU-005).
 func shellData(r *http.Request, title, active string) views.Shell {
 	return views.Shell{
 		Title: title,
-		Nonce: requestNonce(r),
+		Nonce: auth.Nonce(r.Context()),
+		CSRF:  auth.CSRFFrom(r.Context()),
 		Assets: views.ShellAssets{
 			AppCSS: AssetURL("app.css"),
 			HTMX:   AssetURL("vendor/htmx.min.js"),
@@ -31,20 +32,6 @@ func shellData(r *http.Request, title, active string) views.Shell {
 		},
 		Active: active,
 	}
-}
-
-// requestNonce returns the CSP nonce for the request. Placeholder until
-// WU-005: generates a fresh random value per request with the same shape the
-// CSP middleware will use (128-bit, base64), but no CSP header references it
-// yet. WU-005 replaces the body of this function with a context lookup.
-func requestNonce(_ *http.Request) string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		// Unreachable: crypto/rand.Read is documented never to fail on
-		// Go ≥1.24. The branch exists only to satisfy errcheck honestly.
-		panic("web: crypto/rand unavailable: " + err.Error())
-	}
-	return base64.RawStdEncoding.EncodeToString(b)
 }
 
 func handleAppShell(w http.ResponseWriter, r *http.Request) {

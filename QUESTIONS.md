@@ -17,6 +17,13 @@ Workers append here per WORKER.md. Humans answer inline under **Answer:** and fl
 **Recommendation:** keep the bot-token fallback (as spec'd).
 **Answer:** No bot-token fallback. Wiki edits always commit as the editing user's linked GitHub account, configured in personal settings (OAuth link or PAT). Users without a linked account get read-only wiki with a prompt to connect. *(resolved 2026-07-17)*
 
+## Q4 — Require BC_SESSION_SECRET at startup?
+
+**Context:** WU-005 signs the per-session CSRF token with HMAC keyed on `BC_SESSION_SECRET`. `config.Load` loads it but does not require it (only `BC_SECRET_KEY` is required). With an empty secret the CSRF HMAC still functions but is keyed on "", weakening it, and future session-cookie signing (if added) would be unsafe. I did **not** add a required-check here because it would break the existing config tests (which set only `BC_SECRET_KEY`) and the bootstrap/OAuth WUs may assume the current shape — a change beyond this WU's scope.
+**Options:** (a) make `BC_SESSION_SECRET` required in `config.Load` (min length, e.g. 32 bytes) and update config tests + OAuth WUs; (b) leave optional, document that operators must set it; (c) auto-generate a random secret at startup if unset (breaks multi-instance and restarts — sessions/CSRF invalidated on every boot).
+**Recommendation:** (a), folded into WU-101 (Google OIDC login) where sessions are first issued for real — that WU already touches auth startup. Assumption taken now (non-blocking): the secret is treated as present; server tests and `bc serve` supply it.
+**Answer:**
+
 ## Q3 — SQLite driver choice (modernc.org/sqlite)
 
 **Context:** SPEC names SQLite, golang-migrate and sqlc but no Go driver. WU-003 had to pick one. The two mainstream options are mattn/go-sqlite3 (cgo) and modernc.org/sqlite (pure Go). WU-008 targets a distroless container and CI runs `go test -race ./...`; a cgo-free build keeps both static and simple, and golang-migrate's `sqlite` database driver targets modernc.

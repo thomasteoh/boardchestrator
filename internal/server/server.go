@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/web"
 )
@@ -48,15 +50,28 @@ var (
 
 // Server wraps a chi router and http.Server with lifecycle management.
 type Server struct {
-	mux   *chi.Mux
-	srv   *http.Server
-	ready atomic.Bool
-	cfg   *config.Config
+	mux      *chi.Mux
+	srv      *http.Server
+	ready    atomic.Bool
+	cfg      *config.Config
+	sessions *auth.SessionStore
 }
 
-// New creates a configured server with routes and middleware.
+// New creates a configured server with routes and middleware, with no
+// database wired. Session and CSRF middleware are only mounted when a database
+// is provided via NewWithDB; the CSP and security-header middleware always run.
 func New(cfg *config.Config) *Server {
+	return NewWithDB(cfg, nil)
+}
+
+// NewWithDB creates a configured server backed by d. When d is non-nil, the
+// session and CSRF middleware are mounted; the CSP/security-header middleware
+// runs regardless.
+func NewWithDB(cfg *config.Config, d *sql.DB) *Server {
 	s := &Server{cfg: cfg, mux: chi.NewRouter()}
+	if d != nil {
+		s.sessions = auth.NewSessionStore(d)
+	}
 	s.setupMiddleware()
 	s.setupRoutes()
 	s.srv = &http.Server{
@@ -73,6 +88,16 @@ func (s *Server) setupMiddleware() {
 	s.mux.Use(s.requestID)
 	s.mux.Use(s.requestLog)
 	s.mux.Use(s.recover)
+	// Security headers + per-request CSP nonce run for every request, even
+	// before a DB is wired, so the app shell always renders under a strict CSP.
+	s.mux.Use(auth.CSP())
+	// Session resolution then CSRF protection, in that order — CSRF needs the
+	// resolved session. Only mounted when a session store exists.
+	if s.sessions != nil {
+		sc := auth.SessionConfig{Store: s.sessions, Secret: s.cfg.SessionSecret}
+		s.mux.Use(sc.Session())
+		s.mux.Use(sc.CSRF())
+	}
 }
 
 func (s *Server) setupRoutes() {

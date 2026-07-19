@@ -33,7 +33,7 @@ func runServe(cfg *config.Config) error {
 	}
 	slog.Info("database ready", "path", cfg.DBPath)
 
-	s := server.New(cfg)
+	s := server.NewWithDB(cfg, d)
 	if err := s.Start(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

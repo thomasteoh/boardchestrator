@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/config"
+	"github.com/thomasteoh/boardchestrator/internal/db/dbtest"
 	"github.com/thomasteoh/boardchestrator/internal/server"
 )
 
@@ -288,5 +291,97 @@ func TestJSONResponseFormat(t *testing.T) {
 				t.Errorf("invalid JSON: %v", err)
 			}
 		})
+	}
+}
+
+// --- WU-005: sessions, CSRF, CSP wired into the full router assembly ---
+
+func TestServerCSPFreshNoncePerRequest(t *testing.T) {
+	s := server.New(testConfig())
+	s.SetReady(true)
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	nonce := func() string {
+		resp, err := http.Get(srv.URL + "/healthz")
+		if err != nil {
+			t.Fatalf("GET: %v", err)
+		}
+		defer resp.Body.Close()
+		csp := resp.Header.Get("Content-Security-Policy")
+		m := regexp.MustCompile(`'nonce-([A-Za-z0-9+/]+)'`).FindStringSubmatch(csp)
+		if m == nil {
+			t.Fatalf("no nonce in CSP header: %q", csp)
+		}
+		return m[1]
+	}
+	if a, b := nonce(), nonce(); a == b {
+		t.Error("CSP nonce identical across requests through the full server, want fresh")
+	}
+}
+
+func TestServerSecurityHeaders(t *testing.T) {
+	s := server.New(testConfig())
+	s.SetReady(true)
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/healthz")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("missing nosniff header from full server")
+	}
+	if !strings.Contains(resp.Header.Get("Content-Security-Policy"), "frame-ancestors 'none'") {
+		t.Error("missing frame-ancestors in CSP from full server")
+	}
+}
+
+func TestServerCSRFEnforcedWhenDBWired(t *testing.T) {
+	cfg := testConfig()
+	d := dbtest.New(t)
+	if _, err := d.ExecContext(context.Background(), `INSERT INTO users (id, email) VALUES (?, ?)`, "u1", "u1@example.com"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	s := server.NewWithDB(cfg, d)
+	s.SetReady(true)
+	s.RegisterForTest("/mutate", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	store := auth.NewSessionStore(d)
+	raw, sess, err := store.Create(context.Background(), "u1", "", "")
+	if err != nil {
+		t.Fatalf("Create session: %v", err)
+	}
+	cookie := &http.Cookie{Name: auth.CookieName, Value: raw}
+
+	// POST without CSRF token → 403.
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/mutate", nil)
+	req.AddCookie(cookie)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST no-token: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("POST without CSRF token: status %d, want 403", resp.StatusCode)
+	}
+
+	// POST with valid token → 200.
+	req2, _ := http.NewRequest(http.MethodPost, srv.URL+"/mutate", nil)
+	req2.AddCookie(cookie)
+	req2.Header.Set(auth.CSRFHeader, auth.CSRFToken(cfg.SessionSecret, sess.TokenHash))
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatalf("POST with-token: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Errorf("POST with valid CSRF token: status %d, want 200", resp2.StatusCode)
 	}
 }

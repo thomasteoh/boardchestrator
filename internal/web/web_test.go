@@ -9,10 +9,16 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/thomasteoh/boardchestrator/internal/auth"
 )
 
+// newTestRouter mounts the web routes behind the CSP middleware, which is the
+// per-request source of Shell.Nonce (WU-005). Without it the app shell renders
+// with an empty nonce, so the shell tests must exercise the real middleware.
 func newTestRouter() http.Handler {
 	r := chi.NewRouter()
+	r.Use(auth.CSP())
 	Routes(r)
 	return r
 }
