@@ -1,8 +1,10 @@
 package server_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -14,8 +16,46 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/db/dbtest"
+	"github.com/thomasteoh/boardchestrator/internal/event"
 	"github.com/thomasteoh/boardchestrator/internal/server"
 )
+
+// eventForTest is a sample bus event for the /events integration test.
+func eventForTest() event.Event {
+	return event.Event{Name: "task.update", Org: "org1", Subject: "t9", Payload: json.RawMessage(`{"id":"t9"}`)}
+}
+
+// readFirstFrame reads the first blank-line-terminated SSE frame from r,
+// failing on timeout. Runs the blocking read in a goroutine so a stalled stream
+// does not hang the test.
+func readFirstFrame(t *testing.T, r io.Reader) string {
+	t.Helper()
+	out := make(chan string, 1)
+	go func() {
+		br := bufio.NewReader(r)
+		var b strings.Builder
+		for {
+			line, err := br.ReadString('\n')
+			b.WriteString(line)
+			if err != nil {
+				out <- b.String()
+				return
+			}
+			// Skip pure heartbeat/blank noise; return once we have a data frame.
+			if line == "\n" && strings.Contains(b.String(), "data: ") {
+				out <- b.String()
+				return
+			}
+		}
+	}()
+	select {
+	case s := <-out:
+		return s
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out reading SSE frame")
+		return ""
+	}
+}
 
 func testConfig() *config.Config {
 	return &config.Config{
@@ -383,5 +423,88 @@ func TestServerCSRFEnforcedWhenDBWired(t *testing.T) {
 	resp2.Body.Close()
 	if resp2.StatusCode != http.StatusOK {
 		t.Errorf("POST with valid CSRF token: status %d, want 200", resp2.StatusCode)
+	}
+}
+
+// TestEventsRouteAbsentWithoutDB: no DB ⇒ no session store ⇒ no /events stream.
+func TestEventsRouteAbsentWithoutDB(t *testing.T) {
+	s := server.New(testConfig())
+	s.SetReady(true)
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/events")
+	if err != nil {
+		t.Fatalf("GET /events: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("no-DB /events: status %d, want 404", resp.StatusCode)
+	}
+}
+
+// TestEventsStreamsToAuthedUser: an authenticated user connects to /events over
+// the full middleware chain and receives an event published through the
+// server's bus (proving the /events route is wired to the hub and the hub to
+// the bus).
+func TestEventsStreamsToAuthedUser(t *testing.T) {
+	cfg := testConfig()
+	d := dbtest.New(t)
+	if _, err := d.ExecContext(context.Background(), `INSERT INTO users (id, email) VALUES (?, ?)`, "u1", "u1@example.com"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	s := server.NewWithDB(cfg, d)
+	s.SetReady(true)
+
+	hubCtx, hubCancel := context.WithCancel(context.Background())
+	defer hubCancel()
+	s.RunHubForTest(hubCtx)
+
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	store := auth.NewSessionStore(d)
+	raw, _, err := store.Create(context.Background(), "u1", "", "")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// Unauthenticated → 401.
+	unauth, err := http.Get(srv.URL + "/events")
+	if err != nil {
+		t.Fatalf("GET /events unauth: %v", err)
+	}
+	unauth.Body.Close()
+	if unauth.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauth /events: status %d, want 401", unauth.StatusCode)
+	}
+
+	// Authenticated → 200 text/event-stream, receives a published event.
+	streamCtx, streamCancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(streamCtx, http.MethodGet, srv.URL+"/events", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: raw})
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /events authed: %v", err)
+	}
+	defer func() { streamCancel(); resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("authed /events: status %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("content-type = %q", ct)
+	}
+
+	// Publish through the server's bus once the client is connected.
+	go func() {
+		for i := 0; i < 50; i++ {
+			s.Bus().Publish(eventForTest())
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+
+	got := readFirstFrame(t, resp.Body)
+	if !strings.Contains(got, "event: task-updated") || !strings.Contains(got, `"subject":"t9"`) {
+		t.Fatalf("did not receive expected event frame, got:\n%q", got)
 	}
 }

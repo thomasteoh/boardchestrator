@@ -22,6 +22,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/config"
+	"github.com/thomasteoh/boardchestrator/internal/event"
+	"github.com/thomasteoh/boardchestrator/internal/sse"
 	"github.com/thomasteoh/boardchestrator/internal/web"
 )
 
@@ -55,6 +57,15 @@ type Server struct {
 	ready    atomic.Bool
 	cfg      *config.Config
 	sessions *auth.SessionStore
+
+	// bus is the in-process event bus (SPEC §8). The action Dispatcher's
+	// EventSink forwards into it (event.NewSink); the SSE hub and later
+	// subscribers (notify, webhooks, search) fan out from it.
+	bus *event.Bus
+	// hub streams bus events to browsers over /events. Mounted only when a
+	// session store exists (it needs the authenticated user).
+	hub    *sse.Hub
+	hubCtx context.CancelFunc
 }
 
 // New creates a configured server with routes and middleware, with no
@@ -68,9 +79,13 @@ func New(cfg *config.Config) *Server {
 // session and CSRF middleware are mounted; the CSP/security-header middleware
 // runs regardless.
 func NewWithDB(cfg *config.Config, d *sql.DB) *Server {
-	s := &Server{cfg: cfg, mux: chi.NewRouter()}
+	s := &Server{cfg: cfg, mux: chi.NewRouter(), bus: event.New()}
 	if d != nil {
 		s.sessions = auth.NewSessionStore(d)
+		// The /events stream authenticates via the session the middleware
+		// stashes in the request context (WU-005). No DB ⇒ no sessions ⇒ no
+		// stream (nothing to authorise).
+		s.hub = sse.New(s.bus, sse.SessionUserResolver)
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -104,7 +119,31 @@ func (s *Server) setupRoutes() {
 	s.mux.Get("/healthz", s.handleHealthz)
 	s.mux.Get("/readyz", s.handleReadyz)
 	s.mux.Handle("/metrics", promhttp.Handler())
+	if s.hub != nil {
+		s.mux.Get("/events", s.hub.Handler)
+	}
 	web.Routes(s.mux)
+}
+
+// Bus returns the server's event bus. The action Dispatcher wires its
+// EventSink to it via event.NewSink(srv.Bus()); other subscribers (SSE hub —
+// already wired — notify, webhooks, search) attach here too.
+func (s *Server) Bus() *event.Bus { return s.bus }
+
+// EventSink returns an action.EventSink forwarding successful dispatches into
+// the bus. serve.go constructs no Dispatcher yet (WU-006 note: first action
+// registers in WU-104); this makes the wiring available for that WU without
+// changing the action seam.
+func (s *Server) EventSink() *event.SinkAdapter { return event.NewSink(s.bus) }
+
+// RunHubForTest pumps the SSE hub from the bus until ctx is cancelled. Start
+// does this over the server lifetime; tests that drive the server via
+// httptest.NewServer (which does not call Start) use this to activate the hub.
+// No-op when no hub is wired (no DB).
+func (s *Server) RunHubForTest(ctx context.Context) {
+	if s.hub != nil {
+		go s.hub.Run(ctx)
+	}
 }
 
 // RegisterForTest mounts a handler on a path for testing.
@@ -190,6 +229,15 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.w.WriteHeader(code)
 }
 
+// Flush forwards to the wrapped writer so SSE streaming (the /events handler)
+// can flush each frame through the logging middleware. If the underlying writer
+// is not a Flusher this is a no-op.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // recover middleware catches panics and returns 500.
 func (s *Server) recover(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -251,6 +299,13 @@ func (s *Server) Start(ctx context.Context) error {
 	addr := ln.Addr().String()
 	s.srv.Addr = addr
 
+	// Pump the SSE hub from the bus for the server's lifetime.
+	if s.hub != nil {
+		hubCtx, cancel := context.WithCancel(context.Background())
+		s.hubCtx = cancel
+		go s.hub.Run(hubCtx)
+	}
+
 	s.ready.Store(true)
 	slog.Info("server ready", "addr", addr)
 
@@ -273,6 +328,12 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) Shutdown() {
 	slog.Info("shutdown initiated")
 	s.ready.Store(false)
+
+	// Stop the SSE hub pump; live client connections end when the HTTP server
+	// drains below.
+	if s.hubCtx != nil {
+		s.hubCtx()
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
