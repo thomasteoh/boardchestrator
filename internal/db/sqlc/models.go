@@ -8,6 +8,26 @@ import (
 	"database/sql"
 )
 
+type AuditLog struct {
+	ID         string
+	OrgID      sql.NullString
+	ActorType  string
+	ActorID    string
+	Action     string
+	Subject    string
+	DetailJson string
+	Ip         string
+	CreatedAt  string
+}
+
+type IdempotencyKey struct {
+	Key        string
+	Actor      string
+	Action     string
+	ResultJson string
+	CreatedAt  string
+}
+
 type Identity struct {
 	ID       string
 	UserID   string

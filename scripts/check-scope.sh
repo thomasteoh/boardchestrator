@@ -8,9 +8,17 @@
 #
 # TENANT_TABLES is the authoritative list, maintained here. Grow it in the
 # same commit as any migration adding a tenant table (a table carrying
-# org_id per SPEC §5). The migration-0001 tables (users, identities,
-# sessions, platform_settings) are platform-scoped and deliberately absent,
-# so the list starts empty.
+# org_id per SPEC §5 that is scoped by org). The migration-0001 tables
+# (users, identities, sessions, platform_settings) are platform-scoped and
+# deliberately absent, so the list starts empty.
+#
+# Deliberately excluded (SPEC §5), do NOT add these:
+#   audit_log        — org_id is NULLABLE (platform/pre-org actions have no
+#                      org); rows are written by the dispatch audit hook, not
+#                      via org-scoped reads, so an org_id-required grep would
+#                      be wrong here.
+#   idempotency_keys — has no org_id at all; keyed globally by the
+#                      idempotency key.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
