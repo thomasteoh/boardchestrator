@@ -15,7 +15,7 @@ Initial scaffold: Go module, cmd/bc entry point with serve/backup subcommands, c
 Go module `github.com/thomasteoh/boardchestrator`; `cmd/bc` with `serve` (flag/env parse, hello handler) and stub `backup`; `internal/config` loading all `BC_*` vars with defaults + validation; slog JSON logger with level from env; Makefile (`gen`, `check`, `check-scope` [placeholder pass], `dev`, `build`); `.gitignore`; golangci-lint config.
 AC: `make check` green; `config.Load` unit tests cover defaults, overrides, invalid values; `bc serve` starts and logs a structured startup line. Manual: curl `/` returns placeholder.
 
-### WU-002 · HTTP server core — `ready`
+### WU-002 · HTTP server core — `done 2026-07-17 WU-002`
 Deps: 001.
 chi router; middleware: request-id, structured request log, recover; `/healthz`, `/readyz`; Prometheus `/metrics`; graceful shutdown on SIGTERM (drains, 10s cap).
 AC: handler tests for healthz/readyz/metrics; shutdown test asserts in-flight request completes; recover middleware turns panic into 500 + log, test proves it.

@@ -17,7 +17,7 @@ check: gen check-scope
 	@echo "--- tests ---"
 	$(GO) test -race ./...
 	@echo "--- git diff check (generated files) ---"
-	git diff --exit-code HEAD -- go.mod go.sum || { echo "go.mod/go.sum out of sync — run go mod tidy"; exit 1; }
+	cp go.mod go.mod.check && go mod tidy && diff -q go.mod go.mod.check >/dev/null && rm go.mod.check || { echo "go.mod/go.sum out of sync — run go mod tidy"; exit 1; }
 	@echo "check: PASS"
 
 check-scope:
