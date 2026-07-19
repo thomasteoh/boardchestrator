@@ -16,3 +16,9 @@ Workers append here per WORKER.md. Humans answer inline under **Answer:** and fl
 **Context:** SPEC §13 commits wiki edits with the user's GitHub token, falling back to the org bot token with `Co-authored-by`. Confirming this is acceptable rather than requiring a linked GitHub account to edit.
 **Recommendation:** keep the bot-token fallback (as spec'd).
 **Answer:** No bot-token fallback. Wiki edits always commit as the editing user's linked GitHub account, configured in personal settings (OAuth link or PAT). Users without a linked account get read-only wiki with a prompt to connect. *(resolved 2026-07-17)*
+
+## Q3 — SQLite driver choice (modernc.org/sqlite)
+
+**Context:** SPEC names SQLite, golang-migrate and sqlc but no Go driver. WU-003 had to pick one. The two mainstream options are mattn/go-sqlite3 (cgo) and modernc.org/sqlite (pure Go). WU-008 targets a distroless container and CI runs `go test -race ./...`; a cgo-free build keeps both static and simple, and golang-migrate's `sqlite` database driver targets modernc.
+**Options:** (a) modernc.org/sqlite — pure Go, static binary, slightly slower; (b) mattn/go-sqlite3 — cgo, marginally faster, complicates cross-compilation and distroless.
+**Recommendation:** (a). **Assumption taken (not blocking):** proceeded with modernc.org/sqlite v1.46.1 — the newest version whose dependency closure keeps `go 1.25` in go.mod under the pinned local Go 1.25 toolchain. Swapping is confined to `internal/db` if answered differently.

@@ -20,10 +20,11 @@ Deps: 001.
 chi router; middleware: request-id, structured request log, recover; `/healthz`, `/readyz`; Prometheus `/metrics`; graceful shutdown on SIGTERM (drains, 10s cap).
 AC: handler tests for healthz/readyz/metrics; shutdown test asserts in-flight request completes; recover middleware turns panic into 500 + log, test proves it.
 
-### WU-003 · SQLite + migrations + sqlc — `ready`
+### WU-003 · SQLite + migrations + sqlc — `done 2026-07-19 WU-003: SQLite open + embedded migrations + sqlc config + check-scope gate`
 Deps: 001.
 `internal/db`: open with WAL, foreign_keys, busy_timeout; golang-migrate embedded, run at startup; sqlc config; migration 0001: `users`, `identities`, `sessions`, `platform_settings`; `dbtest` helper (temp file DB, migrations applied); `check-scope` gate implemented (script scanning sqlc queries on tenant tables for org_id param — table list maintained in the script).
 AC: dbtest spins/uses/destroys a DB in tests; migration up+down round-trips; WAL confirmed via pragma test; check-scope fails on a deliberate fixture and passes on the repo.
+Notes: driver is modernc.org/sqlite v1.46.1 (pure Go — see Q3; newest version whose dep closure keeps `go 1.25` under the pinned local toolchain). sqlc pinned at v1.30.0 in the Makefile (`go run mod@version`; v1.31.x needs go ≥ 1.26); `make gen` skips sqlc until the first query file lands but the config was validated end-to-end with a throwaway query. Tenant-table list lives in `scripts/check-scope.sh` (empty for now — the 0001 tables are platform-scoped); grow it in the same commit as any migration adding an org_id table. check-scope self-tests against committed fixtures in `scripts/testdata/check-scope/` on every run. Manual: `bc serve` against a fresh DB logged "database ready", created all four tables + seeded platform_settings(id=1, bootstrap_done=0), healthz 200, clean shutdown.
 
 ### WU-004 · App shell (templ + HTMX, responsive) — `ready`
 Deps: 002.
