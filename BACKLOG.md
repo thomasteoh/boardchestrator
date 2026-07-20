@@ -87,7 +87,7 @@ Deps: 001.
 Multi-stage Dockerfile (distroless nonroot, /data volume); workflows: `lint.yml` (PR→main: golangci-lint, gofmt, templ gen check), `test.yml` (push→main: `go test -race ./...`), `release.yml` (tag `*-rc.*` matching `^\d+\.\d+\.\d+-rc\.\d+$`: build image, no push; tag `^\d+\.\d+\.\d+$`: buildx, push ghcr `X.Y.Z` + `latest`).
 AC: `docker build` succeeds locally; workflows lint clean (actionlint if available); tag-pattern filtering covered by workflow-level `if` conditions reviewed against both tag shapes. Manual: build run recorded in note below.
 
-### WU-009 · Landing page — `in-progress`
+### WU-009 · Landing page — `done 2026-07-20 WU-009: landing page`
 Deps: 004.
 Static landing at `/` for unauthenticated users: hero, feature sections (board, agents, wiki, MCP), animated flair honouring reduced-motion, screenshots placeholder slots, links to login + GitHub repo; OpenGraph/Twitter meta, favicon set.
 AC: handler test (unauthenticated `/` → landing; authenticated → app shell redirect); HTML validates (no unclosed tags via parser test); reduced-motion media query present. Manual: visual pass at 375/1280px.
