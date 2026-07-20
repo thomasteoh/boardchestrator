@@ -9,11 +9,17 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
 )
 
-// Routes mounts the browser-facing routes: embedded static assets and the
-// app shell.
-func Routes(r chi.Router) {
-	r.Handle("/static/*", StaticHandler())
-	r.Get("/app", handleAppShell)
+func handleRoot(w http.ResponseWriter, r *http.Request) {
+	s := shellData(r, "Home", "")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if auth.IsAuthenticated(r.Context()) {
+		http.Redirect(w, r, "/app", http.StatusSeeOther)
+		return
+	}
+	// Unauthenticated users see the landing page
+	if err := views.LandingPage(s).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
 }
 
 // shellData assembles the layout inputs for a request. The nonce and CSRF
@@ -40,4 +46,12 @@ func handleAppShell(w http.ResponseWriter, r *http.Request) {
 	if err := views.Home(s).Render(r.Context(), w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
+}
+
+// Routes mounts the browser-facing routes: embedded static assets and the
+// app shell.
+func Routes(r chi.Router) {
+	r.Handle("/static/*", StaticHandler())
+	r.Get("/", handleRoot)
+	r.Get("/app", handleAppShell)
 }

@@ -40,6 +40,12 @@ func CSRFFrom(ctx context.Context) string {
 	return ""
 }
 
+// IsAuthenticated returns true if a session is present in the context.
+func IsAuthenticated(ctx context.Context) bool {
+	_, ok := SessionFrom(ctx)
+	return ok
+}
+
 // nonceBytes is the CSP nonce size (128 bits, per WU-004's placeholder shape).
 const nonceBytes = 16
 
@@ -57,12 +63,6 @@ func newNonce() string {
 // the context (read by the web handler into Shell.Nonce), and sets a strict
 // nonce-based Content-Security-Policy plus the companion security headers
 // mandated by SPEC §15.
-//
-// The policy is nonce-based with default-src 'self' and no unsafe-eval /
-// unsafe-inline for scripts: the sole inline script (the theme bootstrap in
-// layout.templ) is nonced and thus allowed by 'nonce-<v>'. Styles: we allow
-// 'self' plus a per-request nonce; the layout carries no inline <style>, so
-// this is headroom, not a relaxation (any future inline style must be nonced).
 func CSP() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
