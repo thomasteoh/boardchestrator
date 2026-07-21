@@ -10,6 +10,7 @@ templ Base(s Shell) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ s.Title } · Boardchestrator</title>
+			<link rel="manifest" href="/manifest.json"/>
 			<link rel="stylesheet" href={ templ.URL(s.Assets.AppCSS) }/>
 			// Nonced theme bootstrap: applies the persisted theme before first
 			// paint so a dark-theme user never sees a light flash. The only
@@ -25,7 +26,7 @@ templ Base(s Shell) {
 				})();
 			</script>
 		</head>
-		<body hx-boost="true" x-data="shell" hx-headers={ hxHeaders(s.CSRF) }>
+		<body hx-boost="true" x-data="shell" hx-headers={ hxHeaders(s.CSRF) } data-sw-url={ templ.URL(s.Assets.SW) }>
 			<a class="bc-skip-link" href="#main">Skip to content</a>
 			<header class="bc-header">
 				<button
@@ -68,6 +69,16 @@ templ Base(s Shell) {
 			// execute before Alpine (defer preserves this order).
 			<script src={ templ.URL(s.Assets.AppJS) } nonce={ s.Nonce } defer></script>
 			<script src={ templ.URL(s.Assets.Alpine) } nonce={ s.Nonce } defer></script>
+			// PWA service worker registration. Reads the SW URL from
+			// data-sw-url on <body> so templ can interpolate it.
+			<script nonce={ s.Nonce }>
+				if ("serviceWorker" in navigator) {
+					var swURL = document.body.getAttribute("data-sw-url");
+					if (swURL) {
+						navigator.serviceWorker.register(swURL).catch(function () { /* registration failed — app still works */ });
+					}
+				}
+			</script>
 		</body>
 	</html>
 }
