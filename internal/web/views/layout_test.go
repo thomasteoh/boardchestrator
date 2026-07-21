@@ -27,6 +27,7 @@ func testShell() Shell {
 			HTMX:   "/static/vendor/htmx.min.abc123def456.js",
 			Alpine: "/static/vendor/alpine-csp.min.abc123def456.js",
 			AppJS:  "/static/app.abc123def456.js",
+			SW:     "/static/sw.abc123def456.js",
 		},
 	}
 }
@@ -55,6 +56,10 @@ func TestBaseLayoutRenders(t *testing.T) {
 		{"skip link", `class="bc-skip-link"`},
 		{"boards nav item", `href="/boards"`},
 		{"theme bootstrap reads storage", `localStorage.getItem("bc-theme")`},
+		{"manifest link", `rel="manifest"`},
+		{"manifest href", `href="/manifest.json"`},
+		{"sw data attribute on body", `data-sw-url="`},
+		{"sw registration", `navigator.serviceWorker.register`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

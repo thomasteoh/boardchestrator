@@ -92,7 +92,7 @@ Deps: 004.
 Static landing at `/` for unauthenticated users: hero, feature sections (board, agents, wiki, MCP), animated flair honouring reduced-motion, screenshots placeholder slots, links to login + GitHub repo; OpenGraph/Twitter meta, favicon set.
 AC: handler test (unauthenticated `/` → landing; authenticated → app shell redirect); HTML validates (no unclosed tags via parser test); reduced-motion media query present. Manual: visual pass at 375/1280px.
 
-### WU-010 · PWA — `ready`
+### WU-010 · PWA — `done 2026-07-21 WU-010: PWA (manifest, service worker, offline)`
 Deps: 004, 009.
 Manifest + icons; `sw.js` caching app shell + static (cache-first static, network-first documents, never API/SSE); offline fallback page with reconnect notice.
 AC: manifest served with correct MIME + linked from layout; sw excludes `/api`, `/events`, `/mcp` (unit test on route matcher logic extracted to testable JS-free Go route list or documented manual check). Manual: Lighthouse installable check.
