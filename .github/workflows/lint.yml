@@ -1,0 +1,24 @@
+name: lint
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go mod download
+      - name: templ generate check
+        run: |
+          go run github.com/a-h/templ/cmd/templ@v0.3.1001 generate
+          git diff --exit-code -- '*_templ.go' || { echo "templ output out of date"; exit 1; }
+      - name: gofmt
+        run: |
+          ! gofmt -d -l . | awk '{print} END{exit NR>0}'
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
