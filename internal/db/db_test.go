@@ -24,6 +24,7 @@ func openTemp(t *testing.T) *sql.DB {
 var migratedTables = []string{
 	"users", "identities", "sessions", "platform_settings",
 	"idempotency_keys", "audit_log",
+	"jobs",
 }
 
 func tableExists(t *testing.T, d *sql.DB, name string) bool {
