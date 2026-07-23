@@ -76,6 +76,12 @@ func Load() (*Config, error) {
 	if len(c.SessionSecret) < 32 {
 		return nil, fmt.Errorf("BC_SESSION_SECRET is required and must be at least 32 characters")
 	}
+	if c.GoogleClientID == "" {
+		return nil, fmt.Errorf("BC_GOOGLE_CLIENT_ID is required")
+	}
+	if c.GoogleClientSecret == "" {
+		return nil, fmt.Errorf("BC_GOOGLE_CLIENT_SECRET is required")
+	}
 
 	return c, nil
 }
