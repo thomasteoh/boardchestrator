@@ -101,7 +101,7 @@ AC: manifest served with correct MIME + linked from layout; sw excludes `/api`, 
 
 ## Phase 1 — Identity & Tenancy (branch `build/phase-1`)
 
-### WU-101 · Google OIDC login — `ready`
+### WU-101 · Google OIDC login — `done 2026-07-24 WU-101: Google OIDC login`
 Deps: 005.
 Discovery-based OIDC with PKCE, state, nonce; `/auth/google` + callback; user create/link by verified email; session issued + rotated; login rate limit.
 AC: httptest fake IdP covers happy path, bad state, bad nonce, unverified email; session cookie attributes asserted.
@@ -239,7 +239,7 @@ AC: fuzz corpora committed; query-count tests for board render ≤ fixed budget;
 
 ## Phase 3 — Agent Harness (branch `build/phase-3`)
 
-### WU-301 · Job queue — `ready`
+### WU-301 · Job queue — `done 2026-07-24 WU-301: Job queue`
 Deps: 006.
 `jobs` migration; claim/backoff/max-attempts per SPEC §10; worker pool with graceful drain; dead-job status + requeue action; queue depth/age metrics.
 AC: claim contention test (n workers, no double-claim); backoff schedule test; drain-on-shutdown test.
