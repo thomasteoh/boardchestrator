@@ -19,6 +19,8 @@
 #                      be wrong here.
 #   idempotency_keys — has no org_id at all; keyed globally by the
 #                      idempotency key.
+#   jobs             — agent queue infrastructure; org_id lives in payload,
+#                      not as a table column. Scoped at the application layer.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
