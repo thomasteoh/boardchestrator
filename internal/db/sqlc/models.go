@@ -37,6 +37,19 @@ type Identity struct {
 	TokenEnc []byte
 }
 
+type Job struct {
+	ID          string
+	Kind        string
+	PayloadJson string
+	RunAt       string
+	Attempts    int64
+	MaxAttempts int64
+	Status      string
+	LockedBy    sql.NullString
+	LockedAt    sql.NullString
+	CreatedAt   string
+}
+
 type PlatformSetting struct {
 	ID            int64
 	Context       string

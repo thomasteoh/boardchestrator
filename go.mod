@@ -1,15 +1,17 @@
 module github.com/thomasteoh/boardchestrator
 
-go 1.25
+go 1.25.0
 
 require (
 	github.com/a-h/templ v0.3.1001
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
+	golang.org/x/oauth2 v0.36.0
 	modernc.org/sqlite v1.46.1
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.8.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
