@@ -23,6 +23,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/event"
+	"github.com/thomasteoh/boardchestrator/internal/job"
 	"github.com/thomasteoh/boardchestrator/internal/sse"
 	"github.com/thomasteoh/boardchestrator/internal/web"
 )
@@ -66,6 +67,10 @@ type Server struct {
 	// session store exists (it needs the authenticated user).
 	hub    *sse.Hub
 	hubCtx context.CancelFunc
+
+	// pool runs background job workers. Created in Start when DB is wired.
+	pool *job.Pool
+	db   *sql.DB
 }
 
 // New creates a configured server with routes and middleware, with no
@@ -86,6 +91,7 @@ func NewWithDB(cfg *config.Config, d *sql.DB) *Server {
 		// stashes in the request context (WU-005). No DB ⇒ no sessions ⇒ no
 		// stream (nothing to authorise).
 		s.hub = sse.New(s.bus, sse.SessionUserResolver)
+		s.db = d
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -306,6 +312,18 @@ func (s *Server) Start(ctx context.Context) error {
 		go s.hub.Run(hubCtx)
 	}
 
+	// Start the job worker pool.
+	if s.db != nil {
+		store := job.NewJobStore(s.db)
+		s.pool = job.NewPool(ctx, job.PoolConfig{
+			Store:        store,
+			Handler:      job.NoopHandler,
+			MaxWorkers:   4,
+			PollInterval: 5 * time.Second,
+			ClaimTimeout: 30 * time.Second,
+		})
+	}
+
 	s.ready.Store(true)
 	slog.Info("server ready", "addr", addr)
 
@@ -333,6 +351,11 @@ func (s *Server) Shutdown() {
 	// drains below.
 	if s.hubCtx != nil {
 		s.hubCtx()
+	}
+
+	// Stop the job worker pool.
+	if s.pool != nil {
+		s.pool.Stop()
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
