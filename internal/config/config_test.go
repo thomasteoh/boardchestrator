@@ -10,6 +10,9 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	os.Clearenv()
 	os.Setenv("BC_SECRET_KEY", "test-secret-key")
+	os.Setenv("BC_SESSION_SECRET", "a-really-long-session-secret-that-is-at-least-thirty-two-chars")
+	os.Setenv("BC_GOOGLE_CLIENT_ID", "google-client-id")
+	os.Setenv("BC_GOOGLE_CLIENT_SECRET", "google-client-secret")
 	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("Load() returned error: %v", err)
@@ -37,6 +40,9 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadOverrides(t *testing.T) {
 	os.Clearenv()
 	os.Setenv("BC_SECRET_KEY", "test-secret-key")
+	os.Setenv("BC_SESSION_SECRET", "session-secret-for-test-minimum-thirty-two-chars")
+	os.Setenv("BC_GOOGLE_CLIENT_ID", "google-client-id")
+	os.Setenv("BC_GOOGLE_CLIENT_SECRET", "google-client-secret")
 	os.Setenv("BC_DB_PATH", "/data/custom.db")
 	os.Setenv("BC_DATA_DIR", "/data")
 	os.Setenv("BC_BASE_URL", "https://board.example.com")
@@ -89,6 +95,9 @@ func TestLoadMissingSecretKey(t *testing.T) {
 func TestLoadAdminEmails(t *testing.T) {
 	os.Clearenv()
 	os.Setenv("BC_SECRET_KEY", "test-secret-key")
+	os.Setenv("BC_SESSION_SECRET", "a-really-long-session-secret-that-is-at-least-thirty-two-chars")
+	os.Setenv("BC_GOOGLE_CLIENT_ID", "google-client-id")
+	os.Setenv("BC_GOOGLE_CLIENT_SECRET", "google-client-secret")
 	os.Setenv("BC_ADMIN_EMAILS", "alice@example.com,bob@example.com")
 	cfg, err := config.Load()
 	if err != nil {
@@ -102,5 +111,50 @@ func TestLoadAdminEmails(t *testing.T) {
 	}
 	if cfg.AdminEmails[1] != "bob@example.com" {
 		t.Errorf("AdminEmails[1] = %q", cfg.AdminEmails[1])
+	}
+}
+
+func TestLoadRequiresSessionSecret(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("BC_SECRET_KEY", "test-secret-key")
+	os.Setenv("BC_GOOGLE_CLIENT_ID", "google-client-id")
+	os.Setenv("BC_GOOGLE_CLIENT_SECRET", "google-client-secret")
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("Load() should error when BC_SESSION_SECRET is missing")
+	}
+}
+
+func TestLoadSessionSecretTooShort(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("BC_SECRET_KEY", "test-secret-key")
+	os.Setenv("BC_SESSION_SECRET", "short")
+	os.Setenv("BC_GOOGLE_CLIENT_ID", "google-client-id")
+	os.Setenv("BC_GOOGLE_CLIENT_SECRET", "google-client-secret")
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("Load() should error when BC_SESSION_SECRET is too short")
+	}
+}
+
+func TestLoadRequiresGoogleClientID(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("BC_SECRET_KEY", "test-secret-key")
+	os.Setenv("BC_SESSION_SECRET", "a-really-long-session-secret-that-is-at-least-thirty-two-chars")
+	os.Setenv("BC_GOOGLE_CLIENT_SECRET", "google-client-secret")
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("Load() should error when BC_GOOGLE_CLIENT_ID is missing")
+	}
+}
+
+func TestLoadRequiresGoogleClientSecret(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("BC_SECRET_KEY", "test-secret-key")
+	os.Setenv("BC_SESSION_SECRET", "a-really-long-session-secret-that-is-at-least-thirty-two-chars")
+	os.Setenv("BC_GOOGLE_CLIENT_ID", "google-client-id")
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("Load() should error when BC_GOOGLE_CLIENT_SECRET is missing")
 	}
 }
