@@ -106,12 +106,12 @@ Deps: 005.
 Discovery-based OIDC with PKCE, state, nonce; `/auth/google` + callback; user create/link by verified email; session issued + rotated; login rate limit.
 AC: httptest fake IdP covers happy path, bad state, bad nonce, unverified email; session cookie attributes asserted.
 
-### WU-102 · GitHub OAuth login — `ready`
+### WU-102 · GitHub OAuth login — `done 2026-07-24 WU-102: GitHub OAuth login`
 Deps: 101.
 GitHub flow with state; email fetch (primary verified); identity link to existing user by email; stores token_enc for later GitHub features.
 AC: fake GitHub server tests: new user, link-to-existing, missing verified email → friendly error.
 
-### WU-103 · Bootstrap gating — `ready`
+### WU-103 · Bootstrap gating — `done 2026-07-24 WU-103: Bootstrap gating`
 Deps: 101.
 Per SPEC §7: `BC_ADMIN_EMAILS` / `BC_BOOTSTRAP_TOKEN` gate; token logged while unclaimed; pre-bootstrap non-admin logins rejected with page; `bootstrap_done` flip is atomic.
 AC: tests for all three paths (email match, token, rejected); concurrent first-login race yields exactly one admin (tx test).
