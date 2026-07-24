@@ -133,13 +133,20 @@ func (s *Server) setupRoutes() {
 			ClientID:     s.cfg.GoogleClientID,
 			ClientSecret: s.cfg.GoogleClientSecret,
 			BaseURL:      s.cfg.BaseURL,
+		}, auth.GitHubConfig{
+			ClientID:     s.cfg.GitHubClientID,
+			ClientSecret: s.cfg.GitHubClientSecret,
+			BaseURL:      s.cfg.BaseURL,
 		}, s.sessions, s.db, auth.SessionConfig{
 			Store:    s.sessions,
 			Secret:   s.cfg.SessionSecret,
 			Insecure: true,
 		})
+		ah.SetBootstrapConfig(s.cfg.AdminEmails, s.cfg.BootstrapToken)
 		s.mux.Get("/auth/google", ah.HandleGoogleLogin)
 		s.mux.Get("/auth/google/callback", ah.HandleGoogleCallback)
+		s.mux.Get("/auth/github", ah.HandleGitHubLogin)
+		s.mux.Get("/auth/github/callback", ah.HandleGitHubCallback)
 	}
 }
 
