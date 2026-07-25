@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
+	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/event"
 	"github.com/thomasteoh/boardchestrator/internal/job"
@@ -70,6 +71,8 @@ type Server struct {
 	hubCtx context.CancelFunc
 	// pool runs background job workers. Created in Start when DB is wired.
 	pool *job.Pool
+	// disp is the action dispatcher. Created in Start when DB is wired.
+	disp *action.Dispatcher
 }
 
 // New creates a configured server with routes and middleware, with no
@@ -337,10 +340,18 @@ func (s *Server) Start(ctx context.Context) error {
 		s.pool = job.NewPool(ctx, job.PoolConfig{
 			Store:        store,
 			Handler:      job.NoopHandler,
-			MaxWorkers:   4,
+			MaxWorkers:   s.cfg.AgentWorkers,
 			PollInterval: 5 * time.Second,
 			ClaimTimeout: 30 * time.Second,
 		})
+	}
+
+	// Create the action dispatcher with DB-backed stores and scope resolver.
+	if s.db != nil {
+		s.disp = action.New(s.db,
+			action.WithScopeResolver(action.NewDBScopeResolver(s.db)),
+			action.WithEventSink(s.EventSink()),
+		)
 	}
 
 	s.ready.Store(true)

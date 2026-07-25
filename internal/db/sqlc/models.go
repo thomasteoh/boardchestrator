@@ -50,11 +50,61 @@ type Job struct {
 	CreatedAt   string
 }
 
+type Membership struct {
+	ID           string
+	OrgID        string
+	UserID       string
+	ActorType    string
+	ResourceType string
+	ResourceID   string
+	RoleID       sql.NullString
+	CreatedAt    string
+}
+
+type Org struct {
+	ID         string
+	Name       string
+	Slug       string
+	Context    string
+	Visibility string
+	CreatedAt  string
+}
+
+type OrgSecret struct {
+	ID         string
+	OrgID      string
+	Key        string
+	Ciphertext string
+	CreatedAt  string
+}
+
 type PlatformSetting struct {
 	ID            int64
 	Context       string
 	BootstrapDone int64
 	SettingsJson  string
+}
+
+type Project struct {
+	ID          string
+	OrgID       string
+	TeamID      sql.NullString
+	Name        string
+	Key         string
+	Context     string
+	Visibility  string
+	Archived    int64
+	NextTaskNum int64
+	CreatedAt   string
+}
+
+type Role struct {
+	ID         string
+	OrgID      string
+	Name       string
+	IsSystem   int64
+	GrantsJson string
+	CreatedAt  string
 }
 
 type Session struct {
@@ -65,6 +115,16 @@ type Session struct {
 	CreatedAt  string
 	LastSeenAt string
 	ExpiresAt  string
+}
+
+type Team struct {
+	ID         string
+	OrgID      string
+	Name       string
+	Slug       string
+	Context    string
+	Visibility string
+	CreatedAt  string
 }
 
 type User struct {
