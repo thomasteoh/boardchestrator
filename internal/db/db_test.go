@@ -20,10 +20,12 @@ func openTemp(t *testing.T) *sql.DB {
 }
 
 // migratedTables are the tables the embedded migrations must create:
-// 0001 (identity), 0002 (action-dispatch infra), and 0003 (job queue).
+// 0001 (identity), 0002 (action-dispatch infra), 0003 (job queue),
+// and 0004 (orgs/teams/projects/roles/memberships).
 var migratedTables = []string{
 	"users", "identities", "sessions", "platform_settings",
 	"idempotency_keys", "audit_log", "jobs",
+	"orgs", "org_secrets", "teams", "projects", "roles", "memberships",
 }
 
 func tableExists(t *testing.T, d *sql.DB, name string) bool {

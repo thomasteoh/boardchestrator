@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/db"
 	"github.com/thomasteoh/boardchestrator/internal/server"
 )
 
 func serve(cfg *config.Config) {
+	action.RegisterOrgActions()
 	if err := runServe(cfg); err != nil {
 		slog.Error("serve error", "error", err)
 		os.Exit(1)
