@@ -28,13 +28,13 @@ func NewGitHubProvider(cfg GitHubConfig) *GitHubProvider {
 
 // GitHubUser is the GitHub API user object returned by /user.
 type GitHubUser struct {
-	ID      int64  `json:"id"`
-	Login   string `json:"login"`
-	Email   string `json:"email"`
-	Name    string `json:"name"`
-	Avatar  string `json:"avatar_url"`
-	Primary bool   `json:"primary"` // from /emails endpoint
-	Verified bool `json:"verified"`
+	ID       int64  `json:"id"`
+	Login    string `json:"login"`
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Avatar   string `json:"avatar_url"`
+	Primary  bool   `json:"primary"` // from /emails endpoint
+	Verified bool   `json:"verified"`
 }
 
 // AuthURL returns the GitHub OAuth URL and a state nonce.
