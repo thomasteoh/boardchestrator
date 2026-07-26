@@ -116,7 +116,7 @@ Deps: 101.
 Per SPEC §7: `BC_ADMIN_EMAILS` / `BC_BOOTSTRAP_TOKEN` gate; token logged while unclaimed; pre-bootstrap non-admin logins rejected with page; `bootstrap_done` flip is atomic.
 AC: tests for all three paths (email match, token, rejected); concurrent first-login race yields exactly one admin (tx test).
 
-### WU-104 · Orgs, teams, projects — `ready`
+### WU-104 · Orgs, teams, projects — `done 2026-07-26 WU-104: orgs teams projects`
 Deps: 006, 103.
 Migrations `orgs, org_secrets, teams, projects, roles, memberships`; actions `org.create/update`, `team.create/update`, `project.create/update/archive` (project KEY validation `^[A-Z][A-Z0-9]{1,9}$`, next_task_num=1); context fields editable; encrypted org_secrets helpers; sqlc queries all org-scoped (check-scope now enforcing for these tables).
 AC: action tests incl. duplicate slug/key rejection; secrets round-trip encrypt/decrypt; check-scope covers new tables.
