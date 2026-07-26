@@ -121,7 +121,7 @@ Deps: 006, 103.
 Migrations `orgs, org_secrets, teams, projects, roles, memberships`; actions `org.create/update`, `team.create/update`, `project.create/update/archive` (project KEY validation `^[A-Z][A-Z0-9]{1,9}$`, next_task_num=1); context fields editable; encrypted org_secrets helpers; sqlc queries all org-scoped (check-scope now enforcing for these tables).
 AC: action tests incl. duplicate slug/key rejection; secrets round-trip encrypt/decrypt; check-scope covers new tables.
 
-### WU-105 · Permission engine + roles — `ready`
+### WU-105 · Permission engine + roles — `done 2026-07-26 WU-105: permission engine + role/membership actions + deny-by-default wiring`
 Deps: 104.
 `internal/perm` per SPEC §6; seed system roles (Org Owner, Team Admin, Member, Viewer, Guest) as migration data; actions `role.create/update/assign`; copy-on-edit for system roles; dispatch perm hook wired to engine (replacing stub).
 AC: resolution tests: org-level grant applies to child project; additive union; wildcard `task.*`; agent role∩skills intersection (skills stubbed as fixture); deny-by-default; copy-on-edit leaves system role untouched.

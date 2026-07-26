@@ -60,3 +60,49 @@ WHERE id = ? AND org_id = ?;
 SELECT id, org_id, team_id, name, key, context, visibility, archived, next_task_num, created_at
 FROM projects
 WHERE org_id = ? AND key = ?;
+
+-- name: FindRoleByID :one
+SELECT id, org_id, name, is_system, grants_json, created_at
+FROM roles
+WHERE id = ?;
+
+-- name: FindRoleByName :one
+SELECT id, org_id, name, is_system, grants_json, created_at
+FROM roles
+WHERE org_id = ? AND name = ?;
+
+-- name: ListRolesByOrg :many
+SELECT id, org_id, name, is_system, grants_json, created_at
+FROM roles
+WHERE org_id = ? OR org_id = '00000000000000000000000000000000'
+ORDER BY is_system DESC, name ASC;
+
+-- name: CreateRole :one
+INSERT INTO roles (id, org_id, name, is_system, grants_json)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, org_id, name, is_system, grants_json, created_at;
+
+-- name: UpdateRoleGrants :one
+UPDATE roles SET grants_json = ?
+WHERE id = ? AND org_id = ?
+RETURNING id, org_id, name, is_system, grants_json, created_at;
+
+-- name: FindMemberships :many
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+FROM memberships
+WHERE org_id = ? AND actor_type = ? AND actor_id = ?
+  AND resource_type = ? AND resource_id = ?;
+
+-- name: FindMembershipsForActor :many
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+FROM memberships
+WHERE org_id = ? AND actor_type = ? AND actor_id = ?;
+
+-- name: CreateMembership :one
+INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id, role_id)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at;
+
+-- name: DeleteMembership :exec
+DELETE FROM memberships
+WHERE id = ? AND org_id = ?;

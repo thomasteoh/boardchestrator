@@ -67,7 +67,10 @@ func (h *OAuthHandler) bootstrapGate(ctx context.Context, w http.ResponseWriter,
 		return true
 	}
 
-	// Token-based bootstrap is handled by WU-103's dedicated token claim page.
+	// Token-based bootstrap is triggered by a query param or header
+	// passed alongside the OAuth flow. For simplicity, any pre-bootstrap
+	// login with a matching email is allowed if the token was already
+	// claimed. The actual token claim path is WU-103's token page.
 	// Here we just check admin email membership.
 
 	for _, ae := range h.AdminEmails {

@@ -25,6 +25,46 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 	return err
 }
 
+const createMembership = `-- name: CreateMembership :one
+INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id, role_id)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+`
+
+type CreateMembershipParams struct {
+	ID           string
+	OrgID        string
+	ActorID      string
+	ActorType    string
+	ResourceType string
+	ResourceID   string
+	RoleID       sql.NullString
+}
+
+func (q *Queries) CreateMembership(ctx context.Context, arg CreateMembershipParams) (Membership, error) {
+	row := q.db.QueryRowContext(ctx, createMembership,
+		arg.ID,
+		arg.OrgID,
+		arg.ActorID,
+		arg.ActorType,
+		arg.ResourceType,
+		arg.ResourceID,
+		arg.RoleID,
+	)
+	var i Membership
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.ActorID,
+		&i.ActorType,
+		&i.ResourceType,
+		&i.ResourceID,
+		&i.RoleID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createOrg = `-- name: CreateOrg :one
 INSERT INTO orgs (id, name, slug, context, visibility)
 VALUES (?, ?, ?, ?, ?)
@@ -101,6 +141,40 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 	return i, err
 }
 
+const createRole = `-- name: CreateRole :one
+INSERT INTO roles (id, org_id, name, is_system, grants_json)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, org_id, name, is_system, grants_json, created_at
+`
+
+type CreateRoleParams struct {
+	ID         string
+	OrgID      string
+	Name       string
+	IsSystem   int64
+	GrantsJson string
+}
+
+func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error) {
+	row := q.db.QueryRowContext(ctx, createRole,
+		arg.ID,
+		arg.OrgID,
+		arg.Name,
+		arg.IsSystem,
+		arg.GrantsJson,
+	)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Name,
+		&i.IsSystem,
+		&i.GrantsJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createTeam = `-- name: CreateTeam :one
 INSERT INTO teams (id, org_id, name, slug, context, visibility)
 VALUES (?, ?, ?, ?, ?, ?)
@@ -136,6 +210,118 @@ func (q *Queries) CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, e
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const deleteMembership = `-- name: DeleteMembership :exec
+DELETE FROM memberships
+WHERE id = ? AND org_id = ?
+`
+
+type DeleteMembershipParams struct {
+	ID    string
+	OrgID string
+}
+
+func (q *Queries) DeleteMembership(ctx context.Context, arg DeleteMembershipParams) error {
+	_, err := q.db.ExecContext(ctx, deleteMembership, arg.ID, arg.OrgID)
+	return err
+}
+
+const findMemberships = `-- name: FindMemberships :many
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+FROM memberships
+WHERE org_id = ? AND actor_type = ? AND actor_id = ?
+  AND resource_type = ? AND resource_id = ?
+`
+
+type FindMembershipsParams struct {
+	OrgID        string
+	ActorType    string
+	ActorID      string
+	ResourceType string
+	ResourceID   string
+}
+
+func (q *Queries) FindMemberships(ctx context.Context, arg FindMembershipsParams) ([]Membership, error) {
+	rows, err := q.db.QueryContext(ctx, findMemberships,
+		arg.OrgID,
+		arg.ActorType,
+		arg.ActorID,
+		arg.ResourceType,
+		arg.ResourceID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Membership
+	for rows.Next() {
+		var i Membership
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.ActorID,
+			&i.ActorType,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.RoleID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const findMembershipsForActor = `-- name: FindMembershipsForActor :many
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+FROM memberships
+WHERE org_id = ? AND actor_type = ? AND actor_id = ?
+`
+
+type FindMembershipsForActorParams struct {
+	OrgID     string
+	ActorType string
+	ActorID   string
+}
+
+func (q *Queries) FindMembershipsForActor(ctx context.Context, arg FindMembershipsForActorParams) ([]Membership, error) {
+	rows, err := q.db.QueryContext(ctx, findMembershipsForActor, arg.OrgID, arg.ActorType, arg.ActorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Membership
+	for rows.Next() {
+		var i Membership
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.ActorID,
+			&i.ActorType,
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.RoleID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const findOrgByID = `-- name: FindOrgByID :one
@@ -236,6 +422,51 @@ func (q *Queries) FindProjectByKey(ctx context.Context, arg FindProjectByKeyPara
 	return i, err
 }
 
+const findRoleByID = `-- name: FindRoleByID :one
+SELECT id, org_id, name, is_system, grants_json, created_at
+FROM roles
+WHERE id = ?
+`
+
+func (q *Queries) FindRoleByID(ctx context.Context, id string) (Role, error) {
+	row := q.db.QueryRowContext(ctx, findRoleByID, id)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Name,
+		&i.IsSystem,
+		&i.GrantsJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const findRoleByName = `-- name: FindRoleByName :one
+SELECT id, org_id, name, is_system, grants_json, created_at
+FROM roles
+WHERE org_id = ? AND name = ?
+`
+
+type FindRoleByNameParams struct {
+	OrgID string
+	Name  string
+}
+
+func (q *Queries) FindRoleByName(ctx context.Context, arg FindRoleByNameParams) (Role, error) {
+	row := q.db.QueryRowContext(ctx, findRoleByName, arg.OrgID, arg.Name)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Name,
+		&i.IsSystem,
+		&i.GrantsJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const findTeamByID = `-- name: FindTeamByID :one
 SELECT id, org_id, name, slug, context, visibility, created_at
 FROM teams
@@ -260,6 +491,43 @@ func (q *Queries) FindTeamByID(ctx context.Context, arg FindTeamByIDParams) (Tea
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listRolesByOrg = `-- name: ListRolesByOrg :many
+SELECT id, org_id, name, is_system, grants_json, created_at
+FROM roles
+WHERE org_id = ? OR org_id = '00000000000000000000000000000000'
+ORDER BY is_system DESC, name ASC
+`
+
+func (q *Queries) ListRolesByOrg(ctx context.Context, orgID string) ([]Role, error) {
+	rows, err := q.db.QueryContext(ctx, listRolesByOrg, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Role
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Name,
+			&i.IsSystem,
+			&i.GrantsJson,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const unarchiveProject = `-- name: UnarchiveProject :exec
@@ -342,6 +610,32 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.Visibility,
 		&i.Archived,
 		&i.NextTaskNum,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateRoleGrants = `-- name: UpdateRoleGrants :one
+UPDATE roles SET grants_json = ?
+WHERE id = ? AND org_id = ?
+RETURNING id, org_id, name, is_system, grants_json, created_at
+`
+
+type UpdateRoleGrantsParams struct {
+	GrantsJson string
+	ID         string
+	OrgID      string
+}
+
+func (q *Queries) UpdateRoleGrants(ctx context.Context, arg UpdateRoleGrantsParams) (Role, error) {
+	row := q.db.QueryRowContext(ctx, updateRoleGrants, arg.GrantsJson, arg.ID, arg.OrgID)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Name,
+		&i.IsSystem,
+		&i.GrantsJson,
 		&i.CreatedAt,
 	)
 	return i, err
