@@ -1,0 +1,32 @@
+
+# ── Version control ─────────────────────────────────────────────────
+.git/
+
+# ── CI / Makefile (already in image or not needed at build time) ────
+.github/
+Makefile
+.golangci.yml
+
+# ── Docs (not needed at build time) ─────────────────────────────────
+BACKLOG.md
+PRD.md
+QUESTIONS.md
+SPEC.md
+WORKER.md
+scripts/
+
+# ── Data / secrets ──────────────────────────────────────────────────
+data/
+bc.db*
+.env
+
+# ── Build output ────────────────────────────────────────────────────
+/bc
+public/
+
+# ── IDE / OS ────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

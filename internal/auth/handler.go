@@ -14,14 +14,14 @@ import (
 
 // OAuthHandler provides the HTTP handlers for Google OIDC login.
 type OAuthHandler struct {
-	Provider      *OIDCProvider
-	GitHub        *GitHubProvider
-	Store         *SessionStore
-	Identity      IdentityStore
-	Bootstrap     BootstrapChecker
-	BaseURL       string
-	SessionCfg    SessionConfig
-	AdminEmails   []string
+	Provider       *OIDCProvider
+	GitHub         *GitHubProvider
+	Store          *SessionStore
+	Identity       IdentityStore
+	Bootstrap      BootstrapChecker
+	BaseURL        string
+	SessionCfg     SessionConfig
+	AdminEmails    []string
 	BootstrapToken string
 
 	// stateMap stores pending OAuth state nonces (keyed by state, value is
@@ -38,14 +38,14 @@ type stateEntry struct {
 // NewOAuthHandler builds the handler set with Google and GitHub providers.
 func NewOAuthHandler(cfg OIDCConfig, ghCfg GitHubConfig, store *SessionStore, d *sql.DB, sc SessionConfig) *OAuthHandler {
 	return &OAuthHandler{
-		Provider:       NewOIDCProvider(cfg),
-		GitHub:         NewGitHubProvider(ghCfg),
-		Store:          store,
-		Identity:       NewDBIdentityStore(d),
-		Bootstrap:      NewDBBootstrapStore(d),
-		BaseURL:        cfg.BaseURL,
-		SessionCfg:     sc,
-		stateMap:       make(map[string]stateEntry),
+		Provider:   NewOIDCProvider(cfg),
+		GitHub:     NewGitHubProvider(ghCfg),
+		Store:      store,
+		Identity:   NewDBIdentityStore(d),
+		Bootstrap:  NewDBBootstrapStore(d),
+		BaseURL:    cfg.BaseURL,
+		SessionCfg: sc,
+		stateMap:   make(map[string]stateEntry),
 	}
 }
 
@@ -67,14 +67,8 @@ func (h *OAuthHandler) bootstrapGate(ctx context.Context, w http.ResponseWriter,
 		return true
 	}
 
-	// If a bootstrap token is set and matches, allow.
-	if h.BootstrapToken != "" {
-		// Token-based bootstrap is triggered by a query param or header
-		// passed alongside the OAuth flow. For simplicity, any pre-bootstrap
-		// login with a matching email is allowed if the token was already
-		// claimed. The actual token claim path is WU-103's token page.
-		// Here we just check admin email membership.
-	}
+	// Token-based bootstrap is handled by WU-103's dedicated token claim page.
+	// Here we just check admin email membership.
 
 	for _, ae := range h.AdminEmails {
 		if ae == email {
