@@ -20,6 +20,25 @@ type AuditLog struct {
 	CreatedAt  string
 }
 
+type Comment struct {
+	ID        string
+	TaskID    string
+	ProjectID string
+	AuthorID  string
+	Body      string
+	CreatedAt string
+	UpdatedAt string
+}
+
+type CustomFieldDef struct {
+	ID         string
+	OrgID      string
+	Name       string
+	Kind       string
+	ConfigJson string
+	CreatedAt  string
+}
+
 type IdempotencyKey struct {
 	Key        string
 	Actor      string
@@ -61,6 +80,15 @@ type Job struct {
 	Status      string
 	LockedBy    sql.NullString
 	LockedAt    sql.NullString
+	CreatedAt   string
+}
+
+type Label struct {
+	ID          string
+	OrgID       string
+	Name        string
+	Color       string
+	Description string
 	CreatedAt   string
 }
 
@@ -129,6 +157,68 @@ type Session struct {
 	CreatedAt  string
 	LastSeenAt string
 	ExpiresAt  string
+}
+
+type Task struct {
+	ID          string
+	ProjectID   string
+	Title       string
+	Description string
+	Key         string
+	KeyNum      int64
+	Points      int64
+	Priority    int64
+	Status      string
+	DueAt       string
+	SortOrder   float64
+	Archived    int64
+	CreatedAt   string
+	UpdatedAt   string
+}
+
+type TaskActivity struct {
+	ID         string
+	TaskID     string
+	ProjectID  string
+	ActorID    string
+	ActorType  string
+	Action     string
+	DetailJson string
+	CreatedAt  string
+}
+
+type TaskAssignee struct {
+	TaskID    string
+	ProjectID string
+	UserID    string
+}
+
+type TaskCustomFieldValue struct {
+	TaskID     string
+	ProjectID  string
+	FieldDefID string
+	Value      string
+}
+
+type TaskLabel struct {
+	TaskID    string
+	ProjectID string
+	LabelID   string
+}
+
+type TaskRelation struct {
+	ID            string
+	TaskID        string
+	RelatedTaskID string
+	RelationType  string
+	ProjectID     string
+	CreatedAt     string
+}
+
+type TaskWatcher struct {
+	TaskID    string
+	ProjectID string
+	UserID    string
 }
 
 type Team struct {
