@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS task_custom_field_values;
+DROP TABLE IF EXISTS custom_field_defs;
+DROP TABLE IF EXISTS task_activity;
+DROP TABLE IF EXISTS comments;
+DROP TABLE IF EXISTS task_relations;
+DROP TABLE IF EXISTS task_labels;
+DROP TABLE IF EXISTS labels;
+DROP TABLE IF EXISTS task_watchers;
+DROP TABLE IF EXISTS task_assignees;
+DROP INDEX IF EXISTS idx_tasks_project_key;
+DROP INDEX IF EXISTS idx_tasks_status;
+DROP TABLE IF EXISTS tasks;
