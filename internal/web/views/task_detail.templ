@@ -1,0 +1,240 @@
+package views
+
+import (
+	"fmt"
+)
+
+// TaskDetailPage is the full task detail view with sidebar, comments, activity.
+templ TaskDetailPage(s Shell, task TaskDetail, comments []CommentRow, activity []ActivityRow) {
+	@Base(s) {
+		<div class="bc-task-detail" id="task-{ task.ID }">
+			<div class="bc-task-detail-main">
+				<h2 class="bc-task-key">{ task.Key }</h2>
+				<h3 class="bc-task-title">{ task.Title }</h3>
+
+				<div class="bc-task-description">
+					<div
+						id="desc-view"
+						class="bc-markdown"
+						x-data="markdownPreview('desc-view', 'desc-edit', '/api/action/task.update')"
+					>
+						{ task.Description }
+					</div>
+					<textarea
+						id="desc-edit"
+						class="bc-input bc-textarea bc-hidden"
+						rows="6"
+						x-data
+					>{ task.Description }</textarea>
+				</div>
+
+				<div class="bc-task-comments">
+					<h3>Comments</h3>
+					<div id="comments-list">
+						for _, c := range comments {
+							<div class="bc-comment" id="comment-{ c.ID }">
+								<div class="bc-comment-meta">
+									<span class="bc-comment-author">{ c.Author }</span>
+									<span class="bc-comment-date">{ c.CreatedAt }</span>
+								</div>
+								<div class="bc-comment-body bc-markdown">{ c.Body }</div>
+								<div class="bc-comment-actions">
+									if c.CanEdit {
+										<button
+											class="bc-btn bc-btn-sm"
+											hx-get="/api/comment/{ c.ID }/edit"
+											hx-target="#comment-{ c.ID }"
+										>Edit</button>
+										<button
+											class="bc-btn bc-btn-sm bc-btn-danger"
+											hx-post="/api/action/comment.delete"
+											hx-headers={ hxHeaders(s.CSRF) }
+											hx-vals={ templ.URL(`{"id":"`+c.ID+`","task_id":"`+task.ID+`","project_id":"`+task.ProjectID+`"}`,) }
+											hx-target="#comments-list"
+											hx-swap="outerHTML"
+										>Delete</button>
+									}
+								</div>
+							</div>
+						}
+					</div>
+					<form
+						hx-post="/api/action/comment.create"
+						hx-headers={ hxHeaders(s.CSRF) }
+						hx-target="#comments-list"
+						hx-swap="afterbegin"
+						class="bc-comment-form"
+					>
+						<input type="hidden" name="task_id" value={ task.ID }/>
+						<input type="hidden" name="project_id" value={ task.ProjectID }/>
+						<textarea name="body" class="bc-input bc-textarea" rows="3" placeholder="Add a comment…"></textarea>
+						<button type="submit" class="bc-btn bc-btn-primary bc-btn-sm">Comment</button>
+					</form>
+				</div>
+
+				<div class="bc-task-activity">
+					<h3>Activity</h3>
+					<div id="activity-list">
+						for _, a := range activity {
+							<div class="bc-activity-item">
+								<span class="bc-activity-actor">{ a.Actor }</span>
+								<span class="bc-activity-action">{ a.Action }</span>
+								<span class="bc-activity-date">{ a.CreatedAt }</span>
+							</div>
+						}
+					</div>
+				</div>
+			</div>
+
+			<div class="bc-task-detail-sidebar">
+				<div class="bc-field-group">
+					<label>Assignees</label>
+					<div id="assignees" x-data>
+						for _, a := range task.Assignees {
+							<span class="bc-pill">{ a.Name }</span>
+						}
+					</div>
+					<button
+						class="bc-btn bc-btn-sm"
+						hx-get="/api/task/{ task.ID }/assign"
+						hx-target="#assignees"
+					>Assign</button>
+				</div>
+
+				<div class="bc-field-group">
+					<label>Labels</label>
+					<div id="labels" x-data>
+						for _, l := range task.Labels {
+							<span class="bc-pill bc-label" style={ fmt.Sprintf("background-color: %s", l.Color) }>{ l.Name }</span>
+						}
+					</div>
+					<button
+						class="bc-btn bc-btn-sm"
+						hx-get="/api/task/{ task.ID }/label"
+						hx-target="#labels"
+					>Label</button>
+				</div>
+
+				<div class="bc-field-group">
+					<label>Points: <span id="points-display">{ fmt.Sprintf("%d", task.Points) }</span></label>
+				</div>
+
+				<div class="bc-field-group">
+					<label>Priority: <span id="priority-display">{ task.PriorityLabel }</span></label>
+				</div>
+
+				<div class="bc-field-group">
+					<label>Due: <span id="due-display">{ task.DueAt }</span></label>
+				</div>
+
+				<div class="bc-field-group">
+					<label>Status: <span id="status-display">{ task.Status }</span></label>
+				</div>
+
+				<div class="bc-task-relations">
+					<h4>Relations</h4>
+					for _, r := range task.Relations {
+						<a href={ templ.URL("/app/project/"+task.ProjectID+"/task/"+r.RelatedKey) } class="bc-link">
+							{ r.RelatedKey } ({ r.RelationType })
+						</a>
+					}
+				</div>
+
+				<div class="bc-task-watchers">
+					<h4>Watchers</h4>
+					for _, w := range task.Watchers {
+						<span class="bc-pill">{ w.Name }</span>
+					}
+					<button
+						class="bc-btn bc-btn-sm"
+						hx-get="/api/task/{ task.ID }/watch"
+						hx-target="#watchers"
+					>Watch</button>
+				</div>
+
+				<button
+					class="bc-btn bc-btn-danger"
+					hx-post="/api/action/task.archive"
+					hx-headers={ hxHeaders(s.CSRF) }
+					hx-vals={ templ.URL(`{"id":"`+task.ID+`","project_id":"`+task.ProjectID+`"}`,) }
+				>Archive</button>
+			</div>
+		</div>
+	}
+}
+
+// TaskDetail is the full task view model.
+type TaskDetail struct {
+	ID          string
+	ProjectID   string
+	Key         string
+	Title       string
+	Description string
+	Points      int
+	Priority    int
+	PriorityLabel string
+	Status      string
+	DueAt       string
+	Assignees   []AssigneeRow
+	Labels      []LabelRow
+	Watchers    []WatcherRow
+	Relations   []RelationRow
+}
+
+// CommentRow is a single comment in the thread.
+type CommentRow struct {
+	ID        string
+	Author    string
+	Body      string
+	CreatedAt string
+	CanEdit   bool
+}
+
+// ActivityRow is a single activity entry.
+type ActivityRow struct {
+	Actor     string
+	Action    string
+	CreatedAt string
+}
+
+// AssigneeRow is an assigned user.
+type AssigneeRow struct {
+	Name string
+	ID   string
+}
+
+// LabelRow is a label applied to the task.
+type LabelRow struct {
+	Name  string
+	Color string
+}
+
+// WatcherRow is a watching user.
+type WatcherRow struct {
+	Name string
+	ID   string
+}
+
+// RelationRow is a related task link.
+type RelationRow struct {
+	RelatedKey  string
+	RelationType string
+}
+
+// PriorityLabel returns a human-friendly priority string.
+func priorityLabel(p int) string {
+	switch p {
+	case 0:
+		return "none"
+	case 1:
+		return "low"
+	case 2:
+		return "medium"
+	case 3:
+		return "high"
+	case 4:
+		return "critical"
+	default:
+		return "none"
+	}
+}

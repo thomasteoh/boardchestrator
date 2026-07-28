@@ -187,6 +187,16 @@ func handleInviteAccept(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleTaskDetail renders the full task detail page.
+func handleTaskDetail(w http.ResponseWriter, r *http.Request) {
+	s := shellData(r, "Task Detail", "/tasks")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Stub: return empty detail until the DB-backed handler is wired.
+	if err := views.TaskDetailPage(s, views.TaskDetail{}, nil, nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
 // serveEmbedded copies an embedded static file to the response, reporting a
 // 500 on read failure. Used for the small set of assets served at fixed root
 // paths (manifest, service worker) rather than the content-hashed /static tree.
@@ -255,4 +265,18 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/invite.accept", handleAction)
 	r.Post("/api/action/role.create", handleAction)
 	r.Post("/api/action/role.update", handleAction)
+	// Task detail routes
+	r.Get("/app/org/{orgID}/project/{projectID}/task/{taskID}", handleTaskDetail)
+	r.Post("/api/action/task.create", handleAction)
+	r.Post("/api/action/task.update", handleAction)
+	r.Post("/api/action/task.assign", handleAction)
+	r.Post("/api/action/task.label", handleAction)
+	r.Post("/api/action/task.relate", handleAction)
+	r.Post("/api/action/task.archive", handleAction)
+	r.Post("/api/action/task.unarchive", handleAction)
+	r.Post("/api/action/label.create", handleAction)
+	r.Post("/api/action/label.update", handleAction)
+	r.Post("/api/action/comment.create", handleAction)
+	r.Post("/api/action/comment.update", handleAction)
+	r.Post("/api/action/comment.delete", handleAction)
 }
