@@ -1,0 +1,89 @@
+package views
+
+// PeoplePage is the org/team/project people management page.
+// Displays current members and pending invites, with invite/remove controls.
+templ PeoplePage(s Shell, orgID, resourceType, resourceID, resourceName string, members []MemberRow, invites []InviteRow) {
+	@Base(s) {
+		<h2>{ resourceName } — People</h2>
+
+		<h3>Members</h3>
+		<table class="bc-table">
+			<thead>
+				<tr>
+					<th>Email</th>
+					<th>Role</th>
+					<th>Actions</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, m := range members {
+					<tr>
+						<td>{ m.Email }</td>
+						<td>{ m.RoleName }</td>
+						<td>
+							<button
+								class="bc-btn bc-btn-danger bc-btn-sm"
+								hx-post={ templ.URL("/api/action/member.remove") }
+								hx-headers={ hxHeaders(s.CSRF) }
+								hx-vals={ templ.URL(`{"org_id":"`+orgID+`","actor_id":"`+m.ActorID+`","actor_type":"user","resource_type":"`+resourceType+`","resource_id":"`+resourceID+`"}`,) }
+								hx-target="#members-list"
+							>Remove</button>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+
+		<h3>Pending Invites</h3>
+		<table class="bc-table">
+			<thead>
+				<tr>
+					<th>Email</th>
+					<th>Expires</th>
+					<th>Invite Link</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, inv := range invites {
+					<tr>
+						<td>{ inv.Email }</td>
+						<td>{ inv.ExpiresAt }</td>
+						<td>
+							<a href={ templ.URL("/invite/accept?token="+inv.Token) } class="bc-link">Share link</a>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+
+		<h3>Invite a new member</h3>
+		<form hx-post={ templ.URL("/api/action/member.invite") } hx-headers={ hxHeaders(s.CSRF) } hx-target="#members-list" class="bc-form">
+			<input type="hidden" name="org_id" value={ orgID }/>
+			<input type="hidden" name="resource_type" value={ resourceType }/>
+			<input type="hidden" name="resource_id" value={ resourceID }/>
+			<label>Email
+				<input type="email" name="email" required class="bc-input"/>
+			</label>
+			<label>Role
+				<select name="role_id" class="bc-input">
+					<option value="">Select role</option>
+				</select>
+			</label>
+			<button type="submit" class="bc-btn bc-btn-primary">Send invite</button>
+		</form>
+	}
+}
+
+// MemberRow is a display row for one member in the people page.
+type MemberRow struct {
+	ActorID  string
+	Email    string
+	RoleName string
+}
+
+// InviteRow is a display row for one pending invite.
+type InviteRow struct {
+	Email     string
+	ExpiresAt string
+	Token     string
+}

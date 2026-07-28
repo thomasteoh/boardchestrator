@@ -25,13 +25,13 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 	return err
 }
 
-const createMembership = `-- name: CreateMembership :one
+const createMembershipFromOrgQuery = `-- name: CreateMembershipFromOrgQuery :one
 INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id, role_id)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
 `
 
-type CreateMembershipParams struct {
+type CreateMembershipFromOrgQueryParams struct {
 	ID           string
 	OrgID        string
 	ActorID      string
@@ -41,8 +41,8 @@ type CreateMembershipParams struct {
 	RoleID       sql.NullString
 }
 
-func (q *Queries) CreateMembership(ctx context.Context, arg CreateMembershipParams) (Membership, error) {
-	row := q.db.QueryRowContext(ctx, createMembership,
+func (q *Queries) CreateMembershipFromOrgQuery(ctx context.Context, arg CreateMembershipFromOrgQueryParams) (Membership, error) {
+	row := q.db.QueryRowContext(ctx, createMembershipFromOrgQuery,
 		arg.ID,
 		arg.OrgID,
 		arg.ActorID,
@@ -141,13 +141,13 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 	return i, err
 }
 
-const createRole = `-- name: CreateRole :one
+const createRole2 = `-- name: CreateRole2 :one
 INSERT INTO roles (id, org_id, name, is_system, grants_json)
 VALUES (?, ?, ?, ?, ?)
 RETURNING id, org_id, name, is_system, grants_json, created_at
 `
 
-type CreateRoleParams struct {
+type CreateRole2Params struct {
 	ID         string
 	OrgID      string
 	Name       string
@@ -155,8 +155,8 @@ type CreateRoleParams struct {
 	GrantsJson string
 }
 
-func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error) {
-	row := q.db.QueryRowContext(ctx, createRole,
+func (q *Queries) CreateRole2(ctx context.Context, arg CreateRole2Params) (Role, error) {
+	row := q.db.QueryRowContext(ctx, createRole2,
 		arg.ID,
 		arg.OrgID,
 		arg.Name,
@@ -212,18 +212,18 @@ func (q *Queries) CreateTeam(ctx context.Context, arg CreateTeamParams) (Team, e
 	return i, err
 }
 
-const deleteMembership = `-- name: DeleteMembership :exec
+const deleteMembershipByID = `-- name: DeleteMembershipByID :exec
 DELETE FROM memberships
 WHERE id = ? AND org_id = ?
 `
 
-type DeleteMembershipParams struct {
+type DeleteMembershipByIDParams struct {
 	ID    string
 	OrgID string
 }
 
-func (q *Queries) DeleteMembership(ctx context.Context, arg DeleteMembershipParams) error {
-	_, err := q.db.ExecContext(ctx, deleteMembership, arg.ID, arg.OrgID)
+func (q *Queries) DeleteMembershipByID(ctx context.Context, arg DeleteMembershipByIDParams) error {
+	_, err := q.db.ExecContext(ctx, deleteMembershipByID, arg.ID, arg.OrgID)
 	return err
 }
 
@@ -422,14 +422,14 @@ func (q *Queries) FindProjectByKey(ctx context.Context, arg FindProjectByKeyPara
 	return i, err
 }
 
-const findRoleByID = `-- name: FindRoleByID :one
+const findRoleByID2 = `-- name: FindRoleByID2 :one
 SELECT id, org_id, name, is_system, grants_json, created_at
 FROM roles
 WHERE id = ?
 `
 
-func (q *Queries) FindRoleByID(ctx context.Context, id string) (Role, error) {
-	row := q.db.QueryRowContext(ctx, findRoleByID, id)
+func (q *Queries) FindRoleByID2(ctx context.Context, id string) (Role, error) {
+	row := q.db.QueryRowContext(ctx, findRoleByID2, id)
 	var i Role
 	err := row.Scan(
 		&i.ID,
@@ -442,19 +442,19 @@ func (q *Queries) FindRoleByID(ctx context.Context, id string) (Role, error) {
 	return i, err
 }
 
-const findRoleByName = `-- name: FindRoleByName :one
+const findRoleByName2 = `-- name: FindRoleByName2 :one
 SELECT id, org_id, name, is_system, grants_json, created_at
 FROM roles
 WHERE org_id = ? AND name = ?
 `
 
-type FindRoleByNameParams struct {
+type FindRoleByName2Params struct {
 	OrgID string
 	Name  string
 }
 
-func (q *Queries) FindRoleByName(ctx context.Context, arg FindRoleByNameParams) (Role, error) {
-	row := q.db.QueryRowContext(ctx, findRoleByName, arg.OrgID, arg.Name)
+func (q *Queries) FindRoleByName2(ctx context.Context, arg FindRoleByName2Params) (Role, error) {
+	row := q.db.QueryRowContext(ctx, findRoleByName2, arg.OrgID, arg.Name)
 	var i Role
 	err := row.Scan(
 		&i.ID,
@@ -493,15 +493,15 @@ func (q *Queries) FindTeamByID(ctx context.Context, arg FindTeamByIDParams) (Tea
 	return i, err
 }
 
-const listRolesByOrg = `-- name: ListRolesByOrg :many
+const listRolesByOrg2 = `-- name: ListRolesByOrg2 :many
 SELECT id, org_id, name, is_system, grants_json, created_at
 FROM roles
 WHERE org_id = ? OR org_id = '00000000000000000000000000000000'
 ORDER BY is_system DESC, name ASC
 `
 
-func (q *Queries) ListRolesByOrg(ctx context.Context, orgID string) ([]Role, error) {
-	rows, err := q.db.QueryContext(ctx, listRolesByOrg, orgID)
+func (q *Queries) ListRolesByOrg2(ctx context.Context, orgID string) ([]Role, error) {
+	rows, err := q.db.QueryContext(ctx, listRolesByOrg2, orgID)
 	if err != nil {
 		return nil, err
 	}

@@ -1,14 +1,26 @@
 package web
 
 import (
+	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
 )
+
+// disp is the action dispatcher, set by SetDispatcher at startup.
+var disp actionDispatcher
+
+type actionDispatcher interface {
+	Dispatch(ctx context.Context, actor action.Actor, name string, input json.RawMessage, opts action.Opts) (any, error)
+}
+
+func SetDispatcher(d actionDispatcher) { disp = d }
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
 	s := shellData(r, "Home", "")
@@ -49,6 +61,128 @@ func handleAppShell(w http.ResponseWriter, r *http.Request) {
 	s := shellData(r, "Home", "")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := views.Home(s).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func handleOrgPeople(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	s := shellData(r, "People", "/people")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Stub: return empty member/invite lists until the DB-backed handler is wired.
+	if err := views.PeoplePage(s, orgID, "org", orgID, orgID, nil, nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func handleTeamPeople(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	teamID := chi.URLParam(r, "teamID")
+	s := shellData(r, "People", "/people")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.PeoplePage(s, orgID, "team", teamID, teamID, nil, nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func handleProjectPeople(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	projectID := chi.URLParam(r, "projectID")
+	s := shellData(r, "People", "/people")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.PeoplePage(s, orgID, "project", projectID, projectID, nil, nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func handleOrgSettings(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	s := shellData(r, "Org Settings", "/settings")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	breadcrumbs := []views.Breadcrumb{
+		{Label: orgID, Href: "/app/org/" + orgID + "/settings"},
+	}
+	if err := views.OrgSettingsPage(s, orgID, orgID, "", "", breadcrumbs).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func handleTeamSettings(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	teamID := chi.URLParam(r, "teamID")
+	s := shellData(r, "Team Settings", "/settings")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	breadcrumbs := []views.Breadcrumb{
+		{Label: orgID, Href: "/app/org/" + orgID + "/settings"},
+		{Label: teamID, Href: ""},
+	}
+	if err := views.TeamSettingsPage(s, orgID, teamID, teamID, "", "", breadcrumbs).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func handleProjectSettings(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	projectID := chi.URLParam(r, "projectID")
+	s := shellData(r, "Project Settings", "/settings")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	breadcrumbs := []views.Breadcrumb{
+		{Label: orgID, Href: "/app/org/" + orgID + "/settings"},
+		{Label: projectID, Href: ""},
+	}
+	if err := views.ProjectSettingsPage(s, orgID, projectID, projectID, "", "", "", breadcrumbs).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func handleOrgRoles(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	s := shellData(r, "Roles", "/settings")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	breadcrumbs := []views.Breadcrumb{
+		{Label: orgID, Href: "/app/org/" + orgID + "/settings"},
+		{Label: "Roles", Href: ""},
+	}
+	if err := views.RolesEditorPage(s, orgID, nil, breadcrumbs).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func handleOrgRoleNew(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+func handleOrgRoleEdit(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+// handleAction dispatches an action via the injected dispatcher.
+func handleAction(w http.ResponseWriter, r *http.Request) {
+	if disp == nil {
+		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
+		return
+	}
+	name := r.URL.Path[len("/api/action/"):]
+	var input json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
+	result, err := disp.Dispatch(r.Context(), actor, name, input, action.Opts{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+func handleInviteAccept(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	s := shellData(r, "Accept Invite", "")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.InviteAcceptPage(s, token).Render(r.Context(), w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -94,12 +228,31 @@ func handleServiceWorker(w http.ResponseWriter, r *http.Request) {
 	serveEmbedded(w, "static/sw.js")
 }
 
-// Routes mounts the browser-facing routes: embedded static assets and the
-// app shell.
+// Routes mounts the browser-facing routes: embedded static assets, the
+// app shell, people management, invite acceptance, and tenancy UI.
 func Routes(r chi.Router) {
 	r.Handle("/static/*", StaticHandler())
 	r.Get("/manifest.json", handleManifest)
 	r.Get("/sw.js", handleServiceWorker)
 	r.Get("/", handleRoot)
 	r.Get("/app", handleAppShell)
+	r.Get("/app/org/{orgID}/people", handleOrgPeople)
+	r.Get("/app/org/{orgID}/team/{teamID}/people", handleTeamPeople)
+	r.Get("/app/org/{orgID}/project/{projectID}/people", handleProjectPeople)
+	r.Get("/invite/accept", handleInviteAccept)
+	// Tenancy UI pages
+	r.Get("/app/org/{orgID}/settings", handleOrgSettings)
+	r.Get("/app/org/{orgID}/team/{teamID}/settings", handleTeamSettings)
+	r.Get("/app/org/{orgID}/project/{projectID}/settings", handleProjectSettings)
+	r.Get("/app/org/{orgID}/roles", handleOrgRoles)
+	r.Get("/app/org/{orgID}/roles/new", handleOrgRoleNew)
+	r.Get("/app/org/{orgID}/roles/{roleID}/edit", handleOrgRoleEdit)
+	r.Post("/api/action/org.update", handleAction)
+	r.Post("/api/action/team.update", handleAction)
+	r.Post("/api/action/project.update", handleAction)
+	r.Post("/api/action/member.invite", handleAction)
+	r.Post("/api/action/member.remove", handleAction)
+	r.Post("/api/action/invite.accept", handleAction)
+	r.Post("/api/action/role.create", handleAction)
+	r.Post("/api/action/role.update", handleAction)
 }

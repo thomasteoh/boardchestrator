@@ -1,0 +1,16 @@
+package views
+
+// OrgSwitcher is a minimal org selector for the app shell header.
+templ OrgSwitcher(currentOrgID, currentOrgName string) {
+	<div class="bc-org-switcher">
+		<select
+			class="bc-input"
+			hx-get={ templ.URL("/app/org/"+currentOrgID+"/switch") }
+			hx-target="body"
+			hx-swap="innerHTML"
+			x-on:change="window.location.href = '/app/org/' + this.value + '/boards'"
+		>
+			<option value={ currentOrgID }>{ currentOrgName }</option>
+		</select>
+	</div>
+}
