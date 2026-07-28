@@ -160,7 +160,7 @@ AC: export golden structure test; post-deletion login impossible, content anonym
 
 ## Phase 2 — Boards & Tasks (branch `build/phase-2`)
 
-### WU-201 · Task model + CRUD actions — `ready`
+### WU-201 · Task model + CRUD actions — `done 2026-07-28 WU-201: task CRUD + labels + comments + custom fields + activity`
 Deps: 105.
 Migrations: tasks, task_assignees/watchers, labels, task_labels, task_relations, comments, task_activity, custom_field_defs/values; actions `task.create/update/assign/label/relate/archive`, `label.create/update`; per-project numbering (tx-safe `next_task_num`); activity rows on every change; `KEY-n` reference parser package.
 AC: numbering race test (parallel creates → unique nums); every mutation writes activity with actor; relation cycle allowed except self-reference; custom field validation per kind.
