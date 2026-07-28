@@ -11,15 +11,15 @@ import (
 )
 
 const createMembership = `-- name: CreateMembership :one
-INSERT INTO memberships (id, org_id, user_id, actor_type, resource_type, resource_id, role_id)
+INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id, role_id)
 VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, user_id, actor_type, resource_type, resource_id, role_id, created_at
+RETURNING id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
 `
 
 type CreateMembershipParams struct {
 	ID           string
 	OrgID        string
-	UserID       string
+	ActorID      string
 	ActorType    string
 	ResourceType string
 	ResourceID   string
@@ -30,7 +30,7 @@ func (q *Queries) CreateMembership(ctx context.Context, arg CreateMembershipPara
 	row := q.db.QueryRowContext(ctx, createMembership,
 		arg.ID,
 		arg.OrgID,
-		arg.UserID,
+		arg.ActorID,
 		arg.ActorType,
 		arg.ResourceType,
 		arg.ResourceID,
@@ -40,7 +40,7 @@ func (q *Queries) CreateMembership(ctx context.Context, arg CreateMembershipPara
 	err := row.Scan(
 		&i.ID,
 		&i.OrgID,
-		&i.UserID,
+		&i.ActorID,
 		&i.ActorType,
 		&i.ResourceType,
 		&i.ResourceID,
@@ -52,12 +52,12 @@ func (q *Queries) CreateMembership(ctx context.Context, arg CreateMembershipPara
 
 const deleteMembership = `-- name: DeleteMembership :exec
 DELETE FROM memberships
-WHERE org_id = ? AND user_id = ? AND actor_type = ? AND resource_type = ? AND resource_id = ?
+WHERE org_id = ? AND actor_id = ? AND actor_type = ? AND resource_type = ? AND resource_id = ?
 `
 
 type DeleteMembershipParams struct {
 	OrgID        string
-	UserID       string
+	ActorID      string
 	ActorType    string
 	ResourceType string
 	ResourceID   string
@@ -66,7 +66,7 @@ type DeleteMembershipParams struct {
 func (q *Queries) DeleteMembership(ctx context.Context, arg DeleteMembershipParams) error {
 	_, err := q.db.ExecContext(ctx, deleteMembership,
 		arg.OrgID,
-		arg.UserID,
+		arg.ActorID,
 		arg.ActorType,
 		arg.ResourceType,
 		arg.ResourceID,
@@ -75,14 +75,14 @@ func (q *Queries) DeleteMembership(ctx context.Context, arg DeleteMembershipPara
 }
 
 const findMembership = `-- name: FindMembership :one
-SELECT id, org_id, user_id, actor_type, resource_type, resource_id, role_id, created_at
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
 FROM memberships
-WHERE org_id = ? AND user_id = ? AND actor_type = ? AND resource_type = ? AND resource_id = ?
+WHERE org_id = ? AND actor_id = ? AND actor_type = ? AND resource_type = ? AND resource_id = ?
 `
 
 type FindMembershipParams struct {
 	OrgID        string
-	UserID       string
+	ActorID      string
 	ActorType    string
 	ResourceType string
 	ResourceID   string
@@ -91,7 +91,7 @@ type FindMembershipParams struct {
 func (q *Queries) FindMembership(ctx context.Context, arg FindMembershipParams) (Membership, error) {
 	row := q.db.QueryRowContext(ctx, findMembership,
 		arg.OrgID,
-		arg.UserID,
+		arg.ActorID,
 		arg.ActorType,
 		arg.ResourceType,
 		arg.ResourceID,
@@ -100,7 +100,7 @@ func (q *Queries) FindMembership(ctx context.Context, arg FindMembershipParams) 
 	err := row.Scan(
 		&i.ID,
 		&i.OrgID,
-		&i.UserID,
+		&i.ActorID,
 		&i.ActorType,
 		&i.ResourceType,
 		&i.ResourceID,
@@ -111,10 +111,10 @@ func (q *Queries) FindMembership(ctx context.Context, arg FindMembershipParams) 
 }
 
 const findMembershipsByOrg = `-- name: FindMembershipsByOrg :many
-SELECT id, org_id, user_id, actor_type, resource_type, resource_id, role_id, created_at
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
 FROM memberships
 WHERE org_id = ?
-ORDER BY resource_type, resource_id, user_id
+ORDER BY resource_type, resource_id, actor_id
 `
 
 func (q *Queries) FindMembershipsByOrg(ctx context.Context, orgID string) ([]Membership, error) {
@@ -129,7 +129,7 @@ func (q *Queries) FindMembershipsByOrg(ctx context.Context, orgID string) ([]Mem
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrgID,
-			&i.UserID,
+			&i.ActorID,
 			&i.ActorType,
 			&i.ResourceType,
 			&i.ResourceID,
@@ -150,7 +150,7 @@ func (q *Queries) FindMembershipsByOrg(ctx context.Context, orgID string) ([]Mem
 }
 
 const findMembershipsByResource = `-- name: FindMembershipsByResource :many
-SELECT id, org_id, user_id, actor_type, resource_type, resource_id, role_id, created_at
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
 FROM memberships
 WHERE org_id = ? AND resource_type = ? AND resource_id = ?
 `
@@ -173,7 +173,7 @@ func (q *Queries) FindMembershipsByResource(ctx context.Context, arg FindMembers
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrgID,
-			&i.UserID,
+			&i.ActorID,
 			&i.ActorType,
 			&i.ResourceType,
 			&i.ResourceID,

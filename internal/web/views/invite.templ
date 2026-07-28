@@ -1,0 +1,20 @@
+package views
+
+// InviteAcceptPage renders the invite acceptance page.
+// The token is provided via the query parameter on the URL.
+templ InviteAcceptPage(s Shell, token string) {
+	@Base(s) {
+		<div class="bc-card">
+			<h2>Accept Invite</h2>
+			<p>You've been invited to join an organisation on Boardchestrator.</p>
+			<button
+				class="bc-btn bc-btn-primary"
+				hx-post={ templ.URL("/api/action/invite.accept") }
+				hx-headers={ hxHeaders(s.CSRF) }
+				hx-vals={ templ.URL(`{"token":"`+token+`"}`) }
+				hx-target="body"
+				hx-swap="innerHTML"
+			>Accept invite</button>
+		</div>
+	}
+}

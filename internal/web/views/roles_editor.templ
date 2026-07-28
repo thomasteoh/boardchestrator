@@ -1,0 +1,51 @@
+package views
+
+// RoleGrantRow is one row in the grant matrix: a role + its grants.
+type RoleGrantRow struct {
+	RoleID  string
+	Name    string
+	Grants  []string
+}
+
+// RolesEditorPage renders the role grant matrix for an org.
+templ RolesEditorPage(s Shell, orgID string, roles []RoleGrantRow, breadcrumbs []Breadcrumb) {
+	@Base(s) {
+		@Breadcrumbs(breadcrumbs)
+		<h2>Roles</h2>
+		<table class="bc-table">
+			<thead>
+				<tr>
+					<th>Role</th>
+					<th>Grants</th>
+					<th>Actions</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, r := range roles {
+					<tr>
+						<td>{ r.Name }</td>
+						<td>
+							for _, g := range r.Grants {
+								<span class="bc-badge">{ g }</span>
+							}
+						</td>
+						<td>
+							<button
+								class="bc-btn bc-btn-sm"
+								hx-get={ templ.URL("/app/org/"+orgID+"/roles/"+r.RoleID+"/edit") }
+								hx-target="body"
+								hx-swap="innerHTML"
+							>Edit</button>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+		<button
+			class="bc-btn bc-btn-primary"
+			hx-get={ templ.URL("/app/org/"+orgID+"/roles/new") }
+			hx-target="body"
+			hx-swap="innerHTML"
+		>Create role</button>
+	}
+}

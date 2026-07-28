@@ -126,12 +126,12 @@ Deps: 104.
 `internal/perm` per SPEC §6; seed system roles (Org Owner, Team Admin, Member, Viewer, Guest) as migration data; actions `role.create/update/assign`; copy-on-edit for system roles; dispatch perm hook wired to engine (replacing stub).
 AC: resolution tests: org-level grant applies to child project; additive union; wildcard `task.*`; agent role∩skills intersection (skills stubbed as fixture); deny-by-default; copy-on-edit leaves system role untouched.
 
-### WU-106 · Memberships & invites — `ready`
+### WU-106 · Memberships & invites — `done`
 Deps: 105.
 Actions `member.invite/remove`, `invite.accept`; invite email-less flow v1: generate link (shown to inviter to share; no SMTP), token hashed, expiry; accept binds after SSO; membership CRUD UI (org/team/project people pages).
 AC: invite lifecycle tests (create, accept, expired, reuse rejected); remove revokes access (perm test).
 
-### WU-107 · Tenancy UI — `ready`
+### WU-107 · Tenancy UI — `done`
 Deps: 104, 105, 106.
 templ pages: org switcher, org/team/project settings (name, context markdown with preview, visibility), roles editor (grant matrix), people pages; breadcrumbs; responsive.
 AC: handler tests for each page incl. permission-denied renders; context save round-trips. Manual: mobile pass.

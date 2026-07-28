@@ -355,6 +355,7 @@ func (s *Server) Start(ctx context.Context) error {
 			action.WithEventSink(s.EventSink()),
 			action.WithPermissionChecker(perm.NewCheckerAdapter(s.db)),
 		)
+		web.SetDispatcher(s.disp)
 	}
 
 	s.ready.Store(true)

@@ -1,0 +1,23 @@
+package views
+
+// Breadcrumb is one item in the breadcrumb trail.
+type Breadcrumb struct {
+	Label string
+	Href  string
+}
+
+// Breadcrumbs renders a navigation breadcrumb trail.
+templ Breadcrumbs(items []Breadcrumb) {
+	<nav aria-label="Breadcrumb" class="bc-breadcrumbs">
+		for i, item := range items {
+			if i > 0 {
+				<span class="bc-breadcrumbs-sep" aria-hidden="true">/</span>
+			}
+			if item.Href != "" && i < len(items)-1 {
+				<a href={ templ.URL(item.Href) } class="bc-breadcrumbs-link">{ item.Label }</a>
+			} else {
+				<span class="bc-breadcrumbs-current">{ item.Label }</span>
+			}
+		}
+	</nav>
+}

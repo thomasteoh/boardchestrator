@@ -1,0 +1,32 @@
+package views
+
+// ProjectSettingsPage renders the project settings form.
+templ ProjectSettingsPage(s Shell, orgID, projectID, name, key, context, visibility string, breadcrumbs []Breadcrumb) {
+	@Base(s) {
+		@Breadcrumbs(breadcrumbs)
+		<h2>Project Settings</h2>
+		<form hx-post={ templ.URL("/api/action/project.update") } hx-headers={ hxHeaders(s.CSRF) } hx-target="body" hx-swap="innerHTML" class="bc-form">
+			<input type="hidden" name="id" value={ projectID }/>
+			<input type="hidden" name="org_id" value={ orgID }/>
+			<label>Name
+				<input type="text" name="name" value={ name } required class="bc-input"/>
+			</label>
+			<label>Key
+				<input type="text" name="key" value={ key } class="bc-input" disabled/>
+			</label>
+			<label>Context
+				<textarea name="context" class="bc-input bc-textarea">{ context }</textarea>
+			</label>
+			<label>Visibility
+				<select name="visibility" class="bc-input">
+					<option value="public" if visibility == "public" { selected }>Public</option>
+					<option value="private" if visibility == "private" { selected }>Private</option>
+				</select>
+			</label>
+			<button type="submit" class="bc-btn bc-btn-primary">Save</button>
+		</form>
+		<nav class="bc-tab-nav">
+			<a href={ templ.URL("/app/org/"+orgID+"/project/"+projectID+"/people") } class="bc-tab-link">People</a>
+		</nav>
+	}
+}

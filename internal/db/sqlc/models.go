@@ -37,6 +37,20 @@ type Identity struct {
 	TokenEnc []byte
 }
 
+type Invite struct {
+	ID           string
+	OrgID        string
+	InviterID    string
+	Email        string
+	TokenHash    string
+	RoleID       sql.NullString
+	ResourceType string
+	ResourceID   string
+	ExpiresAt    string
+	AcceptedAt   sql.NullString
+	CreatedAt    string
+}
+
 type Job struct {
 	ID          string
 	Kind        string

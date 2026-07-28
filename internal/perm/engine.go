@@ -77,7 +77,7 @@ func (c *Checker) grantsForScope(ctx context.Context, scopeType, scopeID, orgID,
 		if !r.RoleID.Valid {
 			continue
 		}
-		grants, err := c.roleGrants(ctx, r.RoleID.String)
+		grants, err := c.roleGrants(ctx, r.RoleID.String, r.OrgID)
 		if err != nil {
 			return nil, err
 		}
@@ -86,8 +86,8 @@ func (c *Checker) grantsForScope(ctx context.Context, scopeType, scopeID, orgID,
 	return allGrants, nil
 }
 
-func (c *Checker) roleGrants(ctx context.Context, roleID string) ([]string, error) {
-	role, err := c.q.FindRoleByID(ctx, roleID)
+func (c *Checker) roleGrants(ctx context.Context, roleID, orgID string) ([]string, error) {
+	role, err := c.q.FindRoleByID(ctx, sqlc.FindRoleByIDParams{ID: roleID, OrgID: orgID})
 	if err != nil {
 		return nil, fmt.Errorf("perm: find role %s: %w", roleID, err)
 	}

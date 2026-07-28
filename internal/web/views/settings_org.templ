@@ -1,0 +1,29 @@
+package views
+
+// OrgSettingsPage renders the organisation settings form.
+templ OrgSettingsPage(s Shell, orgID, name, context, visibility string, breadcrumbs []Breadcrumb) {
+	@Base(s) {
+		@Breadcrumbs(breadcrumbs)
+		<h2>Org Settings</h2>
+		<form hx-post={ templ.URL("/api/action/org.update") } hx-headers={ hxHeaders(s.CSRF) } hx-target="body" hx-swap="innerHTML" class="bc-form">
+			<input type="hidden" name="id" value={ orgID }/>
+			<label>Name
+				<input type="text" name="name" value={ name } required class="bc-input"/>
+			</label>
+			<label>Context
+				<textarea name="context" class="bc-input bc-textarea">{ context }</textarea>
+			</label>
+			<label>Visibility
+				<select name="visibility" class="bc-input">
+					<option value="public" if visibility == "public" { selected }>Public</option>
+					<option value="private" if visibility == "private" { selected }>Private</option>
+				</select>
+			</label>
+			<button type="submit" class="bc-btn bc-btn-primary">Save</button>
+		</form>
+		<nav class="bc-tab-nav">
+			<a href={ templ.URL("/app/org/"+orgID+"/people") } class="bc-tab-link">People</a>
+			<a href={ templ.URL("/app/org/"+orgID+"/roles") } class="bc-tab-link">Roles</a>
+		</nav>
+	}
+}

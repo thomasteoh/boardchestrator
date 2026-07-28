@@ -119,7 +119,7 @@ func handleRoleUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 		return nil, fmt.Errorf("role.update: marshal grants: %w", err)
 	}
 	// If role is a system role (is_system=1), copy-on-edit: create an org-owned copy.
-	existing, err := ac.Tx.FindRoleByID(ctx, input.ID)
+	existing, err := ac.Tx.FindRoleByID(ctx, sqlc.FindRoleByIDParams{ID: input.ID, OrgID: input.OrgID})
 	if err != nil {
 		return nil, fmt.Errorf("role.update: find: %w", err)
 	}
@@ -183,7 +183,7 @@ func handleMembershipDelete(ctx context.Context, ac ActionCtx, in json.RawMessag
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("membership.delete: %w", err)
 	}
-	if err := ac.Tx.DeleteMembership(ctx, sqlc.DeleteMembershipParams{
+	if err := ac.Tx.DeleteMembershipByID(ctx, sqlc.DeleteMembershipByIDParams{
 		ID:    input.ID,
 		OrgID: input.OrgID,
 	}); err != nil {
