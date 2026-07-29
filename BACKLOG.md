@@ -180,7 +180,7 @@ Deps: 203, 007.
 SortableJS wiring (pointer + long-press touch); `task.move` action (column/state + position REAL midpoint, periodic rebalance); HTMX reorder endpoint; card "Move to…" menu (keyboard/touch path, full keyboard grab-move-drop); column move-roles enforced; SSE `task-updated` refreshes other viewers' boards.
 AC: move action tests (position ordering, forbidden column for role, state sync); rebalance test; SSE event emitted on move.
 
-### WU-205 · Backlog view + saved filters + bulk ops — `ready`
+### WU-205 · Backlog view + saved filters + bulk ops — `done 2026-07-29 WU-205: backlog view, saved_filters CRUD, bulk assign/label/move`
 Deps: 201, 203.
 Backlog: ordered list with inline edit + drag-rank; filter bar (assignee, label, sprint, state, text) → `saved_filters` (share to team, pin as board tab); multi-select with bulk assign/label/move/sprint.
 AC: filter query builder tests (each dimension + combinations); bulk op is one action dispatch per semantic op with n subjects (activity per task); pinned filter renders as tab.

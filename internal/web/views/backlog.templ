@@ -1,0 +1,91 @@
+package views
+
+// BacklogPage renders the backlog list view with filters and bulk ops.
+templ BacklogPage(s Shell, projectID string, tasks []TaskRow, filters []SavedFilterRow) {
+	@Base(s) {
+		<div class="bc-backlog" id="backlog-{ projectID }">
+			<div class="bc-backlog-toolbar">
+				<h2>Backlog</h2>
+				<div class="bc-backlog-actions">
+					<button
+						class="bc-btn bc-btn-sm bc-btn-primary"
+						hx-get={ templ.URL("/api/project/" + projectID + "/task/new") }
+					>+ Add Task</button>
+				</div>
+			</div>
+
+			<div class="bc-backlog-filters">
+				<form class="bc-filter-form" hx-get={ templ.URL("/app/project/" + projectID + "/backlog") } hx-target="#backlog-{ projectID }" hx-swap="outerHTML" hx-trigger="submit">
+					<label>Status
+						<select name="status" class="bc-input">
+							<option value="">All</option>
+							<option value="backlog">Backlog</option>
+							<option value="todo">To Do</option>
+							<option value="in_progress">In Progress</option>
+							<option value="review">Review</option>
+							<option value="done">Done</option>
+						</select>
+					</label>
+					<label>Search
+						<input type="text" name="q" class="bc-input" placeholder="Search tasks..." />
+					</label>
+					<button type="submit" class="bc-btn bc-btn-sm">Filter</button>
+				</form>
+
+				<div class="bc-saved-filters">
+					for _, f := range filters {
+						<a
+							class="bc-pill"
+							href={ templ.URL("/app/project/" + projectID + "/backlog?" + f.QueryJSON) }
+							if f.Pinned { class="bc-pill-active" }
+						>{ f.Name }</a>
+					}
+				</div>
+			</div>
+
+			<div class="bc-bulk-bar" x-data="bulkBar">
+				<div class="bc-bulk-count" x-text="count + ' selected'"></div>
+				<button class="bc-btn bc-btn-sm" x-on:click="bulkAssign">Assign</button>
+				<button class="bc-btn bc-btn-sm" x-on:click="bulkLabel">Label</button>
+				<button class="bc-btn bc-btn-sm" x-on:click="bulkMove">Move</button>
+				<button class="bc-btn bc-btn-sm" x-on:click="clear">Clear</button>
+			</div>
+
+			<div class="bc-backlog-list" x-data="backlogList">
+				for _, t := range tasks {
+					<div class="bc-backlog-row" id="task-{ t.ID }" x-data="taskRow" data-task-id={ t.ID }>
+						<input type="checkbox" class="bc-checkbox" x-model="selected" />
+						<a class="bc-task-key" href={ templ.URL("/app/project/" + projectID + "/task/" + t.ID) }>{ t.Key }</a>
+						<span class="bc-task-title">{ t.Title }</span>
+						<span class="bc-task-status">{ t.Status }</span>
+						if t.Assignee != "" {
+							<span class="bc-avatar bc-avatar-xs" title={ t.Assignee }>{ t.AssigneeInitial }</span>
+						}
+						if t.Points > 0 {
+							<span class="bc-task-points">{ t.Points }</span>
+						}
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+// TaskRow is a task row in the backlog list.
+type TaskRow struct {
+	ID              string
+	Key             string
+	Title           string
+	Status          string
+	Assignee        string
+	AssigneeInitial string
+	Points          int
+}
+
+// SavedFilterRow is a saved filter shown in the backlog.
+type SavedFilterRow struct {
+	ID        string
+	Name      string
+	QueryJSON string
+	Pinned    bool
+}
