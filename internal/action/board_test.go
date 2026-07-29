@@ -227,9 +227,14 @@ func TestBoardColumnReorder(t *testing.T) {
 // extractID parses the "id" field from a dispatch result JSON string.
 func extractID(t *testing.T, jsonStr string) string {
 	t.Helper()
-	// Find `"id":"<value>"` or `"id":<value>`
-	prefix := `"id":"`
+	// Find `"id":"<value>"`, `"ID":"<value>"`, or `"id":<value>`
+	var prefix string
+	prefix = `"id":"`
 	idx := strings.Index(jsonStr, prefix)
+	if idx < 0 {
+		prefix = `"ID":"`
+		idx = strings.Index(jsonStr, prefix)
+	}
 	if idx < 0 {
 		t.Fatalf("cannot find id in: %s", jsonStr)
 	}

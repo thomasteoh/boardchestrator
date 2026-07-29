@@ -160,6 +160,17 @@ type Role struct {
 	CreatedAt  string
 }
 
+type SavedFilter struct {
+	ID        string
+	ProjectID string
+	Name      string
+	QueryJson string
+	Pinned    int64
+	CreatedBy string
+	CreatedAt string
+	UpdatedAt string
+}
+
 type Session struct {
 	TokenHash  string
 	UserID     string

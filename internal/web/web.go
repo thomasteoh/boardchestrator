@@ -218,6 +218,16 @@ func handleBoardColumns(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleBacklogView renders the backlog list view for a project.
+func handleBacklogView(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	s := shellData(r, "Backlog", "/backlog")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.BacklogPage(s, projectID, nil, nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
 // serveEmbedded copies an embedded static file to the response, reporting a
 // 500 on read failure. Used for the small set of assets served at fixed root
 // paths (manifest, service worker) rather than the content-hashed /static tree.
@@ -303,6 +313,7 @@ func Routes(r chi.Router) {
 	// Board routes
 	r.Get("/app/org/{orgID}/project/{projectID}/board", handleBoardView)
 	r.Get("/app/project/{projectID}/board/columns", handleBoardColumns)
+	r.Get("/app/org/{orgID}/project/{projectID}/backlog", handleBacklogView)
 	r.Post("/api/action/board.column.create", handleAction)
 	r.Post("/api/action/board.column.update", handleAction)
 	r.Post("/api/action/board.column.delete", handleAction)
@@ -310,4 +321,11 @@ func Routes(r chi.Router) {
 	// Task move (drag-and-drop / move-to-menu)
 	r.Post("/api/action/task.move", handleAction)
 	r.Post("/api/action/task.reorder", handleAction)
+	// Saved filters + bulk ops
+	r.Post("/api/action/saved_filter.create", handleAction)
+	r.Post("/api/action/saved_filter.update", handleAction)
+	r.Post("/api/action/saved_filter.delete", handleAction)
+	r.Post("/api/action/task.bulk_assign", handleAction)
+	r.Post("/api/action/task.bulk_label", handleAction)
+	r.Post("/api/action/task.bulk_move", handleAction)
 }
