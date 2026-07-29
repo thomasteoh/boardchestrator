@@ -170,12 +170,12 @@ Deps: 201, 007.
 Full task view: markdown description (edit-in-place), fields sidebar (assignees, labels, points, priority, due, sprint slot), relations, watchers, activity timeline, comments thread (markdown + preview, edit/delete); @mention autocomplete (users; agents come in WU-306); dates in viewer timezone; responsive sheet layout on mobile.
 AC: handler tests: render, edit description, comment CRUD, mention persists metadata; XSS test (script in markdown neutralised).
 
-### WU-203 · Board columns config + board view — `ready`
+### WU-203 · Board columns config + board view — `done 2026-07-29 WU-203: board columns CRUD + board view + column settings UI`
 Deps: 201.
 `board_columns` migration + defaults on project create (Backlog/To Do/In Progress/Review/Done); column settings UI (add/rename/recolour/reorder/WIP/state mapping/move-roles); board view rendering columns + cards (title, key, assignee avatars, labels, points), WIP indicator; swimlanes by assignee/label/custom field.
 AC: default columns seeded; board render test with swimlanes; WIP breach shows indicator (render test).
 
-### WU-204 · Drag-and-drop + move — `ready`
+### WU-204 · Drag-and-drop + move — `done 2026-07-29 WU-204: drag-and-drop + task.move action + SortableJS wiring`
 Deps: 203, 007.
 SortableJS wiring (pointer + long-press touch); `task.move` action (column/state + position REAL midpoint, periodic rebalance); HTMX reorder endpoint; card "Move to…" menu (keyboard/touch path, full keyboard grab-move-drop); column move-roles enforced; SSE `task-updated` refreshes other viewers' boards.
 AC: move action tests (position ordering, forbidden column for role, state sync); rebalance test; SSE event emitted on move.

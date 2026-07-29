@@ -9,6 +9,12 @@
 
 window.bc = window.bc || {};
 
+/* CSRF token from meta tag (set by server) */
+bc.csrfToken = function () {
+  var m = document.querySelector('meta[name="csrf-token"]');
+  return m ? m.getAttribute('content') : '';
+};
+
 /* ---------- SSE helper (stub) ----------
  * Named-event subscription over a single EventSource. The /events endpoint
  * lands in WU-007; until then nothing calls connect(). Reconnect/backoff and
@@ -92,6 +98,72 @@ document.addEventListener("alpine:init", function () {
       },
       toggleTheme: function () {
         bc.theme.toggle();
+      }
+    };
+  });
+
+  /* Board drag-and-drop */
+  window.Alpine.data("board", function (cfg) {
+    var el = null;
+    var sort = null;
+    return {
+      init: function () {
+        el = this.$el;
+        var cols = el.querySelector(".bc-board-columns");
+        if (!cols) return;
+        sort = Sortable.create(cols, {
+          group: "board",
+          animation: 150,
+          ghostClass: "bc-dragging",
+          direction: "horizontal",
+          draggable: ".bc-board-column",
+          onEnd: function (evt) {
+            // Column reorder — dispatch board.column.reorder
+            var id = evt.item.dataset.colId;
+            if (!id) return;
+            var pos = evt.newIndex;
+            htmx.ajax("POST", "/api/action/board.column.reorder", {
+              target: "#board-" + cfg.projectID,
+              swap: "outerHTML",
+              headers: { "X-CSRF-Token": bc.csrfToken() },
+              vals: JSON.stringify({
+                id: id,
+                project_id: cfg.projectID,
+                position: pos
+              })
+            });
+          }
+        });
+
+        // Card-level sortable per column
+        el.querySelectorAll(".bc-col-cards").forEach(function (list) {
+          Sortable.create(list, {
+            group: "cards",
+            animation: 150,
+            ghostClass: "bc-card-dragging",
+            draggable: ".bc-card",
+            onEnd: function (evt) {
+              var cardId = evt.item.dataset.sortKey;
+              var colEl = list.closest(".bc-board-column");
+              var colId = colEl ? colEl.id.replace("col-", "") : "";
+              var newStatus = colEl ? colEl.dataset.status : "backlog";
+              htmx.ajax("POST", "/api/action/task.move", {
+                target: "#board-" + cfg.projectID,
+                swap: "outerHTML",
+                headers: { "X-CSRF-Token": bc.csrfToken() },
+                vals: JSON.stringify({
+                  id: cardId,
+                  project_id: cfg.projectID,
+                  to_status: newStatus,
+                  sort_order: evt.newIndex
+                })
+              });
+            }
+          });
+        });
+      },
+      destroy: function () {
+        if (sort) sort.destroy();
       }
     };
   });

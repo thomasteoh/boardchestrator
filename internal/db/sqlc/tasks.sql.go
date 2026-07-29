@@ -902,6 +902,69 @@ func (q *Queries) ListTaskRelations(ctx context.Context, arg ListTaskRelationsPa
 	return items, nil
 }
 
+const listTasksByColumn = `-- name: ListTasksByColumn :many
+SELECT id, project_id, title, description, key, points, priority, status, due_at, sort_order, created_at, updated_at
+FROM tasks
+WHERE project_id = ? AND status = ?
+ORDER BY sort_order ASC, created_at ASC
+`
+
+type ListTasksByColumnParams struct {
+	ProjectID string
+	Status    string
+}
+
+type ListTasksByColumnRow struct {
+	ID          string
+	ProjectID   string
+	Title       string
+	Description string
+	Key         string
+	Points      int64
+	Priority    int64
+	Status      string
+	DueAt       string
+	SortOrder   float64
+	CreatedAt   string
+	UpdatedAt   string
+}
+
+func (q *Queries) ListTasksByColumn(ctx context.Context, arg ListTasksByColumnParams) ([]ListTasksByColumnRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTasksByColumn, arg.ProjectID, arg.Status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTasksByColumnRow
+	for rows.Next() {
+		var i ListTasksByColumnRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Title,
+			&i.Description,
+			&i.Key,
+			&i.Points,
+			&i.Priority,
+			&i.Status,
+			&i.DueAt,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTasksByProject = `-- name: ListTasksByProject :many
 SELECT id, project_id, title, description, key, points, priority, status, due_at, sort_order, created_at, updated_at
 FROM tasks
@@ -958,6 +1021,61 @@ func (q *Queries) ListTasksByProject(ctx context.Context, projectID string) ([]L
 		return nil, err
 	}
 	return items, nil
+}
+
+const moveTask = `-- name: MoveTask :one
+UPDATE tasks SET status = ?, sort_order = ?, updated_at = ?
+WHERE id = ? AND project_id = ?
+RETURNING id, project_id, title, description, key, points, priority, status, due_at, sort_order, created_at, updated_at
+`
+
+type MoveTaskParams struct {
+	Status    string
+	SortOrder float64
+	UpdatedAt string
+	ID        string
+	ProjectID string
+}
+
+type MoveTaskRow struct {
+	ID          string
+	ProjectID   string
+	Title       string
+	Description string
+	Key         string
+	Points      int64
+	Priority    int64
+	Status      string
+	DueAt       string
+	SortOrder   float64
+	CreatedAt   string
+	UpdatedAt   string
+}
+
+func (q *Queries) MoveTask(ctx context.Context, arg MoveTaskParams) (MoveTaskRow, error) {
+	row := q.db.QueryRowContext(ctx, moveTask,
+		arg.Status,
+		arg.SortOrder,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.ProjectID,
+	)
+	var i MoveTaskRow
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Title,
+		&i.Description,
+		&i.Key,
+		&i.Points,
+		&i.Priority,
+		&i.Status,
+		&i.DueAt,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const nextTaskNum = `-- name: NextTaskNum :one
@@ -1121,4 +1239,26 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (UpdateT
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateTaskSortOrder = `-- name: UpdateTaskSortOrder :exec
+UPDATE tasks SET sort_order = ?, updated_at = ?
+WHERE id = ? AND project_id = ?
+`
+
+type UpdateTaskSortOrderParams struct {
+	SortOrder float64
+	UpdatedAt string
+	ID        string
+	ProjectID string
+}
+
+func (q *Queries) UpdateTaskSortOrder(ctx context.Context, arg UpdateTaskSortOrderParams) error {
+	_, err := q.db.ExecContext(ctx, updateTaskSortOrder,
+		arg.SortOrder,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.ProjectID,
+	)
+	return err
 }

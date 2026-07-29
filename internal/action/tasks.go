@@ -55,6 +55,13 @@ type taskArchiveInput struct {
 	ProjectID string `json:"project_id"`
 }
 
+type taskMoveInput struct {
+	ID        string  `json:"id"`
+	ProjectID string  `json:"project_id"`
+	ToStatus  string  `json:"to_status"`
+	SortOrder float64 `json:"sort_order"`
+}
+
 type labelCreateInput struct {
 	OrgID       string `json:"org_id"`
 	Name        string `json:"name"`
@@ -126,6 +133,14 @@ func init() {
 		Scope:      ScopeProject,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleTaskUnarchive,
+	})
+	Register(Definition{
+		Name:       "task.move",
+		Impact:     ImpactLow,
+		Permission: "task.move",
+		Scope:      ScopeProject,
+		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
+		Handle:     handleTaskMove,
 	})
 	Register(Definition{
 		Name:       "label.create",
@@ -375,6 +390,41 @@ func handleTaskUnarchive(ctx context.Context, ac ActionCtx, in json.RawMessage) 
 		DetailJson: "{}",
 	})
 	return map[string]string{"id": input.ID}, nil
+}
+
+func handleTaskMove(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
+	var input taskMoveInput
+	if err := json.Unmarshal(in, &input); err != nil {
+		return nil, fmt.Errorf("task.move: %w", err)
+	}
+
+	// If to_status is the same as current, just reorder within column.
+	// Otherwise move to new column at the given sort order.
+	task, err := ac.Tx.MoveTask(ctx, sqlc.MoveTaskParams{
+		Status:    input.ToStatus,
+		SortOrder: input.SortOrder,
+		UpdatedAt: timestamp(),
+		ID:        input.ID,
+		ProjectID: input.ProjectID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("task.move: %w", err)
+	}
+
+	detail, _ := json.Marshal(map[string]any{
+		"to_status": task.Status,
+		"sort_order": input.SortOrder,
+	})
+	_, _ = ac.Tx.CreateTaskActivity(ctx, sqlc.CreateTaskActivityParams{
+		ID:         newID(),
+		TaskID:     input.ID,
+		ProjectID:  input.ProjectID,
+		ActorID:    ac.Actor.ref(),
+		ActorType:  string(ac.Actor.Type),
+		Action:     "task.move",
+		DetailJson: string(detail),
+	})
+	return map[string]any{"id": input.ID, "status": task.Status}, nil
 }
 
 func handleLabelCreate(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {

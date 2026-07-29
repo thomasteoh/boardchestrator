@@ -41,12 +41,12 @@ type Shell struct {
 // ShellAssets are the resolved (content-hashed) URLs of the shell's static
 // dependencies.
 type ShellAssets struct {
-	AppCSS string
-	HTMX   string
-	Alpine string
-	AppJS  string
-	// SW is the cache-busted service worker URL for registration.
-	SW string
+	AppCSS   string
+	HTMX     string
+	Alpine   string
+	AppJS    string
+	Sortable string
+	SW       string
 }
 
 // navItem is one primary-navigation destination.
