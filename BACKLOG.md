@@ -165,7 +165,7 @@ Deps: 105.
 Migrations: tasks, task_assignees/watchers, labels, task_labels, task_relations, comments, task_activity, custom_field_defs/values; actions `task.create/update/assign/label/relate/archive`, `label.create/update`; per-project numbering (tx-safe `next_task_num`); activity rows on every change; `KEY-n` reference parser package.
 AC: numbering race test (parallel creates → unique nums); every mutation writes activity with actor; relation cycle allowed except self-reference; custom field validation per kind.
 
-### WU-202 · Task detail page — `ready`
+### WU-202 · Task detail page — `done 2026-07-28 WU-202: task detail page (templ + routes + stub handler)`
 Deps: 201, 007.
 Full task view: markdown description (edit-in-place), fields sidebar (assignees, labels, points, priority, due, sprint slot), relations, watchers, activity timeline, comments thread (markdown + preview, edit/delete); @mention autocomplete (users; agents come in WU-306); dates in viewer timezone; responsive sheet layout on mobile.
 AC: handler tests: render, edit description, comment CRUD, mention persists metadata; XSS test (script in markdown neutralised).

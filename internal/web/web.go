@@ -197,6 +197,26 @@ func handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleBoardView renders the kanban board for a project.
+func handleBoardView(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	s := shellData(r, "Board", "/boards")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.BoardPage(s, projectID, nil, nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+// handleBoardColumns renders the column configuration page.
+func handleBoardColumns(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	s := shellData(r, "Board Columns", "/boards")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.ColumnSettingsPage(s, projectID, nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
 // serveEmbedded copies an embedded static file to the response, reporting a
 // 500 on read failure. Used for the small set of assets served at fixed root
 // paths (manifest, service worker) rather than the content-hashed /static tree.
@@ -279,4 +299,11 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/comment.create", handleAction)
 	r.Post("/api/action/comment.update", handleAction)
 	r.Post("/api/action/comment.delete", handleAction)
+	// Board routes
+	r.Get("/app/org/{orgID}/project/{projectID}/board", handleBoardView)
+	r.Get("/app/project/{projectID}/board/columns", handleBoardColumns)
+	r.Post("/api/action/board.column.create", handleAction)
+	r.Post("/api/action/board.column.update", handleAction)
+	r.Post("/api/action/board.column.delete", handleAction)
+	r.Post("/api/action/board.column.reorder", handleAction)
 }
