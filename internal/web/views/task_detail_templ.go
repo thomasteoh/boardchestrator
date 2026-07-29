@@ -530,8 +530,9 @@ type ActivityRow struct {
 
 // AssigneeRow is an assigned user.
 type AssigneeRow struct {
-	Name string
-	ID   string
+	Name    string
+	ID      string
+	Initial string
 }
 
 // LabelRow is a label applied to the task.

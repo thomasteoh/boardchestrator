@@ -20,6 +20,17 @@ type AuditLog struct {
 	CreatedAt  string
 }
 
+type BoardColumn struct {
+	ID        string
+	ProjectID string
+	Name      string
+	Color     string
+	Position  float64
+	WipLimit  int64
+	Status    string
+	CreatedAt string
+}
+
 type Comment struct {
 	ID        string
 	TaskID    string

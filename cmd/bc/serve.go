@@ -16,6 +16,8 @@ import (
 func serve(cfg *config.Config) {
 	action.RegisterOrgActions()
 	action.RegisterInviteActions()
+	action.RegisterTaskActions()
+	action.RegisterBoardActions()
 	if err := runServe(cfg); err != nil {
 		slog.Error("serve error", "error", err)
 		os.Exit(1)
