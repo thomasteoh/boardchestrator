@@ -44,10 +44,11 @@ func shellData(r *http.Request, title, active string) views.Shell {
 		Nonce: auth.Nonce(r.Context()),
 		CSRF:  auth.CSRFFrom(r.Context()),
 		Assets: views.ShellAssets{
-			AppCSS: AssetURL("app.css"),
-			HTMX:   AssetURL("vendor/htmx.min.js"),
-			Alpine: AssetURL("vendor/alpine-csp.min.js"),
-			AppJS:  AssetURL("app.js"),
+			AppCSS:   AssetURL("app.css"),
+			HTMX:     AssetURL("vendor/htmx.min.js"),
+			Alpine:   AssetURL("vendor/alpine-csp.min.js"),
+			AppJS:    AssetURL("app.js"),
+			Sortable: AssetURL("vendor/sortable.min.js"),
 			// Served at the stable root path (not content-hashed) so the
 			// worker's scope is the whole origin, not just /static/. A
 			// hashed URL would also orphan the previous worker each build.
@@ -306,4 +307,7 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/board.column.update", handleAction)
 	r.Post("/api/action/board.column.delete", handleAction)
 	r.Post("/api/action/board.column.reorder", handleAction)
+	// Task move (drag-and-drop / move-to-menu)
+	r.Post("/api/action/task.move", handleAction)
+	r.Post("/api/action/task.reorder", handleAction)
 }

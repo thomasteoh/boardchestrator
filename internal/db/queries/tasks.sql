@@ -13,6 +13,21 @@ SELECT id, project_id, title, description, key, points, priority, status, due_at
 FROM tasks
 WHERE id = ? AND project_id = ?;
 
+-- name: UpdateTaskSortOrder :exec
+UPDATE tasks SET sort_order = ?, updated_at = ?
+WHERE id = ? AND project_id = ?;
+
+-- name: MoveTask :one
+UPDATE tasks SET status = ?, sort_order = ?, updated_at = ?
+WHERE id = ? AND project_id = ?
+RETURNING id, project_id, title, description, key, points, priority, status, due_at, sort_order, created_at, updated_at;
+
+-- name: ListTasksByColumn :many
+SELECT id, project_id, title, description, key, points, priority, status, due_at, sort_order, created_at, updated_at
+FROM tasks
+WHERE project_id = ? AND status = ?
+ORDER BY sort_order ASC, created_at ASC;
+
 -- name: ListTasksByProject :many
 SELECT id, project_id, title, description, key, points, priority, status, due_at, sort_order, created_at, updated_at
 FROM tasks

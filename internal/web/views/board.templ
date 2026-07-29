@@ -18,41 +18,41 @@ templ BoardPage(s Shell, projectID string, columns []ColumnView, swimlanes []Swi
 			</div>
 
 			<div class="bc-board-columns">
-				for _, col := range columns {
-					<div class="bc-board-column" id="col-{ col.ID }" style={ fmt.Sprintf("--col-color: %s", col.Color) }>
-						<div class="bc-col-header">
-							<h3 class="bc-col-name">{ col.Name }</h3>
-							<span class="bc-col-count">{ fmt.Sprintf("%d", col.Count) }</span>
-							if col.WIPLimit > 0 {
-								<span class="bc-col-wip" if col.Count > col.WIPLimit { class="bc-col-wip-over" }>
-									WIP { fmt.Sprintf("%d/%d", col.Count, col.WIPLimit) }
-								</span>
-							}
-						</div>
+			for _, col := range columns {
+				<div class="bc-board-column" id="col-{ col.ID }" data-status={ col.Status } style={ fmt.Sprintf("--col-color: %s", col.Color) }>
+					<div class="bc-col-header">
+						<h3 class="bc-col-name">{ col.Name }</h3>
+						<span class="bc-col-count">{ fmt.Sprintf("%d", col.Count) }</span>
+						if col.WIPLimit > 0 {
+							<span class="bc-col-wip" if col.Count > col.WIPLimit { class="bc-col-wip-over" }>
+								WIP { fmt.Sprintf("%d/%d", col.Count, col.WIPLimit) }
+							</span>
+						}
+					</div>
 
-						<div class="bc-col-cards" id="col-cards-{ col.ID }" x-sort>
-							for _, c := range col.Cards {
-								<div class="bc-card" id="card-{ c.ID }" data-sort-key={ c.ID }>
-									<div class="bc-card-key">{ c.Key }</div>
-									<div class="bc-card-title">{ c.Title }</div>
-									<div class="bc-card-meta">
-										<div class="bc-card-assignees">
-											for _, a := range c.Assignees {
-												<span class="bc-avatar bc-avatar-sm" title={ a.Name }>{ a.Initial }</span>
-											}
-										</div>
-										<div class="bc-card-labels">
-											for _, l := range c.Labels {
-												<span class="bc-pill bc-label-sm" style={ fmt.Sprintf("background-color: %s", l.Color) }>{ l.Name }</span>
-											}
-										</div>
-										if c.Points > 0 {
-											<span class="bc-card-points">{ fmt.Sprintf("%d", c.Points) }</span>
+					<div class="bc-col-cards" id="col-cards-{ col.ID }">
+						for _, c := range col.Cards {
+							<div class="bc-card" data-sort-key={ c.ID }>
+								<div class="bc-card-key">{ c.Key }</div>
+								<div class="bc-card-title">{ c.Title }</div>
+								<div class="bc-card-meta">
+									<div class="bc-card-assignees">
+										for _, a := range c.Assignees {
+											<span class="bc-avatar bc-avatar-sm" title={ a.Name }>{ a.Initial }</span>
 										}
 									</div>
+									<div class="bc-card-labels">
+										for _, l := range c.Labels {
+											<span class="bc-pill bc-label-sm" style={ fmt.Sprintf("background-color: %s", l.Color) }>{ l.Name }</span>
+										}
+									</div>
+									if c.Points > 0 {
+										<span class="bc-card-points">{ fmt.Sprintf("%d", c.Points) }</span>
+									}
 								</div>
-							}
-						</div>
+							</div>
+						}
+					</div>
 
 						<div class="bc-col-actions">
 							<button
@@ -90,6 +90,7 @@ type ColumnView struct {
 	ID       string
 	Name     string
 	Color    string
+	Status   string
 	Count    int
 	WIPLimit int
 	Cards    []CardView

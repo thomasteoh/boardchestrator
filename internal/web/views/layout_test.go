@@ -23,11 +23,12 @@ func testShell() Shell {
 		Title: "Test Page",
 		Nonce: "test-nonce-123",
 		Assets: ShellAssets{
-			AppCSS: "/static/app.abc123def456.css",
-			HTMX:   "/static/vendor/htmx.min.abc123def456.js",
-			Alpine: "/static/vendor/alpine-csp.min.abc123def456.js",
-			AppJS:  "/static/app.abc123def456.js",
-			SW:     "/static/sw.abc123def456.js",
+			AppCSS:   "/static/app.abc123def456.css",
+			HTMX:     "/static/vendor/htmx.min.abc123def456.js",
+			Alpine:   "/static/vendor/alpine-csp.min.abc123def456.js",
+			AppJS:    "/static/app.abc123def456.js",
+			Sortable: "/static/vendor/sortable.min.abc123def456.js",
+			SW:       "/static/sw.abc123def456.js",
 		},
 	}
 }
