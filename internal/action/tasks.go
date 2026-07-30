@@ -11,24 +11,24 @@ import (
 // --- Action definitions for task CRUD ---
 
 type taskCreateInput struct {
-	ProjectID   string  `json:"project_id"`
-	Title       string  `json:"title"`
-	Description string  `json:"description"`
-	Points      int     `json:"points"`
-	Priority    int     `json:"priority"`
-	Status      string  `json:"status"`
-	DueAt       string  `json:"due_at"`
+	ProjectID   string `json:"project_id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Points      int    `json:"points"`
+	Priority    int    `json:"priority"`
+	Status      string `json:"status"`
+	DueAt       string `json:"due_at"`
 }
 
 type taskUpdateInput struct {
-	ID          string  `json:"id"`
-	ProjectID   string  `json:"project_id"`
-	Title       string  `json:"title"`
-	Description string  `json:"description"`
-	Points      int     `json:"points"`
-	Priority    int     `json:"priority"`
-	Status      string  `json:"status"`
-	DueAt       string  `json:"due_at"`
+	ID          string `json:"id"`
+	ProjectID   string `json:"project_id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Points      int    `json:"points"`
+	Priority    int    `json:"priority"`
+	Status      string `json:"status"`
+	DueAt       string `json:"due_at"`
 }
 
 type taskAssignInput struct {
@@ -412,7 +412,7 @@ func handleTaskMove(ctx context.Context, ac ActionCtx, in json.RawMessage) (any,
 	}
 
 	detail, _ := json.Marshal(map[string]any{
-		"to_status": task.Status,
+		"to_status":  task.Status,
 		"sort_order": input.SortOrder,
 	})
 	_, _ = ac.Tx.CreateTaskActivity(ctx, sqlc.CreateTaskActivityParams{
