@@ -185,7 +185,7 @@ Deps: 201, 203.
 Backlog: ordered list with inline edit + drag-rank; filter bar (assignee, label, sprint, state, text) → `saved_filters` (share to team, pin as board tab); multi-select with bulk assign/label/move/sprint.
 AC: filter query builder tests (each dimension + combinations); bulk op is one action dispatch per semantic op with n subjects (activity per task); pinned filter renders as tab.
 
-### WU-206 · Sprints — `in-progress`
+### WU-206 · Sprints — `done 2026-07-30 WU-206: sprint CRUD actions + templ list view + ListTasksBySprint query + route wiring`
 Deps: 205.
 Sprint CRUD actions; assign tasks in/out (from backlog + task page); active-sprint board filter; close sprint → prompt to move open tasks (to backlog/next sprint).
 AC: sprint lifecycle tests; close-with-open-tasks flow moves correctly; board filter shows only sprint tasks.
