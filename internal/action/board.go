@@ -99,12 +99,12 @@ func handleBoardColUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage)
 		return nil, fmt.Errorf("board.column.update: %w", err)
 	}
 	_, err := ac.Tx.UpdateBoardColumn(ctx, sqlc.UpdateBoardColumnParams{
-		Name:     input.Name,
-		Color:    input.Color,
-		Position: 0,
-		WipLimit: int64(input.WIPLimit),
-		Status:   input.Status,
-		ID:       input.ID,
+		Name:      input.Name,
+		Color:     input.Color,
+		Position:  0,
+		WipLimit:  int64(input.WIPLimit),
+		Status:    input.Status,
+		ID:        input.ID,
 		ProjectID: input.ProjectID,
 	})
 	if err != nil {

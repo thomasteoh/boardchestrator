@@ -26,24 +26,24 @@ templ SprintListPage(s Shell, projectID string, sprints []SprintListRow) {
 				>+ New Sprint</button>
 			</div>
 			<div id="sprint-list-items">
-				for _, s := range sprints {
-					<div class="bc-sprint-row" id="sprint-{ s.ID }">
-						<div class="bc-sprint-name">{ s.Name }</div>
+				for _, spr := range sprints {
+					<div class="bc-sprint-row" id="sprint-{ spr.ID }">
+						<div class="bc-sprint-name">{ spr.Name }</div>
 						<div class="bc-sprint-dates">
-							{ s.StartsOn } – { s.EndsOn }
+							{ spr.StartsOn } – { spr.EndsOn }
 						</div>
-						<div class="bc-sprint-state">{ s.State }</div>
-						<div class="bc-sprint-count">{ fmt.Sprintf("%d tasks", s.TaskCount) }</div>
+						<div class="bc-sprint-state">{ spr.State }</div>
+						<div class="bc-sprint-count">{ fmt.Sprintf("%d tasks", spr.TaskCount) }</div>
 						<div class="bc-sprint-actions-row">
 							<button
 								class="bc-btn bc-btn-sm"
-								hx-get={ templ.URL("/app/org/"+projectID+"/sprints/"+s.ID+"/edit") }
+								hx-get={ templ.URL("/app/org/"+projectID+"/sprints/"+spr.ID+"/edit") }
 							>Edit</button>
 							<button
 								class="bc-btn bc-btn-sm bc-btn-danger"
 								hx-post="/api/action/sprint.close"
 								hx-headers={ hxHeaders(s.CSRF) }
-								hx-vals={ templ.URL(`{"id":"`+s.ID+`","project_id":"`+projectID+`"}`) }
+								hx-vals={ templ.URL(`{"id":"`+spr.ID+`","project_id":"`+projectID+`"}`) }
 								hx-target="#sprint-list"
 								hx-swap="outerHTML"
 							>Close</button>

@@ -148,8 +148,8 @@ func handleSprintClose(ctx context.Context, ac ActionCtx, in json.RawMessage) (a
 	for _, t := range openTasks {
 		if t.SprintID.Valid && t.SprintID.String == input.ID {
 			if err := ac.Tx.SetTaskSprint(ctx, sqlc.SetTaskSprintParams{
-				SprintID: sql.NullString{Valid: false},
-				ID:       t.ID,
+				SprintID:  sql.NullString{Valid: false},
+				ID:        t.ID,
 				ProjectID: input.ProjectID,
 			}); err != nil {
 				return nil, fmt.Errorf("sprint.close: clear task %s sprint: %w", t.ID, err)
@@ -169,8 +169,8 @@ func handleSprintAddTask(ctx context.Context, ac ActionCtx, in json.RawMessage) 
 		return nil, fmt.Errorf("sprint.add_task: %w", err)
 	}
 	if err := ac.Tx.SetTaskSprint(ctx, sqlc.SetTaskSprintParams{
-		SprintID: sql.NullString{String: input.ID, Valid: true},
-		ID:       input.TaskID,
+		SprintID:  sql.NullString{String: input.ID, Valid: true},
+		ID:        input.TaskID,
 		ProjectID: input.ProjectID,
 	}); err != nil {
 		return nil, fmt.Errorf("sprint.add_task: %w", err)
@@ -186,8 +186,8 @@ func handleSprintRemoveTask(ctx context.Context, ac ActionCtx, in json.RawMessag
 		return nil, fmt.Errorf("sprint.remove_task: %w", err)
 	}
 	if err := ac.Tx.SetTaskSprint(ctx, sqlc.SetTaskSprintParams{
-		SprintID: sql.NullString{Valid: false},
-		ID:       input.TaskID,
+		SprintID:  sql.NullString{Valid: false},
+		ID:        input.TaskID,
 		ProjectID: input.ProjectID,
 	}); err != nil {
 		return nil, fmt.Errorf("sprint.remove_task: %w", err)
