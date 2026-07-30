@@ -49,7 +49,7 @@ func (h *ActionHandler) HandleAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 // actorFromRequest extracts the actor from the authenticated session.
