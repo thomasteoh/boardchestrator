@@ -228,6 +228,16 @@ func handleBacklogView(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleSprintList renders the sprints list page for a project.
+func handleSprintList(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	s := shellData(r, "Sprints", "/sprints")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.SprintListPage(s, projectID, nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
 // serveEmbedded copies an embedded static file to the response, reporting a
 // 500 on read failure. Used for the small set of assets served at fixed root
 // paths (manifest, service worker) rather than the content-hashed /static tree.
@@ -328,4 +338,11 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/task.bulk_assign", handleAction)
 	r.Post("/api/action/task.bulk_label", handleAction)
 	r.Post("/api/action/task.bulk_move", handleAction)
+	// Sprint routes
+	r.Get("/app/org/{orgID}/project/{projectID}/sprints", handleSprintList)
+	r.Post("/api/action/sprint.create", handleAction)
+	r.Post("/api/action/sprint.update", handleAction)
+	r.Post("/api/action/sprint.close", handleAction)
+	r.Post("/api/action/sprint.add_task", handleAction)
+	r.Post("/api/action/sprint.remove_task", handleAction)
 }

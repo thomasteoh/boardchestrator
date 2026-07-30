@@ -28,8 +28,14 @@ FROM tasks
 WHERE project_id = ? AND status = ?
 ORDER BY sort_order ASC, created_at ASC;
 
+-- name: ListTasksBySprint :many
+SELECT id, project_id, title, description, key, points, priority, status, due_at, sort_order, sprint_id, created_at, updated_at
+FROM tasks
+WHERE project_id = ? AND sprint_id = ?
+ORDER BY sort_order ASC, created_at ASC;
+
 -- name: ListTasksByProject :many
-SELECT id, project_id, title, description, key, points, priority, status, due_at, sort_order, created_at, updated_at
+SELECT id, project_id, title, description, key, points, priority, status, due_at, sort_order, sprint_id, created_at, updated_at
 FROM tasks
 WHERE project_id = ?
 ORDER BY sort_order ASC, created_at ASC;
@@ -40,6 +46,10 @@ WHERE id = ? AND project_id = ?;
 
 -- name: UnarchiveTask :exec
 UPDATE tasks SET archived = 0, updated_at = ?
+WHERE id = ? AND project_id = ?;
+
+-- name: SetTaskSprint :exec
+UPDATE tasks SET sprint_id = ?
 WHERE id = ? AND project_id = ?;
 
 -- name: NextTaskNum :one

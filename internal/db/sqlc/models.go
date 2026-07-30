@@ -181,6 +181,17 @@ type Session struct {
 	ExpiresAt  string
 }
 
+type Sprint struct {
+	ID        string
+	OrgID     string
+	ProjectID string
+	Name      string
+	StartsOn  string
+	EndsOn    string
+	State     string
+	CreatedAt string
+}
+
 type Task struct {
 	ID          string
 	ProjectID   string
@@ -196,6 +207,7 @@ type Task struct {
 	Archived    int64
 	CreatedAt   string
 	UpdatedAt   string
+	SprintID    sql.NullString
 }
 
 type TaskActivity struct {
