@@ -176,7 +176,7 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func handleInviteAccept(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +224,16 @@ func handleBacklogView(w http.ResponseWriter, r *http.Request) {
 	s := shellData(r, "Backlog", "/backlog")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := views.BacklogPage(s, projectID, nil, nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+// handleSprintList renders the sprints list page for a project.
+func handleSprintList(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	s := shellData(r, "Sprints", "/sprints")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.SprintListPage(s, projectID, nil).Render(r.Context(), w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -328,4 +338,11 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/task.bulk_assign", handleAction)
 	r.Post("/api/action/task.bulk_label", handleAction)
 	r.Post("/api/action/task.bulk_move", handleAction)
+	// Sprint routes
+	r.Get("/app/org/{orgID}/project/{projectID}/sprints", handleSprintList)
+	r.Post("/api/action/sprint.create", handleAction)
+	r.Post("/api/action/sprint.update", handleAction)
+	r.Post("/api/action/sprint.close", handleAction)
+	r.Post("/api/action/sprint.add_task", handleAction)
+	r.Post("/api/action/sprint.remove_task", handleAction)
 }

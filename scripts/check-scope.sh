@@ -25,7 +25,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-TENANT_TABLES="org_secrets,teams,projects,roles,memberships,invites,labels,custom_field_defs"  # comma-separated
+TENANT_TABLES="org_secrets,teams,projects,roles,memberships,invites,labels,custom_field_defs,sprints"  # comma-separated
 # orgs is the root tenant (no org_id column) — exempted.
 QUERIES_DIR="internal/db/queries"
 FIXTURE_DIR="scripts/testdata/check-scope"

@@ -238,7 +238,7 @@ func boolToInt(b bool) int64 {
 // logActivity writes an activity row without failing on error.
 func logActivity(ctx context.Context, ac ActionCtx, taskID, projectID, action string, detail map[string]any) {
 	d, _ := json.Marshal(detail)
-	ac.Tx.CreateTaskActivity(ctx, sqlc.CreateTaskActivityParams{
+	_, _ = ac.Tx.CreateTaskActivity(ctx, sqlc.CreateTaskActivityParams{
 		ID:         newID(),
 		TaskID:     taskID,
 		ProjectID:  projectID,

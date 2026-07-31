@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 )
 
 const addTaskAssignee = `-- name: AddTaskAssignee :exec
@@ -966,7 +967,7 @@ func (q *Queries) ListTasksByColumn(ctx context.Context, arg ListTasksByColumnPa
 }
 
 const listTasksByProject = `-- name: ListTasksByProject :many
-SELECT id, project_id, title, description, key, points, priority, status, due_at, sort_order, created_at, updated_at
+SELECT id, project_id, title, description, key, points, priority, status, due_at, sort_order, sprint_id, created_at, updated_at
 FROM tasks
 WHERE project_id = ?
 ORDER BY sort_order ASC, created_at ASC
@@ -983,6 +984,7 @@ type ListTasksByProjectRow struct {
 	Status      string
 	DueAt       string
 	SortOrder   float64
+	SprintID    sql.NullString
 	CreatedAt   string
 	UpdatedAt   string
 }
@@ -1007,6 +1009,72 @@ func (q *Queries) ListTasksByProject(ctx context.Context, projectID string) ([]L
 			&i.Status,
 			&i.DueAt,
 			&i.SortOrder,
+			&i.SprintID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTasksBySprint = `-- name: ListTasksBySprint :many
+SELECT id, project_id, title, description, key, points, priority, status, due_at, sort_order, sprint_id, created_at, updated_at
+FROM tasks
+WHERE project_id = ? AND sprint_id = ?
+ORDER BY sort_order ASC, created_at ASC
+`
+
+type ListTasksBySprintParams struct {
+	ProjectID string
+	SprintID  sql.NullString
+}
+
+type ListTasksBySprintRow struct {
+	ID          string
+	ProjectID   string
+	Title       string
+	Description string
+	Key         string
+	Points      int64
+	Priority    int64
+	Status      string
+	DueAt       string
+	SortOrder   float64
+	SprintID    sql.NullString
+	CreatedAt   string
+	UpdatedAt   string
+}
+
+func (q *Queries) ListTasksBySprint(ctx context.Context, arg ListTasksBySprintParams) ([]ListTasksBySprintRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTasksBySprint, arg.ProjectID, arg.SprintID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTasksBySprintRow
+	for rows.Next() {
+		var i ListTasksBySprintRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Title,
+			&i.Description,
+			&i.Key,
+			&i.Points,
+			&i.Priority,
+			&i.Status,
+			&i.DueAt,
+			&i.SortOrder,
+			&i.SprintID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -1089,6 +1157,22 @@ func (q *Queries) NextTaskNum(ctx context.Context, projectID string) (int64, err
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const setTaskSprint = `-- name: SetTaskSprint :exec
+UPDATE tasks SET sprint_id = ?
+WHERE id = ? AND project_id = ?
+`
+
+type SetTaskSprintParams struct {
+	SprintID  sql.NullString
+	ID        string
+	ProjectID string
+}
+
+func (q *Queries) SetTaskSprint(ctx context.Context, arg SetTaskSprintParams) error {
+	_, err := q.db.ExecContext(ctx, setTaskSprint, arg.SprintID, arg.ID, arg.ProjectID)
+	return err
 }
 
 const unarchiveTask = `-- name: UnarchiveTask :exec
