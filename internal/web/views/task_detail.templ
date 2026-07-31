@@ -152,6 +152,30 @@ templ TaskDetailPage(s Shell, task TaskDetail, comments []CommentRow, activity [
 					>Watch</button>
 				</div>
 
+				<div class="bc-task-attachments">
+					<h4>Attachments</h4>
+					<div id="attachments-list">
+						for _, a := range task.Attachments {
+							<div class="bc-attachment-item" id="attachment-{ a.ID }">
+								<a href={ templ.URL("/files/"+a.ID) } class="bc-link">{ a.Filename }</a>
+								<span class="bc-attachment-meta">{ a.Mime } — { fmt.Sprintf("%.1f KB", float64(a.Size)/1024) }</span>
+								<span class="bc-attachment-date">{ a.CreatedAt }</span>
+							</div>
+						}
+					</div>
+					<form
+						hx-post="/api/action/attachment.upload"
+						hx-headers={ hxHeaders(s.CSRF) }
+						hx-target="#attachments-list"
+						hx-swap="afterbegin"
+						class="bc-attachment-form"
+						enctype="multipart/form-data"
+					>
+						<input type="file" name="file" class="bc-input" required/>
+						<button type="submit" class="bc-btn bc-btn-sm">Upload</button>
+					</form>
+				</div>
+
 				<button
 					class="bc-btn bc-btn-danger"
 					hx-post="/api/action/task.archive"
@@ -179,6 +203,16 @@ type TaskDetail struct {
 	Labels      []LabelRow
 	Watchers    []WatcherRow
 	Relations   []RelationRow
+	Attachments []AttachmentRow
+}
+
+// AttachmentRow is a file attached to a task.
+type AttachmentRow struct {
+	ID        string
+	Filename  string
+	Mime      string
+	Size      int64
+	CreatedAt string
 }
 
 // CommentRow is a single comment in the thread.
@@ -218,7 +252,7 @@ type WatcherRow struct {
 
 // RelationRow is a related task link.
 type RelationRow struct {
-	RelatedKey  string
+	RelatedKey   string
 	RelationType string
 }
 
