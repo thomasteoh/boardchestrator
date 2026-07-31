@@ -23,7 +23,9 @@ import (
 // ID generates a random 16-byte hex identifier (same scheme as action.newID).
 func ID() string {
 	var b [16]byte
-	rand.Read(b[:])
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("rand.Read: " + err.Error())
+	}
 	return hex.EncodeToString(b[:])
 }
 
@@ -39,8 +41,8 @@ type Store interface {
 
 // Config for the local backend.
 type Config struct {
-	DataDir     string // root data directory (BC_DATA_DIR)
-	MaxSize     int64  // per-file size limit (default 10MB)
+	DataDir      string   // root data directory (BC_DATA_DIR)
+	MaxSize      int64    // per-file size limit (default 10MB)
 	ContentTypes []string // allowed MIME types (default: common document/image types)
 }
 
