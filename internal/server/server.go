@@ -27,6 +27,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/job"
 	"github.com/thomasteoh/boardchestrator/internal/perm"
 	"github.com/thomasteoh/boardchestrator/internal/sse"
+	"github.com/thomasteoh/boardchestrator/internal/storage"
 	"github.com/thomasteoh/boardchestrator/internal/web"
 )
 
@@ -356,6 +357,12 @@ func (s *Server) Start(ctx context.Context) error {
 			action.WithPermissionChecker(perm.NewCheckerAdapter(s.db)),
 		)
 		web.SetDispatcher(s.disp)
+		// Wire the attachment storage backend.
+		store := storage.NewLocalStore(storage.Config{
+			DataDir: s.cfg.DataDir,
+		})
+		action.SetStorageStore(store)
+		web.SetFileStore(store)
 	}
 
 	s.ready.Store(true)

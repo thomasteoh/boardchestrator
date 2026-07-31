@@ -27,6 +27,7 @@ var migratedTables = []string{
 	"idempotency_keys", "audit_log", "jobs",
 	"orgs", "org_secrets", "teams", "projects", "roles", "memberships",
 	"sprints",
+	"attachments",
 }
 
 func tableExists(t *testing.T, d *sql.DB, name string) bool {

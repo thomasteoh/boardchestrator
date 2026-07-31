@@ -8,6 +8,18 @@ import (
 	"database/sql"
 )
 
+type Attachment struct {
+	ID         string
+	OrgID      string
+	TaskID     string
+	UploaderID string
+	Filename   string
+	Mime       string
+	Size       int64
+	StorageKey string
+	CreatedAt  string
+}
+
 type AuditLog struct {
 	ID         string
 	OrgID      sql.NullString

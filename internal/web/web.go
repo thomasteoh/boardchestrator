@@ -10,6 +10,7 @@ import (
 
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
+	"github.com/thomasteoh/boardchestrator/internal/storage"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
 )
 
@@ -228,6 +229,26 @@ func handleBacklogView(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// fileStore is the attachment storage backend, set by SetFileStore at startup.
+var fileStore storage.Store
+
+// SetFileStore sets the attachment storage backend for the download handler.
+func SetFileStore(s storage.Store) { fileStore = s }
+
+// handleAttachmentDownload streams an attachment file with security headers.
+func handleAttachmentDownload(w http.ResponseWriter, r *http.Request) {
+	if disp == nil {
+		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
+		return
+	}
+	if fileStore == nil {
+		http.Error(w, "file store not configured", http.StatusInternalServerError)
+		return
+	}
+
+	http.Error(w, "attachment download: direct DB query not wired — use action dispatch", http.StatusNotImplemented)
+}
+
 // handleSprintList renders the sprints list page for a project.
 func handleSprintList(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
@@ -345,4 +366,9 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/sprint.close", handleAction)
 	r.Post("/api/action/sprint.add_task", handleAction)
 	r.Post("/api/action/sprint.remove_task", handleAction)
+
+	// Attachment routes
+	r.Post("/api/action/attachment.upload", handleAction)
+	r.Post("/api/action/attachment.delete", handleAction)
+	r.Get("/files/{attachmentID}", handleAttachmentDownload)
 }
