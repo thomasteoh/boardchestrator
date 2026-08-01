@@ -2,14 +2,17 @@ package web
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
+	"github.com/thomasteoh/boardchestrator/internal/search"
 	"github.com/thomasteoh/boardchestrator/internal/storage"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
 )
@@ -19,6 +22,7 @@ var disp actionDispatcher
 
 type actionDispatcher interface {
 	Dispatch(ctx context.Context, actor action.Actor, name string, input json.RawMessage, opts action.Opts) (any, error)
+	DB() *sql.DB
 }
 
 func SetDispatcher(d actionDispatcher) { disp = d }
@@ -249,6 +253,60 @@ func handleAttachmentDownload(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "attachment download: direct DB query not wired — use action dispatch", http.StatusNotImplemented)
 }
 
+// handleSearchPage renders the search page.
+func handleSearchPage(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	s := shellData(r, "Search", "/search")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	var results []views.SearchResultRow
+	if q != "" {
+		sess, _ := auth.SessionFrom(r.Context())
+		r, err := search.Query(r.Context(), disp.DB(), q, sess.UserID, 50)
+		if err != nil {
+			slog.Error("search", "error", err)
+			http.Error(w, "search error", http.StatusInternalServerError)
+			return
+		}
+		for _, res := range r {
+			results = append(results, views.SearchResultRow{
+				Type:      res.Type,
+				ID:        res.ID,
+				ProjectID: res.ProjectID,
+				Title:     res.Title,
+				Key:       res.Key,
+				Body:      res.Body,
+				Status:    res.Status,
+			})
+		}
+	}
+	if err := views.SearchPage(s, q, results).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+// handleSearchAPI handles HTMX search queries via GET /api/search?q=...
+func handleSearchAPI(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	sess, _ := auth.SessionFrom(r.Context())
+
+	results, err := search.Query(r.Context(), disp.DB(), q, sess.UserID, 50)
+	if err != nil {
+		slog.Error("search", "error", err)
+		http.Error(w, "search error", http.StatusInternalServerError)
+		return
+	}
+
+	// Return JSON for API consumers
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(map[string]any{
+		"results": results,
+	}); err != nil {
+		slog.Error("search json encode", "error", err)
+	}
+}
+
 // handleSprintList renders the sprints list page for a project.
 func handleSprintList(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
@@ -366,6 +424,10 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/sprint.close", handleAction)
 	r.Post("/api/action/sprint.add_task", handleAction)
 	r.Post("/api/action/sprint.remove_task", handleAction)
+
+	// Search routes
+	r.Get("/app/search", handleSearchPage)
+	r.Get("/api/search", handleSearchAPI)
 
 	// Attachment routes
 	r.Post("/api/action/attachment.upload", handleAction)

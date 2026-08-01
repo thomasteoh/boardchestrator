@@ -53,6 +53,13 @@ type Comment struct {
 	UpdatedAt string
 }
 
+type CommentsFt struct {
+	ID        sql.NullString
+	Body      sql.NullString
+	TaskID    sql.NullString
+	ProjectID sql.NullString
+}
+
 type CustomFieldDef struct {
 	ID         string
 	OrgID      string
@@ -265,6 +272,14 @@ type TaskWatcher struct {
 	TaskID    string
 	ProjectID string
 	UserID    string
+}
+
+type TasksFt struct {
+	ID          sql.NullString
+	Title       sql.NullString
+	Description sql.NullString
+	Key         sql.NullString
+	ProjectID   sql.NullString
 }
 
 type Team struct {

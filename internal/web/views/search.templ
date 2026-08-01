@@ -1,0 +1,54 @@
+package views
+
+// SearchPage is the full search view with a query input and results list.
+templ SearchPage(s Shell, query string, results []SearchResultRow) {
+	@Base(s) {
+		<div class="bc-search" role="search">
+			<h2>Search</h2>
+			<form
+				hx-get="/api/search"
+				hx-target="#search-results"
+				hx-trigger="submit"
+				class="bc-search-form"
+			>
+				<input
+					type="search"
+					name="q"
+					value={ query }
+					class="bc-input bc-search-input"
+					placeholder="Search tasks and comments…"
+					autocomplete="off"
+				/>
+				<button type="submit" class="bc-btn bc-btn-primary">Search</button>
+			</form>
+			<div id="search-results" class="bc-search-results">
+				for _, r := range results {
+					<div class="bc-search-result">
+						if r.Type == "task" {
+							<a href={ templ.URL("/app/project/"+r.ProjectID+"/task/"+r.ID) } class="bc-link">
+								<strong>{ r.Key }</strong>: { r.Title }
+							</a>
+							<span class="bc-search-meta">task · { r.Status }</span>
+						} else {
+							<div class="bc-search-comment">
+								<span class="bc-search-body">{ r.Body }</span>
+								<span class="bc-search-meta">comment in { r.Key }</span>
+							</div>
+						}
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+// SearchResultRow is a single search result.
+type SearchResultRow struct {
+	Type      string // "task" or "comment"
+	ID        string
+	ProjectID string
+	Title     string
+	Key       string
+	Body      string
+	Status    string
+}

@@ -17,6 +17,7 @@ package action
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -137,6 +138,10 @@ type ActionCtx struct {
 	// never open their own transaction; Dispatch owns the boundary so that a
 	// handler error rolls back the whole action (SPEC §4).
 	Tx *Queries
+
+	// DB is the raw database handle, available for read-only queries (e.g.
+	// FTS5 search) that don't need a transaction.
+	DB *sql.DB
 }
 
 // HandlerFunc executes an action against its input, returning the output
