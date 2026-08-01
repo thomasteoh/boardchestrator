@@ -170,6 +170,18 @@ type Project struct {
 	CreatedAt   string
 }
 
+type RecurringRule struct {
+	ID         string
+	OrgID      string
+	ProjectID  string
+	TemplateID string
+	CronExpr   string
+	NextAt     string
+	Enabled    int64
+	CreatedAt  string
+	UpdatedAt  string
+}
+
 type Role struct {
 	ID         string
 	OrgID      string
@@ -266,6 +278,21 @@ type TaskRelation struct {
 	RelationType  string
 	ProjectID     string
 	CreatedAt     string
+}
+
+type TaskTemplate struct {
+	ID                  string
+	OrgID               string
+	ProjectID           string
+	Name                string
+	TitleTemplate       string
+	DescriptionTemplate string
+	Points              int64
+	Priority            int64
+	Status              string
+	LabelsJson          string
+	CreatedAt           string
+	UpdatedAt           string
 }
 
 type TaskWatcher struct {
