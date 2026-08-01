@@ -26,6 +26,9 @@ type Dispatcher struct {
 	now      Clock
 }
 
+// DB returns the raw database handle for read-only queries.
+func (d *Dispatcher) DB() *sql.DB { return d.db }
+
 // Option customises a Dispatcher at construction; used by both later WUs
 // (to swap in real engines) and tests (to force a branch).
 type Option func(*Dispatcher)
@@ -122,6 +125,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 		Proj:   opts.Proj,
 		DryRun: opts.DryRun,
 		Idem:   opts.Idem,
+		DB:     d.db,
 	}
 
 	// 3. Validate input schema.

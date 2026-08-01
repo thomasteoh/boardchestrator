@@ -26,6 +26,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/event"
 	"github.com/thomasteoh/boardchestrator/internal/job"
 	"github.com/thomasteoh/boardchestrator/internal/perm"
+	"github.com/thomasteoh/boardchestrator/internal/search"
 	"github.com/thomasteoh/boardchestrator/internal/sse"
 	"github.com/thomasteoh/boardchestrator/internal/storage"
 	"github.com/thomasteoh/boardchestrator/internal/web"
@@ -363,6 +364,36 @@ func (s *Server) Start(ctx context.Context) error {
 		})
 		action.SetStorageStore(store)
 		web.SetFileStore(store)
+
+		// Start the search indexer — subscribes to the event bus.
+		ix := search.NewIndexer(s.db)
+		sub, _ := s.bus.Subscribe(event.Filter{
+			Names: map[string]struct{}{
+				"task.create":    {},
+				"task.update":    {},
+				"task.archive":   {},
+				"task.unarchive": {},
+				"comment.create": {},
+				"comment.update": {},
+				"comment.delete": {},
+			},
+		}, 64)
+		go func() {
+			defer sub.Close()
+			for {
+				select {
+				case ev, ok := <-sub.C:
+					if !ok {
+						return
+					}
+					if err := ix.IndexEvent(context.Background(), ev.Name, ev.Payload); err != nil {
+						slog.Error("search indexer", "event", ev.Name, "error", err)
+					}
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
 	}
 
 	s.ready.Store(true)

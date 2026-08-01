@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS tasks_fts;
+DROP TABLE IF EXISTS comments_fts;

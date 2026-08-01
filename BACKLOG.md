@@ -190,7 +190,7 @@ Deps: 205.
 Sprint CRUD actions; assign tasks in/out (from backlog + task page); active-sprint board filter; close sprint → prompt to move open tasks (to backlog/next sprint).
 AC: sprint lifecycle tests; close-with-open-tasks flow moves correctly; board filter shows only sprint tasks.
 
-### WU-207 · Attachments (local) — `ready`
+### WU-207 · Attachments (local) — `done 2026-07-31 wu-207: attachment storage, actions, routes, UI, tests`
 Deps: 202, 009.
 Storage interface + local backend per SPEC §9; upload (drag-drop + picker) with org size/type limits; image re-encode; SVG sanitise; inline image preview lightbox; document list with download (attachment disposition, nosniff); `attachment.upload/delete` actions.
 AC: limit enforcement tests; SVG with script sanitised (golden); served headers asserted; delete removes blob + row.
