@@ -133,6 +133,19 @@ type Membership struct {
 	CreatedAt    string
 }
 
+type Notification struct {
+	ID          string
+	OrgID       string
+	UserID      string
+	EventName   string
+	SubjectID   string
+	Title       string
+	Body        string
+	GroupingKey string
+	CreatedAt   string
+	ReadAt      string
+}
+
 type Org struct {
 	ID         string
 	Name       string
