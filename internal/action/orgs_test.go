@@ -243,15 +243,22 @@ func mustParseID(t *testing.T, v any) string {
 		}
 		raw = json.RawMessage(b)
 	}
-	var m map[string]string
+	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	id, ok := m["id"]
 	if !ok {
+		id, ok = m["ID"]
+	}
+	if !ok {
 		t.Fatal("result has no id field")
 	}
-	return id
+	idStr, ok := id.(string)
+	if !ok {
+		t.Fatalf("id field is not a string: %T", id)
+	}
+	return idStr
 }
 
 // TestDBScopeResolver ensures scope resolution works for org/team/project scopes.
