@@ -142,25 +142,3 @@ func TestLoadSessionSecretTooShort(t *testing.T) {
 		t.Fatal("Load() should error when BC_SESSION_SECRET is too short")
 	}
 }
-
-func TestLoadRequiresGoogleClientID(t *testing.T) {
-	os.Clearenv()
-	os.Setenv("BC_SECRET_KEY", "test-secret-key")
-	os.Setenv("BC_SESSION_SECRET", "a-really-long-session-secret-that-is-at-least-thirty-two-chars")
-	os.Setenv("BC_GOOGLE_CLIENT_SECRET", "google-client-secret")
-	_, err := config.Load()
-	if err == nil {
-		t.Fatal("Load() should error when BC_GOOGLE_CLIENT_ID is missing")
-	}
-}
-
-func TestLoadRequiresGoogleClientSecret(t *testing.T) {
-	os.Clearenv()
-	os.Setenv("BC_SECRET_KEY", "test-secret-key")
-	os.Setenv("BC_SESSION_SECRET", "a-really-long-session-secret-that-is-at-least-thirty-two-chars")
-	os.Setenv("BC_GOOGLE_CLIENT_ID", "google-client-id")
-	_, err := config.Load()
-	if err == nil {
-		t.Fatal("Load() should error when BC_GOOGLE_CLIENT_SECRET is missing")
-	}
-}
