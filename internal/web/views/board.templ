@@ -17,7 +17,7 @@ templ BoardPage(s Shell, projectID string, columns []ColumnView, swimlanes []Swi
 				>Configure columns</button>
 			</div>
 
-			<div class="bc-board-columns">
+			<div class="bc-board-columns" role="region" aria-label="Board columns" aria-live="polite" aria-atomic="false" aria-relevant="additions removals">
 			for _, col := range columns {
 				<div class="bc-board-column" id="col-{ col.ID }" data-status={ col.Status } style={ fmt.Sprintf("--col-color: %s", col.Color) }>
 					<div class="bc-col-header">
@@ -157,6 +157,72 @@ templ ColumnSettingsPage(s Shell, projectID string, columns []ColumnView) {
 					</div>
 				}
 			</div>
+		</div>
+	}
+}
+
+// BoardColumnsPartial renders just the columns and cards area (no shell) for
+// SSE-driven partial refresh.
+templ BoardColumnsPartial(projectID string, columns []ColumnView, swimlanes []SwimlaneRow) {
+	<div class="bc-board-columns" role="region" aria-label="Board columns" aria-live="polite" aria-atomic="false" aria-relevant="additions removals">
+	for _, col := range columns {
+		<div class="bc-board-column" id="col-{ col.ID }" data-status={ col.Status } style={ fmt.Sprintf("--col-color: %s", col.Color) }>
+			<div class="bc-col-header">
+				<h3 class="bc-col-name">{ col.Name }</h3>
+				<span class="bc-col-count">{ fmt.Sprintf("%d", col.Count) }</span>
+				if col.WIPLimit > 0 {
+					<span class="bc-col-wip" if col.Count > col.WIPLimit { class="bc-col-wip-over" }>
+						WIP { fmt.Sprintf("%d/%d", col.Count, col.WIPLimit) }
+					</span>
+				}
+			</div>
+
+			<div class="bc-col-cards" id="col-cards-{ col.ID }">
+				for _, c := range col.Cards {
+					<div class="bc-card" data-sort-key={ c.ID }>
+						<div class="bc-card-key">{ c.Key }</div>
+						<div class="bc-card-title">{ c.Title }</div>
+						<div class="bc-card-meta">
+							<div class="bc-card-assignees">
+								for _, a := range c.Assignees {
+									<span class="bc-avatar bc-avatar-sm" title={ a.Name }>{ a.Initial }</span>
+								}
+							</div>
+							<div class="bc-card-labels">
+								for _, l := range c.Labels {
+									<span class="bc-pill bc-label-sm" style={ fmt.Sprintf("background-color: %s", l.Color) }>{ l.Name }</span>
+								}
+							</div>
+							if c.Points > 0 {
+								<span class="bc-card-points">{ fmt.Sprintf("%d", c.Points) }</span>
+							}
+						</div>
+					</div>
+				}
+			</div>
+
+			<div class="bc-col-actions">
+				<button
+					class="bc-btn bc-btn-sm bc-btn-primary"
+					hx-get={ templ.URL("/api/project/"+projectID+"/task/new?column="+col.ID) }
+				>+ Add</button>
+			</div>
+		</div>
+	}
+	</div>
+	if len(swimlanes) > 0 {
+		<div class="bc-swimlanes">
+			<h3>Swimlanes</h3>
+			for _, s := range swimlanes {
+				<div class="bc-swimlane">
+					<h4>{ s.Name }</h4>
+					<div class="bc-swimlane-columns">
+						for _, col := range s.Columns {
+							<div class="bc-swimlane-card">{ col.Title }</div>
+						}
+					</div>
+				</div>
+			}
 		</div>
 	}
 }

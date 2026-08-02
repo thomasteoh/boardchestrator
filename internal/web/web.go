@@ -307,6 +307,40 @@ func handleSearchAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleBoardPartial renders the board columns and cards fragment for SSE-driven
+// partial refresh (used by bc.sse.refresh("task-updated", "#board-{id}", ...)).
+func handleBoardPartial(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	// Stub: return empty board fragment until DB-backed handler is wired.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.BoardColumnsPartial(projectID, nil, nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+// handleCommentsPartial renders the comments list fragment for a task (SSE-driven).
+func handleCommentsPartial(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Stub: return empty comments list until DB-backed handler is wired.
+	if err := views.CommentsListPartial(nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+// handleNotifUnreadCount returns the unread notification count for the current user
+// as JSON. Used by the notification badge SSE refresh.
+func handleNotifUnreadCount(w http.ResponseWriter, r *http.Request) {
+	sess, ok := auth.SessionFrom(r.Context())
+	if !ok || sess.UserID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"count":0}`))
+		return
+	}
+	// Stub: return zero until DB-backed query is wired.
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"count":0}`))
+}
+
 // handleSprintList renders the sprints list page for a project.
 func handleSprintList(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
@@ -417,6 +451,11 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/task.bulk_assign", handleAction)
 	r.Post("/api/action/task.bulk_label", handleAction)
 	r.Post("/api/action/task.bulk_move", handleAction)
+	// Partial-refresh routes (SSE-driven, WU-212)
+	r.Get("/app/project/{projectID}/board/partial", handleBoardPartial)
+	r.Get("/api/project/{projectID}/task/{taskID}/comments-partial", handleCommentsPartial)
+	r.Get("/api/notif/unread-count", handleNotifUnreadCount)
+
 	// Sprint routes
 	r.Get("/app/org/{orgID}/project/{projectID}/sprints", handleSprintList)
 	r.Post("/api/action/sprint.create", handleAction)

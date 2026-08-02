@@ -30,7 +30,7 @@ templ TaskDetailPage(s Shell, task TaskDetail, comments []CommentRow, activity [
 
 				<div class="bc-task-comments">
 					<h3>Comments</h3>
-					<div id="comments-list">
+					<div id="comments-list" role="region" aria-label="Comments" aria-live="polite" aria-atomic="false" aria-relevant="additions removals">
 						for _, c := range comments {
 							<div class="bc-comment" id="comment-{ c.ID }">
 								<div class="bc-comment-meta">
@@ -254,6 +254,22 @@ type WatcherRow struct {
 type RelationRow struct {
 	RelatedKey   string
 	RelationType string
+}
+
+// CommentsListPartial renders just the comments list fragment for SSE-driven
+// partial refresh. Used by bc.sse.refresh("task-updated", "#comments-list", ...).
+templ CommentsListPartial(comments []CommentRow) {
+	<div id="comments-list" role="region" aria-label="Comments" aria-live="polite" aria-atomic="false" aria-relevant="additions removals">
+		for _, c := range comments {
+			<div class="bc-comment" id="comment-{ c.ID }">
+				<div class="bc-comment-meta">
+					<span class="bc-comment-author">{ c.Author }</span>
+					<span class="bc-comment-date">{ c.CreatedAt }</span>
+				</div>
+				<div class="bc-comment-body bc-markdown">{ c.Body }</div>
+			</div>
+		}
+	</div>
 }
 
 // PriorityLabel returns a human-friendly priority string.

@@ -15,27 +15,108 @@ bc.csrfToken = function () {
   return m ? m.getAttribute('content') : '';
 };
 
-/* ---------- SSE helper (stub) ----------
- * Named-event subscription over a single EventSource. The /events endpoint
- * lands in WU-007; until then nothing calls connect(). Reconnect/backoff and
- * Last-Event-ID replay are deliberately left to WU-007/WU-212.
+/* ---------- SSE helper with reconnect/backoff ----------
+ * Named-event subscription over a single EventSource. Supports reconnect with
+ * exponential backoff, missed-event refetch on reconnection, and partial
+ * refresh dispatch via bc.sse.refresh().
  */
 bc.sse = (function () {
   var source = null;
-  var handlers = {}; // event name -> [fn]
+  var handlers = {};     // event name -> [fn]
+  var lastEventID = 0;
+  var retryDelay = 1000; // ms, doubles up to 30s
+  var maxDelay = 30000;
+  var reconnectTimer = null;
+  var refetchURL = null;
+
+  function connect(url) {
+    url = url || "/events";
+
+    source = new EventSource(url);
+
+    source.addEventListener("open", function () {
+      retryDelay = 1000; // reset on successful connection
+    });
+
+    source.addEventListener("error", function () {
+      // EventSource auto-reconnects by default; we override with backoff
+      // by closing and re-opening with a timer.
+      if (source.readyState === EventSource.CLOSED) {
+        source.close();
+        source = null;
+        scheduleReconnect(url);
+      }
+    });
+
+    // Track Last-Event-ID from incoming messages for replay on reconnect
+    source.addEventListener("message", function (e) {
+      lastEventID = parseInt(e.lastEventId, 10) || 0;
+    });
+
+    Object.keys(handlers).forEach(function (name) {
+      handlers[name].forEach(function (fn) {
+        source.addEventListener(name, fn);
+      });
+    });
+
+    return source;
+  }
+
+  function scheduleReconnect(url) {
+    if (reconnectTimer) return;
+    reconnectTimer = setTimeout(function () {
+      reconnectTimer = null;
+      connect(url);
+      // After reconnection, refetch any missed events since lastEventID
+      if (refetchURL && lastEventID > 0) {
+        refetchMissed(url, lastEventID);
+      }
+    }, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, maxDelay);
+  }
+
+  function refetchMissed(url, sinceID) {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", url + "?since=" + sinceID, true);
+    xhr.onload = function () {
+      if (xhr.status === 200) {
+        var lines = xhr.responseText.split("\n");
+        var currentEvent = null;
+        var currentData = "";
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i];
+          if (line.startsWith("event: ")) {
+            currentEvent = line.substring(7);
+          } else if (line.startsWith("data: ")) {
+            currentData = line.substring(6);
+          } else if (line === "") {
+            // blank line = event boundary
+            if (currentEvent && currentData) {
+              dispatchEvent(currentEvent, currentData);
+            }
+            currentEvent = null;
+            currentData = "";
+          }
+        }
+      }
+    };
+    xhr.send();
+  }
+
+  function dispatchEvent(name, data) {
+    var fns = handlers[name];
+    if (!fns) return;
+    var evt = { data: data };
+    fns.forEach(function (fn) { fn(evt); });
+  }
 
   return {
     connect: function (url) {
       if (source) {
         return source;
       }
-      source = new EventSource(url || "/events");
-      Object.keys(handlers).forEach(function (name) {
-        handlers[name].forEach(function (fn) {
-          source.addEventListener(name, fn);
-        });
-      });
-      return source;
+      refetchURL = url || "/events";
+      return connect(refetchURL);
     },
     on: function (name, fn) {
       (handlers[name] = handlers[name] || []).push(fn);
@@ -48,9 +129,26 @@ bc.sse = (function () {
         source.close();
         source = null;
       }
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      lastEventID = 0;
     },
     connected: function () {
       return source !== null;
+    },
+    // Called by page-specific Alpine components to register partial-refresh
+    // handlers for SSE events.
+    refresh: function (eventName, selector, url) {
+      bc.sse.on(eventName, function (e) {
+        if (htmx) {
+          htmx.ajax("GET", url, {
+            target: selector,
+            swap: "innerHTML"
+          });
+        }
+      });
     }
   };
 })();
@@ -90,6 +188,7 @@ document.addEventListener("alpine:init", function () {
   window.Alpine.data("shell", function () {
     return {
       drawerOpen: false,
+      unreadCount: 0,
       openDrawer: function () {
         this.drawerOpen = true;
       },
@@ -98,6 +197,13 @@ document.addEventListener("alpine:init", function () {
       },
       toggleTheme: function () {
         bc.theme.toggle();
+      },
+      init: function () {
+        // Register notification-badge SSE handler
+        var self = this;
+        bc.sse.on("notification", function () {
+          bc.sse.refresh("notification", "#notif-badge", "/api/notif/unread-count");
+        });
       }
     };
   });
@@ -111,6 +217,10 @@ document.addEventListener("alpine:init", function () {
         el = this.$el;
         var cols = el.querySelector(".bc-board-columns");
         if (!cols) return;
+
+        // Register SSE partial refresh for board cards
+        bc.sse.refresh("task-updated", "#board-" + cfg.projectID, "/app/project/" + cfg.projectID + "/board/partial");
+
         sort = Sortable.create(cols, {
           group: "board",
           animation: 150,
@@ -164,6 +274,15 @@ document.addEventListener("alpine:init", function () {
       },
       destroy: function () {
         if (sort) sort.destroy();
+      }
+    };
+  });
+
+  /* Task detail — SSE-driven partial refresh for comments */
+  window.Alpine.data("taskDetail", function (cfg) {
+    return {
+      init: function () {
+        bc.sse.refresh("task-updated", "#comments-list", "/api/project/" + cfg.projectID + "/task/" + cfg.taskID + "/comments-partial");
       }
     };
   });

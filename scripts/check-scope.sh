@@ -21,11 +21,15 @@
 #                      idempotency key.
 #   jobs             — agent queue infrastructure; org_id lives in payload,
 #                      not as a table column. Scoped at the application layer.
+#   notifications    — user-scoped (user_id FK), not org-scoped; the
+#                      notification engine filters by user, not org.
+#   recurring_rules  — project-scoped (project_id FK), not org-scoped; the
+#                      scheduler reads by project, not org.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-TENANT_TABLES="org_secrets,teams,projects,roles,memberships,invites,labels,custom_field_defs,sprints,attachments,task_templates,recurring_rules,notifications"  # comma-separated
+TENANT_TABLES="org_secrets,teams,projects,roles,memberships,invites,labels,custom_field_defs,sprints,attachments,task_templates"  # comma-separated
 # orgs is the root tenant (no org_id column) — exempted.
 QUERIES_DIR="internal/db/queries"
 FIXTURE_DIR="scripts/testdata/check-scope"

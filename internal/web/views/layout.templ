@@ -96,7 +96,12 @@ templ navLinks(active string, mobileOnly bool) {
 					aria-current="page"
 				}
 			>
-				{ it.Label }
+				if it.Href == "/notifications" {
+					{ it.Label }
+					<span id="notif-badge" class="bc-notif-badge" x-text="unreadCount > 0 ? unreadCount : ''" style="display:none">0</span>
+				} else {
+					{ it.Label }
+				}
 			</a>
 		}
 	}
