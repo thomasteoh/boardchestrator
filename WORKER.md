@@ -22,12 +22,13 @@ Each working session is one iteration:
 1. **Orient.** Read WORKER.md (this file), SPEC.md §1–§5, QUESTIONS.md, and BACKLOG.md. Run `git log --oneline -15` and `git status` to see where the last iteration ended. If the working tree is dirty from an interrupted iteration, finish or cleanly revert it first.
 2. **Select.** Take the **first WU in BACKLOG.md with status `ready` whose deps are all `done`**. Do not skip ahead for interest, do not batch multiple WUs. If none qualifies, check `blocked` items against QUESTIONS.md for answers; if still nothing, stop and report.
 3. **Mark.** Set the WU to `in-progress` (uncommitted is fine until the final commit).
-4. **Plan briefly.** Re-read the WU's SPEC sections. List the files you'll touch and the tests you'll write. If the WU turns out to be much larger than it reads, split it: append sub-items `WU-NNNa/b/…` under it in BACKLOG.md with their own AC, and do the first.
+4. **Plan & decompose.** Re-read the WU's SPEC sections. Break the WU into a numbered checklist of concrete steps (each 1–5 files, one logical change). Write this checklist at the top of TASK.md or in a commit message draft. If the WU turns out to be much larger than it reads, split it: append sub-items `WU-NNNa/b/…` under it in BACKLOG.md with their own AC, and do the first.
 5. **Build test-first where logic-heavy.** Migrations before queries, queries before actions, actions before handlers, handlers before templ views. Follow SPEC §3 conventions exactly.
-6. **Verify.** `make check` must be fully green — no skipped tests, no lint suppressions without a comment explaining why. Every AC in the WU needs an automated test, or a `Manual:` note in the BACKLOG entry describing exactly what you did with `bc serve` and what you observed.
-7. **Record.** Update the WU status to `done YYYY-MM-DD <commit subject>` in BACKLOG.md. Add a short note under the WU for any decision a future iteration needs (e.g. "chose in-repo MCP impl, SDK lacked auth hooks").
-8. **Commit & push.** One commit: `WU-NNN: imperative summary`. Push to the phase branch (`build/phase-N` per BACKLOG). Never commit secrets, `.env`, or generated files excluded by `.gitignore`.
-9. **Report.** End with: WU completed, AC status, anything appended to QUESTIONS.md, and which WU is next.
+6. **Checkpoint every step.** After each checklist item completes and passes `make check`, commit with `WU-NNN: <step summary>`. This is the recovery point — if the worker dies mid-task, the next worker picks up from the last checkpointed step, not from scratch. The TASK.md checklist doubles as the recovery log; mark completed items with `[x]`.
+7. **Verify.** `make check` must be fully green — no skipped tests, no lint suppressions without a comment explaining why. Every AC in the WU needs an automated test, or a `Manual:` note in the BACKLOG entry describing exactly what you did with `bc serve` and what you observed.
+8. **Record.** Update the WU status to `done YYYY-MM-DD <commit subject>` in BACKLOG.md. Add a short note under the WU for any decision a future iteration needs.
+9. **Commit & push.** Push to the phase branch (`build/phase-N` per BACKLOG). Never commit secrets, `.env`, or generated files excluded by `.gitignore`.
+10. **Report.** End with: WU completed, AC status, anything appended to QUESTIONS.md, and which WU is next.
 
 One WU per iteration. A finished small WU beats a half-finished big one — the loop's value is that every iteration leaves `main`-mergeable state on the branch.
 

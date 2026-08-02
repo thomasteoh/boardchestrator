@@ -15,47 +15,84 @@ Initial scaffold: Go module, cmd/bc entry point with serve/backup subcommands, c
 Go module `github.com/thomasteoh/boardchestrator`; `cmd/bc` with `serve` (flag/env parse, hello handler) and stub `backup`; `internal/config` loading all `BC_*` vars with defaults + validation; slog JSON logger with level from env; Makefile (`gen`, `check`, `check-scope` [placeholder pass], `dev`, `build`); `.gitignore`; golangci-lint config.
 AC: `make check` green; `config.Load` unit tests cover defaults, overrides, invalid values; `bc serve` starts and logs a structured startup line. Manual: curl `/` returns placeholder.
 
-### WU-002 · HTTP server core — `ready`
+### WU-002 · HTTP server core — `done 2026-07-17 WU-002`
 Deps: 001.
 chi router; middleware: request-id, structured request log, recover; `/healthz`, `/readyz`; Prometheus `/metrics`; graceful shutdown on SIGTERM (drains, 10s cap).
 AC: handler tests for healthz/readyz/metrics; shutdown test asserts in-flight request completes; recover middleware turns panic into 500 + log, test proves it.
 
-### WU-003 · SQLite + migrations + sqlc — `ready`
+### WU-003 · SQLite + migrations + sqlc — `done 2026-07-19 WU-003: SQLite open + embedded migrations + sqlc config + check-scope gate`
 Deps: 001.
 `internal/db`: open with WAL, foreign_keys, busy_timeout; golang-migrate embedded, run at startup; sqlc config; migration 0001: `users`, `identities`, `sessions`, `platform_settings`; `dbtest` helper (temp file DB, migrations applied); `check-scope` gate implemented (script scanning sqlc queries on tenant tables for org_id param — table list maintained in the script).
 AC: dbtest spins/uses/destroys a DB in tests; migration up+down round-trips; WAL confirmed via pragma test; check-scope fails on a deliberate fixture and passes on the repo.
+Notes: driver is modernc.org/sqlite v1.46.1 (pure Go — see Q3; newest version whose dep closure keeps `go 1.25` under the pinned local toolchain). sqlc pinned at v1.30.0 in the Makefile (`go run mod@version`; v1.31.x needs go ≥ 1.26); `make gen` skips sqlc until the first query file lands but the config was validated end-to-end with a throwaway query. Tenant-table list lives in `scripts/check-scope.sh` (empty for now — the 0001 tables are platform-scoped); grow it in the same commit as any migration adding an org_id table. check-scope self-tests against committed fixtures in `scripts/testdata/check-scope/` on every run. Manual: `bc serve` against a fresh DB logged "database ready", created all four tables + seeded platform_settings(id=1, bootstrap_done=0), healthz 200, clean shutdown.
 
-### WU-004 · App shell (templ + HTMX, responsive) — `ready`
+### WU-004 · App shell (templ + HTMX, responsive) — `done 2026-07-20 WU-004: app shell (templ layout, vendored htmx/Alpine-CSP, responsive tokens)`
 Deps: 002.
 templ base layout: header, sidebar (desktop) / bottom-nav + drawer (mobile), main slot; embedded static assets with cache-busting hashes; vendored htmx, Alpine, app.js (SSE helper stub); `app.css` design tokens, dark/light via `data-theme` + `prefers-color-scheme`; breakpoints 640/1024.
 AC: layout renders (templ unit test on rendered HTML: nav present, nonce attr present); static served with immutable cache headers (handler test); `make check` includes templ generate diff-clean. Manual: shell verified at 375px and 1280px widths.
+Notes: templ v0.3.1001 pinned in Makefile (CLI + runtime module must match); `make gen` now runs templ generate, `make check` enforces `*_templ.go` diff-clean. Vendored Alpine **CSP build** (`@alpinejs/csp` 3.15.8) not standard Alpine — standard Alpine's `new Function()` eval violates the nonce-CSP of SPEC §15; all component logic must live in app.js via `Alpine.data(...)`, templates only reference names. See static/vendor/VENDOR.md. Nonce passed into `Base(Shell)` as a param; real per-request source lands in WU-005. templ emits lowercase `<!doctype html>` (valid HTML5); test asserts lowercase. Manual note: mobile/desktop verified by CSS inspection (breakpoint rules at 640/1024 present, drawer + bottom-nav rules exist), not a headless visual render.
 
-### WU-005 · Sessions, CSRF, CSP — `ready`
+### WU-005 · Sessions, CSRF, CSP — `done 2026-07-20 WU-005: sessions, CSRF, nonce CSP + security headers`
 Deps: 003, 004.
 Server-side session store (sessions table) with `__Host-bc_session` cookie; CSRF per-session token, middleware rejecting mutating requests without it, token injected into base layout `hx-headers`; nonce-based CSP middleware; security headers (nosniff, frame-ancestors none, referrer-policy).
 AC: tests — mutation without CSRF → 403, with → 200; CSP header carries fresh nonce per request; session create/rotate/expiry covered.
 
-### WU-006 · Action registry + dispatch — `ready`
+Notes:
+- New package `internal/auth`: `SessionStore` (sqlc-backed, sessions table), CSRF helpers, and the CSP/Session/CSRF middleware. First sqlc queries landed (`internal/db/queries/sessions.sql` → `internal/db/sqlc`); `make gen`/`make check` now exercise sqlc for real. **sqlc v1.30.0 quirk:** a leading block comment before the first `-- name:` query mangles the generated SQL (drops trailing tokens/`;`) — keep query files starting directly with `-- name:`; per-query comments are fine.
+- **Session tokens:** 32 random bytes, hex; only SHA-256 hash stored (`sessions.token_hash`). Sliding TTL 14d, absolute cap 90d (constants `auth.SlidingTTL`/`AbsoluteTTL`). Lookup slides expiry (capped), deletes+rejects expired. `Rotate` creates-new-then-deletes-old (call on login/privilege change); `Revoke` for logout; `PurgeExpired` for a future sweep. Clock injectable via `WithClock` for expiry tests.
+- **CSRF:** synchronizer token bound to session = `HMAC-SHA256(BC_SESSION_SECRET, session.token_hash)`, hex. Stateless (recompute + constant-time compare), deterministic per session so it injects into every render. Accepted from `X-CSRF-Token` header (HTMX, wired via `hx-headers` on `<body>`) or `csrf_token` form field. Safe methods (GET/HEAD/OPTIONS/TRACE) exempt; mutating request with no session also 403.
+- **CSP:** fresh nonce per request in context (`auth.Nonce`); `Shell.Nonce` now sourced from it (replaces WU-004 placeholder — `TestAppShellFreshNoncePerRequest` still green; web test router mounts `auth.CSP()`). Policy: `default-src 'self'`, `script-src 'self' 'nonce-…'`, `style-src 'self' 'nonce-…'` (layout has no inline style today — nonce is headroom, no unsafe-inline/eval anywhere), `frame-ancestors 'none'`, `object-src 'none'`, `base-uri/form-action/connect-src/font-src 'self'`, `img-src 'self' data:`. Plus `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`.
+- **Router order** (`internal/server`): reqid → log → recover → **CSP (always)** → Session → CSRF. Session/CSRF only mount when a DB is wired: added `server.NewWithDB(cfg, *sql.DB)`; `server.New(cfg)` = no-DB (CSP-only, keeps existing tests). `serve.go` now uses `NewWithDB`.
+- **Test seam:** `SessionConfig.Insecure` drops the `Secure` cookie attr for plain-HTTP httptest only; production cookie attributes are never weakened (dedicated `TestSessionCookieAttributes` asserts Secure/HttpOnly/SameSite=Lax/Path=/, no Domain on the real config). Note: server integration CSRF test works over plain HTTP because `Secure` gates browser send, not server-side `r.Cookie` reads.
+- AC→test: mutation-no-token→403 & with-token→200 = `TestServerCSRFEnforcedWhenDBWired` (full router) + `TestCSRFBlocksMutationWithoutToken`/`TestCSRFAllowsMutationWithValidToken` (middleware); fresh nonce per request = `TestServerCSPFreshNoncePerRequest`, `TestCSPFreshNoncePerRequest` (also asserts header nonce == context nonce), `TestAppShellFreshNoncePerRequest`; session create/rotate/expiry = `TestSessionCreateAndLookup`, `TestSessionRotateInvalidatesOld`, `TestSessionExpiredRejected`, `TestSessionSlidingExpiry`, `TestSessionAbsoluteCap`, `TestSessionRevoke`, `TestSessionPurgeExpired`; extras: cross-session CSRF rejected, safe-method exempt, cookie attrs, hx-headers injection, strict-policy assertions. No new migration needed (sessions table from 0001 sufficient). Opened QUESTIONS Q4 (require BC_SESSION_SECRET — deferred to WU-101, non-blocking).
+
+### WU-006 · Action registry + dispatch — `done 2026-07-20 WU-006: action registry + dispatch pipeline + idempotency/audit migration`
 Deps: 003.
 `internal/action` per SPEC §4: Definition, Register (panic on dup), Dispatch pipeline (schema validate → scope resolve → perm hook interface → approval hook interface [no-op impl for now] → tx execute → idempotency store → event emit → audit hook); `ErrApprovalPending`, `ErrForbidden`; dry-run mode; migration: `idempotency_keys`, `audit_log`.
 AC: unit tests for every pipeline branch: invalid input, unknown action, dup register panic, idempotent replay returns stored result, dry-run does not execute, high-impact emits audit via hook, event emitted with actor.
 
-### WU-007 · Event bus + SSE hub — `ready`
+Notes:
+- **Pipeline** (`internal/action/dispatch.go`, `Dispatcher.Dispatch`) runs exactly in SPEC §4 order: resolve/validate actor → lookup action → validate input schema → scope resolve → permission → approval gate (agents only) → dry-run branch (Preview or input echo, no exec/store/event/audit/mutation) → idempotency check (stored result returned without re-running Handle) → execute Handle in a `db.BeginTx` (commit on success, rollback on handler error) → store idempotent result → emit event carrying the actor → audit (ImpactHigh for all actors, and *every* agent action regardless of impact).
+- **Hook seams (injectable on `Dispatcher` via `With*` options), where later WUs plug in:**
+  - `PermissionChecker.Allow` — default `allowAllPermissions` (Phase 0 has no roles). **WU-105** replaces with the deny-by-default `internal/perm` engine via `WithPermissionChecker`.
+  - `ApprovalGate.Gate` — default `noopApprovalGate` (always ApprovalProceed). **WU-306** implements per-impact-class policy, persists `approvals` rows, and returns `ApprovalPending`/`ApprovalForbid`; wire via `WithApprovalGate`. Gate is consulted for agent actors only.
+  - `ScopeResolver.Resolve` — default `noopScopeResolver`. **WU-104** enforces id existence + actor membership once orgs/teams/projects exist; wire via `WithScopeResolver`.
+  - `EventSink.Emit` — default `noopEventSink`; `Event{Name,Org,Actor,Subject,Payload}` shape owned here (no `internal/event` yet). **WU-007** builds the bus, implements `EventSink`, and fans out to SSE/notify/webhook/search/activity; wire via `WithEventSink`.
+  - `AuditSink` (DB-backed default) + `IdempotencyStore` (DB-backed default) over the 0002 tables; `Clock` injectable via `WithClock`.
+- **Schema validation:** chose a small `Schema` interface (`Validate(json.RawMessage) error`) with a std-lib-only `ObjectSchema` (required/type/unknown-field checks) + `FuncSchema`, **not** a JSON Schema dependency. SPEC §4 says "compiled once"; the interface satisfies that and keeps Phase 0 deps at std-lib only. A JSON-Schema-backed impl can slot behind the same interface later (WU-401 input fuzzing, WU-402 OpenAPI) without touching Dispatch. No QUESTIONS entry — within WU discretion per the env note.
+- **Handler tx contract:** `ActionCtx.Tx` is a `*action.Queries` (wraps sqlc `*Queries` bound to the dispatch tx). Handlers never open their own tx. A nil-`db` Dispatcher runs Handle with nil Tx (narrow unit tests only).
+- **Migration 0002** (`0002_action_infra`): `idempotency_keys` (no org_id — global key), `audit_log` (org_id NULLABLE). check-scope.sh documents both as deliberate exclusions from `TENANT_TABLES` (not weakened; self-test still green). Round-trip covered by extending `migratedTables` in `internal/db/db_test.go`.
+- **sqlc:** query files start directly with `-- name:` per the v1.30.0 quirk; generated output diff-clean.
+- **AC→test** (`internal/action/*_test.go`): invalid input rejected = `TestDispatchInvalidInputRejected` (6 cases, asserts Handle not called) + `TestObjectSchemaValidate`; unknown action = `TestDispatchUnknownAction`; dup Register panic = `TestRegisterDuplicatePanics` (recovers); idempotent replay returns stored result without re-exec = `TestDispatchIdempotentReplay` (asserts Handle ran once); dry-run no exec/mutate = `TestDispatchDryRunDoesNotExecute` (+ no audit) & `TestDispatchDryRunNilPreviewEchoesInput` & `TestDryRunEmitsNoEvent`; ImpactHigh audit via hook = `TestDispatchImpactHighEmitsAudit` (+ `TestDispatchAgentActionAlwaysAudited`, `TestDefaultAuditSinkWritesRow`); event with actor = `TestDispatchEmitsEventWithActor`; extras: `TestDispatchForbiddenWhenPermDenies`, `TestDispatchApprovalPending`/`ApprovalForbid`/`ApprovalGateSkippedForNonAgent`, `TestDispatchScopeFailure`, `TestHandlerErrorRollsBackTx`/`SuccessCommitsTx`, `TestClockInjectable`, `TestDispatchRejectsBadActor`.
+- **`bc serve` unchanged:** migration 0002 applies via the embedded FS at startup; no action packages register yet (first is WU-104), so no Dispatcher is constructed in serve.go — the defaults are ready for that WU.
+
+### WU-007 · Event bus + SSE hub — `done 2026-07-20 WU-007: event bus + SSE hub + /events endpoint`
 Deps: 002, 006.
 `internal/event` typed pub/sub (buffered, non-blocking, drop-with-metric on slow consumer); `internal/sse` hub keyed by user with topic filter; `/events` endpoint (session auth stub interface), heartbeat, Last-Event-ID ring buffer.
 AC: bus delivery + slow-consumer tests; SSE handler test asserts event framing, heartbeat, replay from ring buffer.
 
-### WU-008 · Dockerfile + CI — `ready`
+Notes:
+- **Bus filter model** (`internal/event`): `Filter{Org, Names}`. `Org==""` matches any org, else exact-match; `Names==nil` matches any action name, else membership in the set. Filtering is by **org + action name only, not subject** — enough for the SSE hub (which re-checks per-user/per-view relevance) and keeps tenancy knowledge out of the bus. Per-subscriber buffered channel (default 64); `Publish` is non-blocking — on a full buffer it drops for that subscriber and increments `bc_event_dropped_total{org}` (promauto default registry, same as the server's HTTP metrics), never blocking the publisher/dispatch path. Subscribe returns a `*Subscription` (read `.C`) + an unsubscribe func; `Close` is idempotent and closes the channel.
+- **EventSink adapter location + import-cycle decision:** the adapter lives in `internal/event` (`event.SinkAdapter`, `event.NewSink(bus)`), NOT in `internal/action`. Dependency direction is one-way **event → action**: the adapter imports `action` to implement `action.EventSink` and convert `action.Event`→`event.Event`. `action` does not import `event`, so no cycle. The `action.EventSink` interface was **not changed**. Wire onto the Dispatcher via the existing `action.WithEventSink(server.EventSink())` — the no-op default from WU-006 is replaced only where a Dispatcher is constructed, which is still nowhere in serve.go (WU-006 note: first action registers in WU-104), so the adapter is made available (`server.Bus()`, `server.EventSink()`) and unit-tested; no Dispatcher wiring change was needed this WU.
+- **SSE event names** (`internal/sse`, SPEC §3/§8 framing helper `frame`): `task-updated`, `notification`, `chat-delta`, `run-status`. `eventNameFor` maps action-name prefixes (`task.*`→task-updated, `notification.*`→notification, `chat.*`→chat-delta, `run.*`→run-status) with a generic `message` fallback so new actions stream without a code change. Frame is `id: <n>\nevent: <name>\ndata: <json>\n\n`; heartbeat is a `: ping\n\n` comment every 25s (`HeartbeatInterval`, overridable in tests via `WithHeartbeat`). `data:` JSON carries `{name,org,subject,payload}`.
+- **How current-user is resolved:** the hub takes a `UserResolver` seam (the BACKLOG "session auth stub interface"). Production uses `sse.SessionUserResolver`, which reads the session the WU-005 middleware stashed in the request context via the existing `auth.SessionFrom` accessor — **no new accessor needed, no cookie parsing duplicated**. Tests inject a stub resolver. Unauthenticated → 401.
+- **Last-Event-ID / replay:** per-hub fixed-size ring buffer (256 events, best-effort). Every dispatched bus event gets a monotonic id; on reconnect the handler reads `Last-Event-ID` (header, or `last_event_id` query fallback) and replays buffered events with a greater id before live streaming. A client further behind than the buffer catches whatever remains and should refetch.
+- **Server wiring:** `Server` now owns a `*event.Bus` (always) and a `*sse.Hub` (only when a DB/session store is wired — the stream needs the authed user). `/events` mounts only in that case (no-DB server → 404). `hub.Run` is pumped for the server lifetime (started in `Start`, cancelled in `Shutdown`). Added `statusRecorder.Flush()` so SSE frames flush through the request-logging middleware; the handler flushes response headers immediately after `WriteHeader` so `EventSource`/clients establish the connection before the first event.
+- **Phase-0 audience:** `dispatch` currently fans every event to every authenticated client (no orgs/memberships until WU-104); the audience narrows to org members in later WUs. Per-client delivery is also non-blocking (stalled client drops; ring buffer + reconnect cover gaps).
+- **AC→test:** bus delivery = `event.TestBusDelivery` (+ `TestFilterByOrgAndName`, `TestSinkAdapterForwards`, `TestUnsubscribeStopsDelivery`); slow-consumer drops-without-blocking + counter increments = `event.TestSlowConsumerDropsWithoutBlocking` (reads the counter via `client_model` directly to avoid adding prometheus/testutil's indirect test dep — `client_model` was already an indirect dep, now promoted to direct by `go mod tidy`; no new module, `go 1.25` unchanged); SSE event framing (`id:`/`event:`/`data:` + blank-line terminator) = `sse.TestEventFraming` + `TestFrameParses`; heartbeat = `sse.TestHeartbeat`; replay from ring via Last-Event-ID = `sse.TestReplayFromRingBuffer`; plus `sse.TestHandlerRejectsUnauthenticated`, `TestHandlerSetsSSEHeaders`, `TestEventNameMapping`, and server integration `server.TestEventsStreamsToAuthedUser` / `TestEventsRouteAbsentWithoutDB`. Streaming tests use `httptest.NewServer` + a real HTTP client reading frames over a socket (not a shared `ResponseRecorder`) so `-race` sees no data race; `closeServer` drops client conns before `srv.Close()` for idle-heartbeat streams.
+- No QUESTIONS entries; all within-WU discretion per the env note. No new migration.
+
+### WU-008 · Dockerfile + CI — `done 2026-07-22 WU-008: Dockerfile + CI`
 Deps: 001.
 Multi-stage Dockerfile (distroless nonroot, /data volume); workflows: `lint.yml` (PR→main: golangci-lint, gofmt, templ gen check), `test.yml` (push→main: `go test -race ./...`), `release.yml` (tag `*-rc.*` matching `^\d+\.\d+\.\d+-rc\.\d+$`: build image, no push; tag `^\d+\.\d+\.\d+$`: buildx, push ghcr `X.Y.Z` + `latest`).
 AC: `docker build` succeeds locally; workflows lint clean (actionlint if available); tag-pattern filtering covered by workflow-level `if` conditions reviewed against both tag shapes. Manual: build run recorded in note below.
 
-### WU-009 · Landing page — `ready`
+### WU-009 · Landing page — `done 2026-07-20 WU-009: landing page`
 Deps: 004.
 Static landing at `/` for unauthenticated users: hero, feature sections (board, agents, wiki, MCP), animated flair honouring reduced-motion, screenshots placeholder slots, links to login + GitHub repo; OpenGraph/Twitter meta, favicon set.
 AC: handler test (unauthenticated `/` → landing; authenticated → app shell redirect); HTML validates (no unclosed tags via parser test); reduced-motion media query present. Manual: visual pass at 375/1280px.
 
-### WU-010 · PWA — `ready`
+### WU-010 · PWA — `done 2026-07-21 WU-010: PWA (manifest, service worker, offline)`
 Deps: 004, 009.
 Manifest + icons; `sw.js` caching app shell + static (cache-first static, network-first documents, never API/SSE); offline fallback page with reconnect notice.
 AC: manifest served with correct MIME + linked from layout; sw excludes `/api`, `/events`, `/mcp` (unit test on route matcher logic extracted to testable JS-free Go route list or documented manual check). Manual: Lighthouse installable check.
@@ -64,22 +101,22 @@ AC: manifest served with correct MIME + linked from layout; sw excludes `/api`, 
 
 ## Phase 1 — Identity & Tenancy (branch `build/phase-1`)
 
-### WU-101 · Google OIDC login — `ready`
+### WU-101 · Google OIDC login — `done 2026-07-24 WU-101: Google OIDC login`
 Deps: 005.
 Discovery-based OIDC with PKCE, state, nonce; `/auth/google` + callback; user create/link by verified email; session issued + rotated; login rate limit.
 AC: httptest fake IdP covers happy path, bad state, bad nonce, unverified email; session cookie attributes asserted.
 
-### WU-102 · GitHub OAuth login — `ready`
+### WU-102 · GitHub OAuth login — `done 2026-07-24 WU-102: GitHub OAuth login`
 Deps: 101.
 GitHub flow with state; email fetch (primary verified); identity link to existing user by email; stores token_enc for later GitHub features.
 AC: fake GitHub server tests: new user, link-to-existing, missing verified email → friendly error.
 
-### WU-103 · Bootstrap gating — `ready`
+### WU-103 · Bootstrap gating — `done 2026-07-24 WU-103: Bootstrap gating`
 Deps: 101.
 Per SPEC §7: `BC_ADMIN_EMAILS` / `BC_BOOTSTRAP_TOKEN` gate; token logged while unclaimed; pre-bootstrap non-admin logins rejected with page; `bootstrap_done` flip is atomic.
 AC: tests for all three paths (email match, token, rejected); concurrent first-login race yields exactly one admin (tx test).
 
-### WU-104 · Orgs, teams, projects — `ready`
+### WU-104 · Orgs, teams, projects — `done 2026-07-26 WU-104: orgs teams projects`
 Deps: 006, 103.
 Migrations `orgs, org_secrets, teams, projects, roles, memberships`; actions `org.create/update`, `team.create/update`, `project.create/update/archive` (project KEY validation `^[A-Z][A-Z0-9]{1,9}$`, next_task_num=1); context fields editable; encrypted org_secrets helpers; sqlc queries all org-scoped (check-scope now enforcing for these tables).
 AC: action tests incl. duplicate slug/key rejection; secrets round-trip encrypt/decrypt; check-scope covers new tables.
@@ -202,7 +239,7 @@ AC: fuzz corpora committed; query-count tests for board render ≤ fixed budget;
 
 ## Phase 3 — Agent Harness (branch `build/phase-3`)
 
-### WU-301 · Job queue — `ready`
+### WU-301 · Job queue — `done 2026-07-24 WU-301: Job queue`
 Deps: 006.
 `jobs` migration; claim/backoff/max-attempts per SPEC §10; worker pool with graceful drain; dead-job status + requeue action; queue depth/age metrics.
 AC: claim contention test (n workers, no double-claim); backoff schedule test; drain-on-shutdown test.

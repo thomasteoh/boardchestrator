@@ -2,44 +2,42 @@ package main
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
-	"time"
+	"os"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/config"
+	"github.com/thomasteoh/boardchestrator/internal/db"
+	"github.com/thomasteoh/boardchestrator/internal/server"
 )
 
-func serve(ctx context.Context, cfg *config.Config) {
-	r := chi.NewRouter()
-	r.Use(middleware.RequestID)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		//nolint:errcheck // trivial hello; failure is not actionable
-		w.Write([]byte("Boardchestrator — coming soon"))
-	})
-
-	srv := &http.Server{
-		Addr:              cfg.Bind,
-		Handler:           r,
-		ReadTimeout:       10 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       30 * time.Second,
+func serve(cfg *config.Config) {
+	action.RegisterOrgActions()
+	if err := runServe(cfg); err != nil {
+		slog.Error("serve error", "error", err)
+		os.Exit(1)
 	}
+}
 
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			panic(err)
-		}
-	}()
+func runServe(cfg *config.Config) error {
+	ctx := context.Background()
 
-	<-ctx.Done()
+	d, err := db.Open(cfg.DBPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	//nolint:errcheck // shutdown error is best-effort during graceful drain
-	srv.Shutdown(shutdownCtx)
+	if err := db.MigrateUp(d); err != nil {
+		return err
+	}
+	slog.Info("database ready", "path", cfg.DBPath)
+
+	s := server.NewWithDB(cfg, d)
+	if err := s.Start(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }

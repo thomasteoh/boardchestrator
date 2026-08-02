@@ -19,5 +19,6 @@ data/
 .DS_Store
 Thumbs.db
 
-# Go vendor (we don't vendor)
-vendor/
+# Go vendor (we don't vendor Go deps; anchored to the repo root so the
+# pinned JS libs in internal/web/static/vendor/ stay committed)
+/vendor/
