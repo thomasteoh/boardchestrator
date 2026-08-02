@@ -54,11 +54,11 @@ CREATE TABLE IF NOT EXISTS roles (
 CREATE TABLE IF NOT EXISTS memberships (
     id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL REFERENCES orgs(id),
-    user_id TEXT NOT NULL REFERENCES users(id),
+    actor_id TEXT NOT NULL,
     actor_type TEXT NOT NULL DEFAULT 'user',
     resource_type TEXT NOT NULL DEFAULT 'org',
     resource_id TEXT NOT NULL DEFAULT '',
     role_id TEXT REFERENCES roles(id),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
-    UNIQUE(org_id, user_id, actor_type, resource_type, resource_id)
+    UNIQUE(org_id, actor_id, actor_type, resource_type, resource_id)
 );

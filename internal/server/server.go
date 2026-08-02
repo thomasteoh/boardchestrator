@@ -25,6 +25,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/event"
 	"github.com/thomasteoh/boardchestrator/internal/job"
+	"github.com/thomasteoh/boardchestrator/internal/perm"
 	"github.com/thomasteoh/boardchestrator/internal/sse"
 	"github.com/thomasteoh/boardchestrator/internal/web"
 )
@@ -346,11 +347,13 @@ func (s *Server) Start(ctx context.Context) error {
 		})
 	}
 
-	// Create the action dispatcher with DB-backed stores and scope resolver.
+	// Create the action dispatcher with DB-backed stores, scope resolver,
+	// and deny-by-default permission engine.
 	if s.db != nil {
 		s.disp = action.New(s.db,
 			action.WithScopeResolver(action.NewDBScopeResolver(s.db)),
 			action.WithEventSink(s.EventSink()),
+			action.WithPermissionChecker(perm.NewCheckerAdapter(s.db)),
 		)
 	}
 

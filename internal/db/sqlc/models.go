@@ -53,7 +53,7 @@ type Job struct {
 type Membership struct {
 	ID           string
 	OrgID        string
-	UserID       string
+	ActorID      string
 	ActorType    string
 	ResourceType string
 	ResourceID   string
