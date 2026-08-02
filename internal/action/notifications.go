@@ -83,10 +83,10 @@ func handleMarkAllRead(ctx context.Context, ac ActionCtx, in json.RawMessage) (a
 
 func handleNotifList(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
 	var input struct {
-		UserID  string `json:"user_id"`
-		Limit   int64  `json:"limit"`
-		Offset  int64  `json:"offset"`
-		UnreadOnly bool `json:"unread_only"`
+		UserID     string `json:"user_id"`
+		Limit      int64  `json:"limit"`
+		Offset     int64  `json:"offset"`
+		UnreadOnly bool   `json:"unread_only"`
 	}
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("notif.list: %w", err)
@@ -97,7 +97,7 @@ func handleNotifList(ctx context.Context, ac ActionCtx, in json.RawMessage) (any
 	if input.UnreadOnly {
 		rows, err := ac.Tx.ListUnreadNotifications(ctx, sqlc.ListUnreadNotificationsParams{
 			UserID: input.UserID,
-			Limit:  int64(input.Limit),
+			Limit:  input.Limit,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("notif.list: %w", err)
@@ -106,8 +106,8 @@ func handleNotifList(ctx context.Context, ac ActionCtx, in json.RawMessage) (any
 	}
 	rows, err := ac.Tx.ListNotifications(ctx, sqlc.ListNotificationsParams{
 		UserID: input.UserID,
-		Limit:  int64(input.Limit),
-		Offset: int64(input.Offset),
+		Limit:  input.Limit,
+		Offset: input.Offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("notif.list: %w", err)
