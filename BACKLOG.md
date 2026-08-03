@@ -4,6 +4,8 @@ Loop ledger. One work unit (WU) per iteration. Statuses: `ready` | `in-progress`
 
 Rules: pick the **first `ready` WU whose deps are all `done`**, top to bottom. Update this file in the same commit as the work. Never reorder or renumber; append notes under the WU if needed. Acceptance criteria (AC) require automated tests unless marked `Manual:`.
 
+**Branching: each WU gets a distinct branch `wu-<N>` from `main`.** Push to origin, PR on GitHub, squash-merge via PR. See `PROCESS-WORKFLOW.md`.
+
 ---
 
 ## Phase 0 — Foundation (branch `build/phase-0`)
