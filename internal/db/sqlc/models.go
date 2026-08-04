@@ -8,6 +8,19 @@ import (
 	"database/sql"
 )
 
+type ApiKey struct {
+	ID         string
+	UserID     string
+	OrgID      string
+	Name       string
+	Prefix     string
+	Hash       string
+	ScopeJson  string
+	LastUsedAt sql.NullString
+	CreatedAt  string
+	RevokedAt  sql.NullString
+}
+
 type Attachment struct {
 	ID         string
 	OrgID      string

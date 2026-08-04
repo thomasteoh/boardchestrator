@@ -419,6 +419,10 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/invite.accept", handleAction)
 	r.Post("/api/action/role.create", handleAction)
 	r.Post("/api/action/role.update", handleAction)
+	// API key routes (WU-109)
+	r.Get("/app/org/{orgID}/apikeys", handleAPIKeys)
+	r.Post("/api/action/apikey.create", handleAction)
+	r.Post("/api/action/apikey.revoke", handleAction)
 	// Task detail routes
 	r.Get("/app/org/{orgID}/project/{projectID}/task/{taskID}", handleTaskDetail)
 	r.Post("/api/action/task.create", handleAction)

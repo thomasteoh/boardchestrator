@@ -1,0 +1,75 @@
+package views
+
+type APIKeyRow struct {
+	ID        string
+	Name      string
+	Prefix    string
+	Scope     string
+	CreatedAt string
+	LastUsed  string
+}
+
+templ APIKeysPage(s Shell, orgID string, keys []APIKeyRow) {
+	@Base(s) {
+		<div class="settings-page">
+			<h2>API Keys</h2>
+			<p class="text-dimmed">Keys let you authenticate API requests with a Bearer token. The secret is shown once on creation.</p>
+
+			<button class="btn primary" onclick="showApiKeyForm()">Create API Key</button>
+
+			<div id="apikey-form" style="display:none; margin-top: 1rem;">
+				<form hx-post="/api/action/apikey.create" hx-headers={ hxHeaders(s.CSRF) } hx-target="#apikey-result" hx-swap="innerHTML">
+					<input type="hidden" name="org_id" value={orgID} />
+					<div class="field">
+						<label>Name</label>
+						<input type="text" name="name" required placeholder="e.g. CI deploy key" />
+					</div>
+					<div class="field">
+						<label>Scope (optional)</label>
+						<input type="text" name="scope" placeholder="task.*, project.read" />
+					</div>
+					<button type="submit" class="btn primary">Create</button>
+					<button type="button" class="btn" onclick="hideApiKeyForm()">Cancel</button>
+				</form>
+			</div>
+
+			<div id="apikey-result" style="margin-top: 1rem;"></div>
+
+			<h3 style="margin-top: 2rem;">Active Keys</h3>
+			<table class="keys-table">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Prefix</th>
+						<th>Scope</th>
+						<th>Created</th>
+						<th>Last Used</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					if len(keys) == 0 {
+						<tr><td colspan="6" class="empty">No API keys yet.</td></tr>
+					}
+					for _, k := range keys {
+						<tr>
+							<td>{k.Name}</td>
+							<td><code>{k.Prefix}...</code></td>
+							<td>{k.Scope}</td>
+							<td>{k.CreatedAt}</td>
+							<td>{k.LastUsed}</td>
+							<td>
+								<button class="btn small danger"
+									hx-post="/api/action/apikey.revoke"
+									hx-headers={ hxHeaders(s.CSRF) }
+									hx-vals={ `{"id":"` + k.ID + `","org_id":"` + orgID + `"}` }
+									hx-confirm="Revoke this key?"
+								>Revoke</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}

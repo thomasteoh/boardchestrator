@@ -117,6 +117,12 @@ func (s *Server) setupMiddleware() {
 	// Security headers + per-request CSP nonce run for every request, even
 	// before a DB is wired, so the app shell always renders under a strict CSP.
 	s.mux.Use(auth.CSP())
+	// API key auth middleware — resolves Bearer tokens into API key actors
+	// before session middleware. When a valid API key is present, it takes
+	// priority over session auth for API routes.
+	if s.db != nil {
+		s.mux.Use(auth.APIKeyAuthMiddleware(s.db))
+	}
 	// Session resolution then CSRF protection, in that order — CSRF needs the
 	// resolved session. Only mounted when a session store exists.
 	if s.sessions != nil {
