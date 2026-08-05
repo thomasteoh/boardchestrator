@@ -7,6 +7,12 @@ SELECT token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at
 FROM sessions
 WHERE token_hash = ?;
 
+-- name: ListSessionsByUser :many
+SELECT token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at
+FROM sessions
+WHERE user_id = ?
+ORDER BY created_at DESC;
+
 -- name: TouchSession :exec
 UPDATE sessions
 SET last_seen_at = ?, expires_at = ?

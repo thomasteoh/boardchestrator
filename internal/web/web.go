@@ -404,6 +404,10 @@ func Routes(r chi.Router) {
 	r.Get("/app/org/{orgID}/team/{teamID}/people", handleTeamPeople)
 	r.Get("/app/org/{orgID}/project/{projectID}/people", handleProjectPeople)
 	r.Get("/invite/accept", handleInviteAccept)
+	// User settings
+	r.Get("/app/settings", handleUserSettings)
+	r.Get("/api/sessions", handleSessionsList)
+
 	// Tenancy UI pages
 	r.Get("/app/org/{orgID}/settings", handleOrgSettings)
 	r.Get("/app/org/{orgID}/team/{teamID}/settings", handleTeamSettings)
@@ -423,6 +427,10 @@ func Routes(r chi.Router) {
 	r.Get("/app/org/{orgID}/apikeys", handleAPIKeys)
 	r.Post("/api/action/apikey.create", handleAction)
 	r.Post("/api/action/apikey.revoke", handleAction)
+	// User settings actions (WU-108)
+	r.Post("/api/action/user.theme.update", handleAction)
+	r.Post("/api/action/user.timezone.update", handleAction)
+	r.Post("/api/action/session.revoke", handleSessionRevoke)
 	// Task detail routes
 	r.Get("/app/org/{orgID}/project/{projectID}/task/{taskID}", handleTaskDetail)
 	r.Post("/api/action/task.create", handleAction)

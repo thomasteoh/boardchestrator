@@ -1,0 +1,80 @@
+package views
+
+// UserSettingsPage renders the user settings form.
+templ UserSettingsPage(s Shell, theme, timezone string) {
+	@Base(s) {
+		<h2>User Settings</h2>
+		<form hx-post={ templ.URL("/api/action/user.theme.update") } hx-headers={ hxHeaders(s.CSRF) } hx-target="body" hx-swap="innerHTML" class="bc-form">
+			<label>Theme
+				<select name="theme" class="bc-input">
+					<option value="system" if theme == "system" { selected }>System</option>
+					<option value="light" if theme == "light" { selected }>Light</option>
+					<option value="dark" if theme == "dark" { selected }>Dark</option>
+				</select>
+			</label>
+			<button type="submit" class="bc-btn bc-btn-primary">Save Theme</button>
+		</form>
+
+		<form hx-post={ templ.URL("/api/action/user.timezone.update") } hx-headers={ hxHeaders(s.CSRF) } hx-target="body" hx-swap="innerHTML" class="bc-form">
+			<label>Timezone
+				<select name="timezone" class="bc-input">
+					<option value="UTC" if timezone == "UTC" { selected }>UTC</option>
+					<option value="America/New_York" if timezone == "America/New_York" { selected }>America/New_York</option>
+					<option value="America/Chicago" if timezone == "America/Chicago" { selected }>America/Chicago</option>
+					<option value="America/Denver" if timezone == "America/Denver" { selected }>America/Denver</option>
+					<option value="America/Los_Angeles" if timezone == "America/Los_Angeles" { selected }>America/Los_Angeles</option>
+					<option value="Europe/London" if timezone == "Europe/London" { selected }>Europe/London</option>
+					<option value="Europe/Berlin" if timezone == "Europe/Berlin" { selected }>Europe/Berlin</option>
+					<option value="Asia/Tokyo" if timezone == "Asia/Tokyo" { selected }>Asia/Tokyo</option>
+					<option value="Australia/Sydney" if timezone == "Australia/Sydney" { selected }>Australia/Sydney</option>
+				</select>
+			</label>
+			<button type="submit" class="bc-btn bc-btn-primary">Save Timezone</button>
+		</form>
+
+		<h3>Sessions</h3>
+		<div id="sessions-list"
+			hx-get="/api/sessions"
+			hx-trigger="load"
+			hx-target="this"
+			hx-swap="innerHTML">
+			Loading sessions...
+		</div>
+	}
+}
+
+// SessionRow represents a single session for display.
+type SessionRow struct {
+	TokenHash  string
+	IP         string
+	UA         string
+	CreatedAt  string
+	LastSeenAt string
+	ExpiresAt  string
+}
+
+// SessionsList renders the session list fragment.
+templ SessionsList(sessions []SessionRow) {
+	if len(sessions) == 0 {
+		<p>No active sessions.</p>
+	} else {
+		<ul class="bc-session-list">
+			for _, sess := range sessions {
+				<li class="bc-session-item">
+					<span class="bc-session-ip">{ sess.IP }</span>
+					<span class="bc-session-ua">{ sess.UA }</span>
+					<span class="bc-session-time">Created: { sess.CreatedAt }</span>
+					<span class="bc-session-time">Last seen: { sess.LastSeenAt }</span>
+					<button class="bc-btn bc-btn-danger bc-session-revoke"
+						hx-post={ templ.URL("/api/action/session.revoke") }
+						hx-headers={ hxHeaders("") }
+						hx-target="closest .bc-session-item"
+						hx-swap="outerHTML"
+						data-token-hash={ sess.TokenHash }>
+						Revoke
+					</button>
+				</li>
+			}
+		</ul>
+	}
+}

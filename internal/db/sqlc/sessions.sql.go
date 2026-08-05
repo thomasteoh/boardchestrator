@@ -78,6 +78,44 @@ func (q *Queries) GetSession(ctx context.Context, tokenHash string) (Session, er
 	return i, err
 }
 
+const listSessionsByUser = `-- name: ListSessionsByUser :many
+SELECT token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at
+FROM sessions
+WHERE user_id = ?
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListSessionsByUser(ctx context.Context, userID string) ([]Session, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionsByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Session
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.TokenHash,
+			&i.UserID,
+			&i.Ip,
+			&i.Ua,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const touchSession = `-- name: TouchSession :exec
 UPDATE sessions
 SET last_seen_at = ?, expires_at = ?

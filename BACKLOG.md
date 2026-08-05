@@ -138,7 +138,7 @@ Deps: 104, 105, 106.
 templ pages: org switcher, org/team/project settings (name, context markdown with preview, visibility), roles editor (grant matrix), people pages; breadcrumbs; responsive.
 AC: handler tests for each page incl. permission-denied renders; context save round-trips. Manual: mobile pass.
 
-### WU-108 · User settings — `ready`
+### WU-108 · User settings — `done 2026-08-04 wu-108: user settings — theme/timezone/sessions`
 Deps: 105.
 Pages: theme (persisted, instant apply), timezone (browser-default detect), sessions list + revoke, notification prefs skeleton (table + toggles; engine lands in WU-211).
 AC: theme/timezone persistence tests; revoked session rejected on next request.

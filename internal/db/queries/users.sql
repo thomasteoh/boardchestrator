@@ -23,6 +23,12 @@ SELECT id, email, name, avatar_url, theme, timezone, created_at, deleted_at
 FROM users
 WHERE id = ?;
 
+-- name: UpdateUserTheme :exec
+UPDATE users SET theme = ? WHERE id = ?;
+
+-- name: UpdateUserTimezone :exec
+UPDATE users SET timezone = ? WHERE id = ?;
+
 -- name: GetPlatformSettings :one
 SELECT id, context, bootstrap_done, settings_json
 FROM platform_settings

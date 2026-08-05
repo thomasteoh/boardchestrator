@@ -161,3 +161,31 @@ func (q *Queries) SetBootstrapDone(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, setBootstrapDone)
 	return err
 }
+
+const updateUserTheme = `-- name: UpdateUserTheme :exec
+UPDATE users SET theme = ? WHERE id = ?
+`
+
+type UpdateUserThemeParams struct {
+	Theme string
+	ID    string
+}
+
+func (q *Queries) UpdateUserTheme(ctx context.Context, arg UpdateUserThemeParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserTheme, arg.Theme, arg.ID)
+	return err
+}
+
+const updateUserTimezone = `-- name: UpdateUserTimezone :exec
+UPDATE users SET timezone = ? WHERE id = ?
+`
+
+type UpdateUserTimezoneParams struct {
+	Timezone string
+	ID       string
+}
+
+func (q *Queries) UpdateUserTimezone(ctx context.Context, arg UpdateUserTimezoneParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserTimezone, arg.Timezone, arg.ID)
+	return err
+}
