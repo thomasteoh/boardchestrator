@@ -10,6 +10,55 @@ import (
 	"database/sql"
 )
 
+const countAuditLogsByOrg = `-- name: CountAuditLogsByOrg :one
+SELECT COUNT(*) FROM audit_log WHERE org_id = ?
+`
+
+func (q *Queries) CountAuditLogsByOrg(ctx context.Context, orgID sql.NullString) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAuditLogsByOrg, orgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countAuditLogsByOrgFiltered = `-- name: CountAuditLogsByOrgFiltered :one
+SELECT COUNT(*) FROM audit_log
+WHERE org_id = ?
+  AND (? = '' OR actor_id = ?)
+  AND (? = '' OR action = ?)
+  AND (? = '' OR created_at >= ?)
+  AND (? = '' OR created_at <= ?)
+`
+
+type CountAuditLogsByOrgFilteredParams struct {
+	OrgID       sql.NullString
+	Column2     interface{}
+	ActorID     string
+	Column4     interface{}
+	Action      string
+	Column6     interface{}
+	CreatedAt   string
+	Column8     interface{}
+	CreatedAt_2 string
+}
+
+func (q *Queries) CountAuditLogsByOrgFiltered(ctx context.Context, arg CountAuditLogsByOrgFilteredParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAuditLogsByOrgFiltered,
+		arg.OrgID,
+		arg.Column2,
+		arg.ActorID,
+		arg.Column4,
+		arg.Action,
+		arg.Column6,
+		arg.CreatedAt,
+		arg.Column8,
+		arg.CreatedAt_2,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAuditLog = `-- name: CreateAuditLog :exec
 INSERT INTO audit_log (id, org_id, actor_type, actor_id, action, subject, detail_json, ip, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -40,4 +89,168 @@ func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) 
 		arg.CreatedAt,
 	)
 	return err
+}
+
+const listAuditLogsByOrg = `-- name: ListAuditLogsByOrg :many
+SELECT id, org_id, actor_type, actor_id, action, subject, detail_json, ip, created_at
+FROM audit_log
+WHERE org_id = ?
+ORDER BY created_at DESC
+LIMIT ? OFFSET ?
+`
+
+type ListAuditLogsByOrgParams struct {
+	OrgID  sql.NullString
+	Limit  int64
+	Offset int64
+}
+
+func (q *Queries) ListAuditLogsByOrg(ctx context.Context, arg ListAuditLogsByOrgParams) ([]AuditLog, error) {
+	rows, err := q.db.QueryContext(ctx, listAuditLogsByOrg, arg.OrgID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuditLog
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.ActorType,
+			&i.ActorID,
+			&i.Action,
+			&i.Subject,
+			&i.DetailJson,
+			&i.Ip,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditLogsByOrgFiltered = `-- name: ListAuditLogsByOrgFiltered :many
+SELECT id, org_id, actor_type, actor_id, action, subject, detail_json, ip, created_at
+FROM audit_log
+WHERE org_id = ?
+  AND (? = '' OR actor_id = ?)
+  AND (? = '' OR action = ?)
+  AND (? = '' OR created_at >= ?)
+  AND (? = '' OR created_at <= ?)
+ORDER BY created_at DESC
+LIMIT ? OFFSET ?
+`
+
+type ListAuditLogsByOrgFilteredParams struct {
+	OrgID       sql.NullString
+	Column2     interface{}
+	ActorID     string
+	Column4     interface{}
+	Action      string
+	Column6     interface{}
+	CreatedAt   string
+	Column8     interface{}
+	CreatedAt_2 string
+	Limit       int64
+	Offset      int64
+}
+
+func (q *Queries) ListAuditLogsByOrgFiltered(ctx context.Context, arg ListAuditLogsByOrgFilteredParams) ([]AuditLog, error) {
+	rows, err := q.db.QueryContext(ctx, listAuditLogsByOrgFiltered,
+		arg.OrgID,
+		arg.Column2,
+		arg.ActorID,
+		arg.Column4,
+		arg.Action,
+		arg.Column6,
+		arg.CreatedAt,
+		arg.Column8,
+		arg.CreatedAt_2,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuditLog
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.ActorType,
+			&i.ActorID,
+			&i.Action,
+			&i.Subject,
+			&i.DetailJson,
+			&i.Ip,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditLogsPlatform = `-- name: ListAuditLogsPlatform :many
+SELECT id, org_id, actor_type, actor_id, action, subject, detail_json, ip, created_at
+FROM audit_log
+WHERE org_id IS NULL
+ORDER BY created_at DESC
+LIMIT ? OFFSET ?
+`
+
+type ListAuditLogsPlatformParams struct {
+	Limit  int64
+	Offset int64
+}
+
+func (q *Queries) ListAuditLogsPlatform(ctx context.Context, arg ListAuditLogsPlatformParams) ([]AuditLog, error) {
+	rows, err := q.db.QueryContext(ctx, listAuditLogsPlatform, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AuditLog
+	for rows.Next() {
+		var i AuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.ActorType,
+			&i.ActorID,
+			&i.Action,
+			&i.Subject,
+			&i.DetailJson,
+			&i.Ip,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
