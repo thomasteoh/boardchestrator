@@ -61,6 +61,15 @@ func TestBaseLayoutRenders(t *testing.T) {
 		{"manifest href", `href="/manifest.json"`},
 		{"sw data attribute on body", `data-sw-url="`},
 		{"sw registration", `navigator.serviceWorker.register`},
+		{"help dialog", `id="help-dialog"`},
+		{"help dialog role", `role="dialog"`},
+		{"help dialog modal", `aria-modal="true"`},
+		{"help title", `id="help-title"`},
+		{"keyboard shortcuts heading", `Keyboard shortcuts`},
+		{"aria-expanded on drawer btn", `aria-expanded="false"`},
+		{"aria-controls on drawer btn", `aria-controls="drawer-panel"`},
+		{"drawer panel id", `id="drawer-panel"`},
+		{"drawer panel tabindex", `tabindex="-1"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -33,7 +33,10 @@ templ Base(s Shell) {
 					class="bc-icon-btn bc-drawer-btn"
 					type="button"
 					aria-label="Open navigation menu"
+					aria-expanded="false"
+					aria-controls="drawer-panel"
 					x-on:click="openDrawer"
+					x-bind:aria-expanded="drawerOpen"
 				>
 					<span aria-hidden="true">☰</span>
 				</button>
@@ -60,7 +63,7 @@ templ Base(s Shell) {
 			</nav>
 			<div class="bc-drawer" x-show="drawerOpen" x-cloak>
 				<div class="bc-drawer-backdrop" x-on:click="closeDrawer"></div>
-				<nav class="bc-drawer-panel" aria-label="Primary">
+				<nav class="bc-drawer-panel" id="drawer-panel" aria-label="Primary" tabindex="-1">
 					@navLinks(s.Active, false)
 				</nav>
 			</div>
@@ -70,6 +73,7 @@ templ Base(s Shell) {
 			<script src={ templ.URL(s.Assets.AppJS) } nonce={ s.Nonce } defer></script>
 			<script src={ templ.URL(s.Assets.Alpine) } nonce={ s.Nonce } defer></script>
 			<script src={ templ.URL(s.Assets.Sortable) } nonce={ s.Nonce } defer></script>
+			@HelpDialog()
 			// PWA service worker registration. Reads the SW URL from
 			// data-sw-url on <body> so templ can interpolate it.
 			<script nonce={ s.Nonce }>

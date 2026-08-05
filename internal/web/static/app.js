@@ -182,6 +182,54 @@ bc.theme = {
   }
 };
 
+/* ---------- Global keyboard shortcuts ---------- */
+document.addEventListener("keydown", function (e) {
+  // Ignore if focus is inside an input/textarea/select
+  var tag = (e.target || {}).tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+  // ? opens help dialog (Shift+? too)
+  if (e.key === "?" && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    var el = document.getElementById("help-dialog");
+    if (el) {
+      // Toggle x-show via Alpine if available
+      var alpine = document.querySelector("[x-data]");
+      if (alpine && window.Alpine) {
+        var data = Alpine.$data(alpine);
+        if (data) data.helpOpen = !data.helpOpen;
+      }
+    }
+  }
+
+  // n → new task (board/backlog page)
+  if ((e.key === "n" || e.key === "N") && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    var addBtn = document.querySelector(".bc-col-actions .bc-btn-primary, .bc-backlog-add");
+    if (addBtn) addBtn.click();
+  }
+
+  // g + letter → navigation
+  if (e.key === "g" && !e.ctrlKey && !e.metaKey) {
+    document.addEventListener("keydown", navKeyHandler, { once: true });
+  }
+});
+
+function navKeyHandler(e) {
+  var path = "";
+  switch (e.key) {
+    case "b": case "B": path = "/boards"; break;
+    case "l": case "L": path = "/backlog"; break;
+    case "c": case "C": path = "/chat"; break;
+    case "s": case "S": path = "/search"; break;
+    case "n": case "N": path = "/notifications"; break;
+  }
+  if (path) {
+    e.preventDefault();
+    window.location.href = path;
+  }
+}
+
 /* ---------- Alpine components ---------- */
 
 document.addEventListener("alpine:init", function () {
@@ -189,11 +237,21 @@ document.addEventListener("alpine:init", function () {
     return {
       drawerOpen: false,
       unreadCount: 0,
+      helpOpen: false,
       openDrawer: function () {
         this.drawerOpen = true;
+        // Focus trap: move focus into drawer panel
+        var self = this;
+        setTimeout(function () {
+          var panel = document.querySelector(".bc-drawer-panel");
+          if (panel) panel.focus();
+        }, 50);
       },
       closeDrawer: function () {
         this.drawerOpen = false;
+        // Return focus to the drawer button
+        var btn = document.querySelector(".bc-drawer-btn");
+        if (btn) btn.focus();
       },
       toggleTheme: function () {
         bc.theme.toggle();
@@ -204,16 +262,28 @@ document.addEventListener("alpine:init", function () {
         bc.sse.on("notification", function () {
           bc.sse.refresh("notification", "#notif-badge", "/api/notif/unread-count");
         });
+
+        // Keyboard: Escape closes drawer or help dialog
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape" || e.key === "Esc") {
+            if (self.drawerOpen) self.closeDrawer();
+            if (self.helpOpen) self.helpOpen = false;
+          }
+        });
       }
     };
   });
 
-  /* Board drag-and-drop + mobile focus mode */
+  /* Board drag-and-drop + mobile focus mode + keyboard grab-move-drop */
   window.Alpine.data("board", function (cfg) {
     var el = null;
     var sort = null;
     var focusCol = 0;
     var totalCols = 0;
+    // Keyboard grab-move-drop state
+    var grabbedCard = null;        // DOM element of the currently grabbed card
+    var grabbedCardCol = null;     // column element the card belongs to
+    var grabActive = false;
     return {
       focusCol: 0,
       totalCols: 0,
@@ -304,12 +374,70 @@ document.addEventListener("alpine:init", function () {
         // Store observer for destroy
         this._observer = observer;
 
-        // Long-press drag (touch) — delegates to Sortable via the card-level
-        // Sortable instance's touch config. Sortable handles long-press by
-        // default on touch devices with `delay: 300` set below.
-        el.querySelectorAll(".bc-col-cards").forEach(function (list) {
-          // Re-create with touch-friendly delay if Sortable wasn't already set up
-          // We already created sortable above; Sortable already handles touch.
+        // Keyboard grab-move-drop: Space to grab, arrows to move, Enter to drop, Esc to release
+        document.addEventListener("keydown", function (e) {
+          if (e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            // Grab the focused card (if any card is focused)
+            var focused = document.activeElement;
+            if (focused && focused.classList.contains("bc-card")) {
+              e.preventDefault();
+              grabbedCard = focused;
+              grabbedCardCol = focused.closest(".bc-board-column");
+              grabActive = true;
+              focused.classList.add("bc-card-grabbed");
+            }
+          }
+          if (grabActive) {
+            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+              e.preventDefault();
+              // Move to previous/next column
+              var colsList = el.querySelectorAll(".bc-board-column");
+              var currentIdx = -1;
+              for (var i = 0; i < colsList.length; i++) {
+                if (colsList[i] === grabbedCardCol) { currentIdx = i; break; }
+              }
+              var targetIdx = e.key === "ArrowUp" ? currentIdx - 1 : currentIdx + 1;
+              if (targetIdx >= 0 && targetIdx < colsList.length) {
+                grabbedCardCol = colsList[targetIdx];
+                var targetList = colsList[targetIdx].querySelector(".bc-col-cards");
+                if (targetList) targetList.appendChild(grabbedCard);
+              }
+            }
+            if (e.key === "Enter") {
+              // Drop: dispatch move action
+              e.preventDefault();
+              var cardId = grabbedCard.dataset.sortKey;
+              var colEl = grabbedCardCol;
+              var colId = colEl ? colEl.id.replace("col-", "") : "";
+              var newStatus = colEl ? colEl.dataset.status : "backlog";
+              htmx.ajax("POST", "/api/action/task.move", {
+                target: "#board-" + cfg.projectID,
+                swap: "outerHTML",
+                headers: { "X-CSRF-Token": bc.csrfToken() },
+                vals: JSON.stringify({
+                  id: cardId,
+                  project_id: cfg.projectID,
+                  to_status: newStatus,
+                  sort_order: -1
+                })
+              });
+              grabbedCard.classList.remove("bc-card-grabbed");
+              grabbedCard = null;
+              grabbedCardCol = null;
+              grabActive = false;
+            }
+            if (e.key === "Escape" || e.key === "Esc") {
+              // Release: move card back to original column
+              if (grabbedCard && grabbedCardCol) {
+                var origList = grabbedCardCol.querySelector(".bc-col-cards");
+                if (origList) origList.appendChild(grabbedCard);
+              }
+              if (grabbedCard) grabbedCard.classList.remove("bc-card-grabbed");
+              grabbedCard = null;
+              grabbedCardCol = null;
+              grabActive = false;
+            }
+          }
         });
       },
       prevCol: function () {

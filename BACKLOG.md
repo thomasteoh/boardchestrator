@@ -227,7 +227,7 @@ Deps: 204.
 Single-column focus with horizontal swipe between columns, sticky column header + count; card tap → task sheet; long-press drag; bottom nav wired (Boards/Backlog/Chat placeholder/Search/Notifications).
 AC: render tests for mobile shell variants. Manual: 375px walkthrough of move-via-menu and swipe.
 
-### WU-214 · Accessibility pass — `ready`
+### WU-214 · Accessibility pass — `done 2026-08-05 WU-214: accessibility pass — keyboard shortcuts help, focus trap, grab-move-drop, aria-expanded, dark contrast fix`
 Deps: 202, 204, 205, 211.
 Keyboard operability audit + fixes (board grab/move/drop shortcuts documented in a help dialog); ARIA roles on columns/cards/dialogs; focus management (open/close returns focus); visible focus rings; contrast fixes both themes; reduced-motion honoured everywhere.
 AC: automated: templ renders carry expected roles/labels (tests); axe-core check via chromedp if available, else Manual: documented keyboard walkthrough of board, task, palette.
