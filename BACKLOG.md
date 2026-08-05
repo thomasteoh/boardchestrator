@@ -148,7 +148,7 @@ Deps: 105.
 `apikey.create/revoke` actions; settings UI (show-once secret); bearer auth middleware resolving key → actor(apikey, owner) with scope intersection; last_used tracking.
 AC: create/parse/verify tests; revoked + wrong-secret rejected; scope narrowing enforced in a dispatch test (key without `task.create` cannot despite owner grant).
 
-### WU-110 · Audit log — `ready`
+### WU-110 · Audit log — `done 2026-08-05 WU-110: audit log — actions, org page, CSV export, filtered queries`
 Deps: 104, 106.
 Audit writer wired to dispatch hook (ImpactHigh + all agent actions + logins/key events); org audit page (filter by actor/action/date) + CSV export; platform audit for platform admin.
 AC: audited actions produce rows with actor/ip; non-privileged user cannot view (perm test); CSV golden test.
