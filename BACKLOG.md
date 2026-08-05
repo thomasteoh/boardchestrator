@@ -153,7 +153,7 @@ Deps: 104, 106.
 Audit writer wired to dispatch hook (ImpactHigh + all agent actions + logins/key events); org audit page (filter by actor/action/date) + CSV export; platform audit for platform admin.
 AC: audited actions produce rows with actor/ip; non-privileged user cannot view (perm test); CSV golden test.
 
-### WU-111 · Data export & deletion — `ready`
+### WU-111 · Data export & deletion — `done 2026-08-05 WU-111: data export & deletion — actions, sqlc, tests`
 Deps: 108, 110.
 Per-user JSON export (profile, memberships, authored comments/tasks refs); account deletion: PII scrubbed, identities/sessions/keys removed, authored content re-attributed to "Former member"; org export (platform admin): full org JSON.
 AC: export golden structure test; post-deletion login impossible, content anonymised, FK integrity holds.
