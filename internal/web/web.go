@@ -431,6 +431,11 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/user.theme.update", handleAction)
 	r.Post("/api/action/user.timezone.update", handleAction)
 	r.Post("/api/action/session.revoke", handleSessionRevoke)
+	// Audit log routes (WU-110)
+	r.Get("/app/org/{orgID}/audit", handleAuditLog)
+	r.Get("/app/org/{orgID}/audit/export", handleAuditExport)
+	r.Post("/api/action/audit.log.list", handleAction)
+	r.Post("/api/action/audit.log.export", handleAction)
 	// Task detail routes
 	r.Get("/app/org/{orgID}/project/{projectID}/task/{taskID}", handleTaskDetail)
 	r.Post("/api/action/task.create", handleAction)

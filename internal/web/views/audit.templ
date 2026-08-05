@@ -1,0 +1,50 @@
+package views
+
+type AuditRow struct {
+	ID        string
+	ActorType string
+	ActorID   string
+	Action    string
+	Subject   string
+	IP        string
+	CreatedAt string
+}
+
+templ AuditPage(s Shell, orgID string, rows []AuditRow) {
+	@Base(s) {
+		<div class="settings-page">
+			<h2>Audit Log</h2>
+			<p class="text-dimmed">All consequential actions and agent operations are recorded here.</p>
+
+			<div class="audit-controls">
+				<a href={"/app/org/"+orgID+"/audit/export"} class="btn">Export CSV</a>
+			</div>
+
+			<table class="audit-table">
+				<thead>
+					<tr>
+						<th>Time</th>
+						<th>Action</th>
+						<th>Actor</th>
+						<th>Subject</th>
+						<th>IP</th>
+					</tr>
+				</thead>
+				<tbody>
+					if len(rows) == 0 {
+						<tr><td colspan="5" class="empty">No audit entries yet.</td></tr>
+					}
+					for _, r := range rows {
+						<tr>
+							<td class="cell-time">{r.CreatedAt}</td>
+							<td class="cell-action">{r.Action}</td>
+							<td class="cell-actor">{r.ActorType}:{r.ActorID}</td>
+							<td class="cell-subject">{r.Subject}</td>
+							<td class="cell-ip">{r.IP}</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
