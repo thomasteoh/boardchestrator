@@ -14,9 +14,9 @@ import (
 // --- Action definitions for API keys (WU-109) ---
 
 type apikeyCreateInput struct {
-	OrgID   string   `json:"org_id"`
-	Name    string   `json:"name"`
-	Scope   []string `json:"scope"`
+	OrgID string   `json:"org_id"`
+	Name  string   `json:"name"`
+	Scope []string `json:"scope"`
 }
 
 type apikeyRevokeInput struct {

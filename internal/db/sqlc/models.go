@@ -64,6 +64,7 @@ type Comment struct {
 	Body      string
 	CreatedAt string
 	UpdatedAt string
+	DeletedBy string
 }
 
 type CommentsFt struct {
@@ -276,6 +277,7 @@ type TaskActivity struct {
 	Action     string
 	DetailJson string
 	CreatedAt  string
+	DeletedBy  string
 }
 
 type TaskAssignee struct {

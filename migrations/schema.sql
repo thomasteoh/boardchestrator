@@ -256,7 +256,8 @@ CREATE TABLE comments (
     author_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     body TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S')),
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S'))
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S')),
+    deleted_by TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_comments_task ON comments(task_id, project_id, created_at);
@@ -269,7 +270,8 @@ CREATE TABLE task_activity (
     actor_type TEXT NOT NULL,
     action TEXT NOT NULL,
     detail_json TEXT NOT NULL DEFAULT '{}',
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S')),
+    deleted_by TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_task_activity_task ON task_activity(task_id, project_id, created_at);
@@ -415,6 +417,12 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE INDEX IF NOT EXISTS idx_notif_user_unread ON notifications(user_id, read_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_notif_grouping ON notifications(grouping_key, created_at);
+
+-- 0017: data export & deletion support
+-- Sentinel "Former member" user for re-attribution.
+INSERT INTO users (id, email, name, avatar_url)
+VALUES ('ffffffffffffffffffffffffffffffff', 'former-member@local', 'Former member', '')
+ON CONFLICT DO NOTHING;
 
 -- 0016: API keys
 CREATE TABLE IF NOT EXISTS api_keys (

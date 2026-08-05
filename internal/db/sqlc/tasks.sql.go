@@ -166,7 +166,17 @@ type CreateCommentParams struct {
 	Body      string
 }
 
-func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (Comment, error) {
+type CreateCommentRow struct {
+	ID        string
+	TaskID    string
+	ProjectID string
+	AuthorID  string
+	Body      string
+	CreatedAt string
+	UpdatedAt string
+}
+
+func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (CreateCommentRow, error) {
 	row := q.db.QueryRowContext(ctx, createComment,
 		arg.ID,
 		arg.TaskID,
@@ -174,7 +184,7 @@ func (q *Queries) CreateComment(ctx context.Context, arg CreateCommentParams) (C
 		arg.AuthorID,
 		arg.Body,
 	)
-	var i Comment
+	var i CreateCommentRow
 	err := row.Scan(
 		&i.ID,
 		&i.TaskID,
@@ -340,7 +350,18 @@ type CreateTaskActivityParams struct {
 	DetailJson string
 }
 
-func (q *Queries) CreateTaskActivity(ctx context.Context, arg CreateTaskActivityParams) (TaskActivity, error) {
+type CreateTaskActivityRow struct {
+	ID         string
+	TaskID     string
+	ProjectID  string
+	ActorID    string
+	ActorType  string
+	Action     string
+	DetailJson string
+	CreatedAt  string
+}
+
+func (q *Queries) CreateTaskActivity(ctx context.Context, arg CreateTaskActivityParams) (CreateTaskActivityRow, error) {
 	row := q.db.QueryRowContext(ctx, createTaskActivity,
 		arg.ID,
 		arg.TaskID,
@@ -350,7 +371,7 @@ func (q *Queries) CreateTaskActivity(ctx context.Context, arg CreateTaskActivity
 		arg.Action,
 		arg.DetailJson,
 	)
-	var i TaskActivity
+	var i CreateTaskActivityRow
 	err := row.Scan(
 		&i.ID,
 		&i.TaskID,
@@ -712,15 +733,25 @@ type ListCommentsByTaskParams struct {
 	ProjectID string
 }
 
-func (q *Queries) ListCommentsByTask(ctx context.Context, arg ListCommentsByTaskParams) ([]Comment, error) {
+type ListCommentsByTaskRow struct {
+	ID        string
+	TaskID    string
+	ProjectID string
+	AuthorID  string
+	Body      string
+	CreatedAt string
+	UpdatedAt string
+}
+
+func (q *Queries) ListCommentsByTask(ctx context.Context, arg ListCommentsByTaskParams) ([]ListCommentsByTaskRow, error) {
 	rows, err := q.db.QueryContext(ctx, listCommentsByTask, arg.TaskID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Comment
+	var items []ListCommentsByTaskRow
 	for rows.Next() {
-		var i Comment
+		var i ListCommentsByTaskRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TaskID,
@@ -829,15 +860,26 @@ type ListTaskActivityParams struct {
 	ProjectID string
 }
 
-func (q *Queries) ListTaskActivity(ctx context.Context, arg ListTaskActivityParams) ([]TaskActivity, error) {
+type ListTaskActivityRow struct {
+	ID         string
+	TaskID     string
+	ProjectID  string
+	ActorID    string
+	ActorType  string
+	Action     string
+	DetailJson string
+	CreatedAt  string
+}
+
+func (q *Queries) ListTaskActivity(ctx context.Context, arg ListTaskActivityParams) ([]ListTaskActivityRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTaskActivity, arg.TaskID, arg.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []TaskActivity
+	var items []ListTaskActivityRow
 	for rows.Next() {
-		var i TaskActivity
+		var i ListTaskActivityRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TaskID,
@@ -1205,7 +1247,17 @@ type UpdateCommentParams struct {
 	ProjectID string
 }
 
-func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (Comment, error) {
+type UpdateCommentRow struct {
+	ID        string
+	TaskID    string
+	ProjectID string
+	AuthorID  string
+	Body      string
+	CreatedAt string
+	UpdatedAt string
+}
+
+func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (UpdateCommentRow, error) {
 	row := q.db.QueryRowContext(ctx, updateComment,
 		arg.Body,
 		arg.UpdatedAt,
@@ -1213,7 +1265,7 @@ func (q *Queries) UpdateComment(ctx context.Context, arg UpdateCommentParams) (C
 		arg.TaskID,
 		arg.ProjectID,
 	)
-	var i Comment
+	var i UpdateCommentRow
 	err := row.Scan(
 		&i.ID,
 		&i.TaskID,
