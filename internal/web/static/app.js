@@ -208,15 +208,23 @@ document.addEventListener("alpine:init", function () {
     };
   });
 
-  /* Board drag-and-drop */
+  /* Board drag-and-drop + mobile focus mode */
   window.Alpine.data("board", function (cfg) {
     var el = null;
     var sort = null;
+    var focusCol = 0;
+    var totalCols = 0;
     return {
+      focusCol: 0,
+      totalCols: 0,
       init: function () {
         el = this.$el;
         var cols = el.querySelector(".bc-board-columns");
         if (!cols) return;
+
+        // Count columns
+        var colEls = cols.querySelectorAll(".bc-board-column");
+        this.totalCols = colEls.length;
 
         // Register SSE partial refresh for board cards
         bc.sse.refresh("task-updated", "#board-" + cfg.projectID, "/app/project/" + cfg.projectID + "/board/partial");
@@ -245,13 +253,16 @@ document.addEventListener("alpine:init", function () {
           }
         });
 
-        // Card-level sortable per column
+        // Card-level sortable per column with touch-friendly long-press delay
         el.querySelectorAll(".bc-col-cards").forEach(function (list) {
           Sortable.create(list, {
             group: "cards",
             animation: 150,
             ghostClass: "bc-card-dragging",
             draggable: ".bc-card",
+            delay: 300,
+            delayOnTouchOnly: true,
+            touchStartThreshold: 8,
             onEnd: function (evt) {
               var cardId = evt.item.dataset.sortKey;
               var colEl = list.closest(".bc-board-column");
@@ -271,9 +282,55 @@ document.addEventListener("alpine:init", function () {
             }
           });
         });
+
+        // Mobile focus mode: track visible column via IntersectionObserver
+        var self = this;
+        var observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              var colIdx = parseInt(entry.target.dataset.colIdx, 10);
+              if (!isNaN(colIdx)) {
+                self.focusCol = colIdx;
+              }
+            }
+          });
+        }, { threshold: 0.5 });
+
+        colEls.forEach(function (col, i) {
+          col.dataset.colIdx = i;
+          observer.observe(col);
+        });
+
+        // Store observer for destroy
+        this._observer = observer;
+
+        // Long-press drag (touch) — delegates to Sortable via the card-level
+        // Sortable instance's touch config. Sortable handles long-press by
+        // default on touch devices with `delay: 300` set below.
+        el.querySelectorAll(".bc-col-cards").forEach(function (list) {
+          // Re-create with touch-friendly delay if Sortable wasn't already set up
+          // We already created sortable above; Sortable already handles touch.
+        });
+      },
+      prevCol: function () {
+        if (this.focusCol > 0) {
+          this.focusCol = this.focusCol - 1;
+          this.scrollToCol(this.focusCol);
+        }
+      },
+      nextCol: function () {
+        if (this.focusCol < this.totalCols - 1) {
+          this.focusCol = this.focusCol + 1;
+          this.scrollToCol(this.focusCol);
+        }
+      },
+      scrollToCol: function (idx) {
+        var col = this.$el.querySelector('[data-col-idx="' + idx + '"]');
+        if (col) col.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
       },
       destroy: function () {
         if (sort) sort.destroy();
+        if (this._observer) this._observer.disconnect();
       }
     };
   });

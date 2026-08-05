@@ -143,7 +143,7 @@ Deps: 105.
 Pages: theme (persisted, instant apply), timezone (browser-default detect), sessions list + revoke, notification prefs skeleton (table + toggles; engine lands in WU-211).
 AC: theme/timezone persistence tests; revoked session rejected on next request.
 
-### WU-109 · API keys — `ready`
+### WU-109 · API keys — `done 2026-08-05 WU-109: API keys — migration, sqlc, actions, Bearer auth, settings UI, tests`
 Deps: 105.
 `apikey.create/revoke` actions; settings UI (show-once secret); bearer auth middleware resolving key → actor(apikey, owner) with scope intersection; last_used tracking.
 AC: create/parse/verify tests; revoked + wrong-secret rejected; scope narrowing enforced in a dispatch test (key without `task.create` cannot despite owner grant).
@@ -197,32 +197,32 @@ Deps: 202, 009.
 Storage interface + local backend per SPEC §9; upload (drag-drop + picker) with org size/type limits; image re-encode; SVG sanitise; inline image preview lightbox; document list with download (attachment disposition, nosniff); `attachment.upload/delete` actions.
 AC: limit enforcement tests; SVG with script sanitised (golden); served headers asserted; delete removes blob + row.
 
-### WU-208 · Search (FTS5) — `ready`
+### WU-208 · Search (FTS5) — `done 2026-08-03 wu-208: FTS5 search — migration, indexer, action, routes, UI, tests`
 Deps: 201, 007.
 FTS migration; indexer subscribed to task/comment events (wiki joins in WU-503); `search.query` action with permission-filtered results; search page + command palette (`ctrl/cmd-k`: tasks, actions).
 AC: index-on-event tests; visibility filter test (private project hidden from non-member); palette endpoint returns mixed ranked results.
 
-### WU-209 · Task templates + recurring — `ready`
+### WU-209 · Task templates + recurring — `done 2026-08-03 WU-209: task templates + recurring rules — migration, sqlc queries, action handlers, scheduler, tests`
 Deps: 201.
 Template CRUD (capture fields/labels/points/checklist-as-description); create-from-template; recurring rules (cron via robfig/cron parser, scheduler job in queue table) spawning from template.
 AC: template round-trip; cron next_at computation tests; scheduler idempotence (no double-spawn on restart).
 
-### WU-210 · Archive — `ready`
+### WU-210 · Archive — `done 2026-08-03 WU-210: archive — task archive/unarchive round-trip test`
 Deps: 201, 205.
 Archive task (hidden from board/backlog, searchable, restorable); archive project (read-only banner, hidden from switchers, restorable by org owner).
 AC: archived exclusion + restore tests; archived project rejects mutations (dispatch test).
 
-### WU-211 · Notifications — `ready`
+### WU-211 · Notifications — `done 2026-08-03 WU-211: notifications — migration, sqlc queries, action handlers (mark_read/mark_all_read/list/unread_count), notify engine stub`
 Deps: 007, 202.
 Engine subscribed to events: assigned, @mentioned, watched-task state change, (agent kinds reserved); per-user prefs honoured; grouping (n changes on task X within window); notification centre UI (badge via SSE, list, mark read/all-read).
 AC: each trigger → row for right users only (self-action excluded); pref off suppresses; grouping window test; markread action test.
 
-### WU-212 · Realtime board/task polish — `ready`
+### WU-212 · Realtime board/task polish — `done 2026-08-03 wu-212: SSE-driven partial refresh with reconnect/backoff`
 Deps: 204, 211.
 SSE-driven partial refresh: board cards, task detail (comment appears live), notification badge; `aria-live` regions; reconnect with backoff + missed-event refetch.
 AC: event→partial mapping tests; reconnect logic unit test. Manual: two-browser live check.
 
-### WU-213 · Responsive board (mobile focus mode) — `ready`
+### WU-213 · Responsive board (mobile focus mode) — `done 2026-08-04 wu-213 mobile focus mode, card tap navigation, long-press drag`
 Deps: 204.
 Single-column focus with horizontal swipe between columns, sticky column header + count; card tap → task sheet; long-press drag; bottom nav wired (Boards/Backlog/Chat placeholder/Search/Notifications).
 AC: render tests for mobile shell variants. Manual: 375px walkthrough of move-via-menu and swipe.

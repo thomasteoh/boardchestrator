@@ -292,6 +292,374 @@ a {
   overflow-y: auto;
 }
 
+/* ---------- Board (desktop multi-column, mobile focus mode) ---------- */
+
+.bc-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bc-space-3);
+}
+
+.bc-board-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bc-space-2);
+}
+
+.bc-board-toolbar h2 {
+  margin: 0;
+  font-size: var(--bc-text-lg);
+  font-weight: 600;
+}
+
+/* Board columns — mobile focus mode (scroll-snap, one column at a time) */
+
+.bc-board-columns {
+  display: flex;
+  gap: var(--bc-space-3);
+  /* Mobile focus mode: horizontal scroll-snap with one column per snap */
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  overflow-x: auto;
+  /* Snap area accounts for the bottom nav so the column is fully visible */
+  padding-bottom: var(--bc-bottomnav-h);
+}
+
+.bc-board-column {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bc-surface);
+  border-radius: var(--bc-radius);
+  border: 1px solid var(--bc-border);
+  box-shadow: var(--bc-shadow);
+  overflow: hidden;
+}
+
+/* Sticky column header */
+
+.bc-col-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--bc-space-2);
+  padding: var(--bc-space-2) var(--bc-space-3);
+  background: var(--bc-surface);
+  border-bottom: 1px solid var(--bc-border);
+}
+
+.bc-col-name {
+  margin: 0;
+  font-size: var(--bc-text-sm);
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+
+.bc-col-count {
+  font-size: var(--bc-text-sm);
+  color: var(--bc-text-muted);
+  font-weight: 500;
+}
+
+.bc-col-wip {
+  font-size: var(--bc-text-sm);
+  color: var(--bc-warning);
+  font-weight: 500;
+}
+
+.bc-col-wip.bc-col-wip-over {
+  color: var(--bc-danger);
+}
+
+/* Card list — vertical scroll within column */
+
+.bc-col-cards {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--bc-space-2);
+  padding: var(--bc-space-2) var(--bc-space-3);
+  overflow-y: auto;
+}
+
+.bc-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bc-space-1);
+  padding: var(--bc-space-2) var(--bc-space-3);
+  background: var(--bc-surface-raised);
+  border-radius: var(--bc-radius-sm);
+  border: 1px solid var(--bc-border);
+  cursor: pointer;
+  transition: box-shadow 0.15s, background 0.15s;
+}
+
+.bc-card:hover {
+  box-shadow: var(--bc-shadow);
+}
+
+.bc-card:active {
+  background: var(--bc-accent-soft);
+}
+
+.bc-card-key {
+  font-size: var(--bc-text-sm);
+  font-weight: 600;
+  color: var(--bc-accent);
+}
+
+.bc-card-title {
+  font-size: var(--bc-text-base);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.bc-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bc-space-1);
+  margin-top: var(--bc-space-1);
+  font-size: var(--bc-text-sm);
+}
+
+.bc-card-assignees {
+  display: flex;
+  gap: 0.125rem;
+}
+
+.bc-card-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.125rem;
+}
+
+.bc-card-points {
+  font-weight: 600;
+  color: var(--bc-text-muted);
+}
+
+/* Column actions row */
+
+.bc-col-actions {
+  padding: var(--bc-space-2) var(--bc-space-3);
+  border-top: 1px solid var(--bc-border);
+}
+
+/* Swimlanes */
+
+.bc-swimlanes {
+  margin-top: var(--bc-space-3);
+}
+
+.bc-swimlane {
+  margin-bottom: var(--bc-space-3);
+}
+
+.bc-swimlane h4 {
+  margin: 0 0 var(--bc-space-2) 0;
+  font-size: var(--bc-text-sm);
+  font-weight: 600;
+}
+
+.bc-swimlane-columns {
+  display: flex;
+  gap: var(--bc-space-2);
+}
+
+.bc-swimlane-card {
+  padding: var(--bc-space-1) var(--bc-space-2);
+  background: var(--bc-surface);
+  border: 1px solid var(--bc-border);
+  border-radius: var(--bc-radius-sm);
+  font-size: var(--bc-text-sm);
+}
+
+/* ---------- Mobile focus nav ---------- */
+
+.bc-focus-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--bc-space-2);
+  padding: var(--bc-space-2) 0;
+}
+
+.bc-focus-prev,
+.bc-focus-next {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.bc-focus-indicator {
+  display: flex;
+  gap: var(--bc-space-1);
+  align-items: center;
+}
+
+.bc-focus-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--bc-text-muted);
+  opacity: 0.4;
+}
+
+.bc-focus-dot-active {
+  opacity: 1;
+  background: var(--bc-accent);
+}
+
+@media (min-width: 1024px) {
+  .bc-focus-nav {
+    display: none;
+  }
+}
+
+/* Card link wraps the whole card for tap navigation */
+
+.bc-card-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.bc-card-link:hover {
+  text-decoration: none;
+}
+
+/* ---------- Column settings ---------- */
+
+.bc-column-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bc-space-4);
+}
+
+.bc-column-settings h2 {
+  margin: 0;
+}
+
+.bc-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bc-space-3);
+  max-width: 400px;
+}
+
+.bc-form label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--bc-space-1);
+  font-weight: 500;
+  font-size: var(--bc-text-sm);
+}
+
+/* ---------- Shared UI ---------- */
+
+.bc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--bc-space-1);
+  padding: var(--bc-space-2) var(--bc-space-3);
+  border: 1px solid var(--bc-border);
+  border-radius: var(--bc-radius-sm);
+  background: var(--bc-surface);
+  color: var(--bc-text);
+  font-size: var(--bc-text-sm);
+  font-family: var(--bc-font);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.bc-btn:hover {
+  background: var(--bc-accent-soft);
+}
+
+.bc-btn-sm {
+  padding: var(--bc-space-1) var(--bc-space-2);
+  font-size: var(--bc-text-sm);
+}
+
+.bc-btn-primary {
+  background: var(--bc-accent);
+  color: var(--bc-accent-contrast);
+  border-color: var(--bc-accent);
+}
+
+.bc-btn-primary:hover {
+  filter: brightness(1.1);
+}
+
+.bc-btn-danger {
+  color: var(--bc-danger);
+  border-color: var(--bc-danger);
+}
+
+.bc-input {
+  padding: var(--bc-space-2) var(--bc-space-3);
+  border: 1px solid var(--bc-border);
+  border-radius: var(--bc-radius-sm);
+  font-size: var(--bc-text-sm);
+  font-family: var(--bc-font);
+  background: var(--bc-surface);
+  color: var(--bc-text);
+}
+
+.bc-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--bc-accent-soft);
+  font-size: var(--bc-text-sm);
+  font-weight: 600;
+  color: var(--bc-accent);
+}
+
+.bc-avatar-sm {
+  width: 1.25rem;
+  height: 1.25rem;
+  font-size: 0.75rem;
+}
+
+.bc-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem var(--bc-space-2);
+  border-radius: 999px;
+  font-size: var(--bc-text-sm);
+  font-weight: 500;
+  color: var(--bc-accent-contrast);
+}
+
+.bc-label-sm {
+  font-size: 0.75rem;
+  padding: 0 0.375rem;
+  height: 1.125rem;
+}
+
+/* Dragging ghost styles for SortableJS */
+
+.bc-dragging {
+  opacity: 0.5;
+  border: 2px dashed var(--bc-accent);
+}
+
+.bc-card-dragging {
+  opacity: 0.4;
+}
+
 /* ---------- Breakpoint: ≥640px (large phones / small tablets) ---------- */
 
 @media (min-width: 640px) {
@@ -302,6 +670,11 @@ a {
 
   .bc-header {
     padding: 0 var(--bc-space-4);
+  }
+
+  /* Widen columns on tablet */
+  .bc-board-column {
+    flex: 0 0 80%;
   }
 }
 
@@ -329,5 +702,17 @@ a {
   .bc-drawer,
   .bc-drawer-btn {
     display: none;
+  }
+
+  /* Desktop board: natural multi-column layout, no scroll-snap */
+  .bc-board-columns {
+    scroll-snap-type: none;
+    overflow-x: visible;
+    flex-wrap: wrap;
+  }
+
+  .bc-board-column {
+    flex: 0 0 18rem;
+    scroll-snap-align: none;
   }
 }
