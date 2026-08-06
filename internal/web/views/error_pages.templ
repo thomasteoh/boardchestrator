@@ -1,0 +1,30 @@
+package views
+
+import "fmt"
+
+// ErrorPage renders a generic HTTP error page with status code and message.
+templ ErrorPage(s Shell, status int, title string, message string) {
+	@Base(s) {
+		<div class="bc-error-page">
+			<div class="bc-error-code">{ fmt.Sprintf("%d", status) }</div>
+			<h2>{ title }</h2>
+			<p class="bc-error-message">{ message }</p>
+			<a href="/" class="bc-btn bc-btn-primary">Back to home</a>
+		</div>
+	}
+}
+
+// ForbiddenPage renders the 403 Forbidden page.
+templ ForbiddenPage(s Shell) {
+	@ErrorPage(s, 403, "Forbidden", "You don't have permission to view this page. Contact your organisation owner if you believe this is an error.")
+}
+
+// NotFoundPage renders the 404 Not Found page.
+templ NotFoundPage(s Shell) {
+	@ErrorPage(s, 404, "Page not found", "The page you requested doesn't exist. It may have been moved or you may have followed a broken link.")
+}
+
+// InternalErrorPage renders the 500 Internal Server Error page.
+templ InternalErrorPage(s Shell) {
+	@ErrorPage(s, 500, "Internal server error", "Something went wrong on our end. Please try again later. If the problem persists, contact support.")
+}

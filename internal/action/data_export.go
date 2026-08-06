@@ -57,17 +57,17 @@ func RegisterDataExportActions() {}
 // --- Output types ---
 
 type userExportOutput struct {
-	User          UserProfile                      `json:"user"`
-	Identities    []sqlc.ListUserIdentitiesRow     `json:"identities"`
-	Memberships   []sqlc.ListUserMembershipsRow    `json:"memberships"`
-	APIKeys       []sqlc.ListUserApiKeysRow        `json:"api_keys"`
-	Comments      []sqlc.ListUserCommentsRow       `json:"comments"`
-	Activity      []sqlc.ListUserTaskActivityRow   `json:"activity"`
-	Assignments   []sqlc.TaskAssignee              `json:"task_assignments"`
-	Watchers      []sqlc.TaskWatcher               `json:"task_watchers"`
-	Filters       []sqlc.SavedFilter               `json:"saved_filters"`
-	Notifications []sqlc.Notification              `json:"notifications"`
-	Sessions      []sqlc.Session                   `json:"sessions"`
+	User          UserProfile                    `json:"user"`
+	Identities    []sqlc.ListUserIdentitiesRow   `json:"identities"`
+	Memberships   []sqlc.ListUserMembershipsRow  `json:"memberships"`
+	APIKeys       []sqlc.ListUserApiKeysRow      `json:"api_keys"`
+	Comments      []sqlc.ListUserCommentsRow     `json:"comments"`
+	Activity      []sqlc.ListUserTaskActivityRow `json:"activity"`
+	Assignments   []sqlc.TaskAssignee            `json:"task_assignments"`
+	Watchers      []sqlc.TaskWatcher             `json:"task_watchers"`
+	Filters       []sqlc.SavedFilter             `json:"saved_filters"`
+	Notifications []sqlc.Notification            `json:"notifications"`
+	Sessions      []sqlc.Session                 `json:"sessions"`
 }
 
 type UserProfile struct {

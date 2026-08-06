@@ -133,6 +133,13 @@ func (s *Server) setupMiddleware() {
 }
 
 func (s *Server) setupRoutes() {
+	// Wire the templ-based 403 handler for auth middleware.
+	auth.ForbiddenHandler = func(w http.ResponseWriter, r *http.Request, title, message string) {
+		web.RenderErrorPage(w, r, 403, title, message)
+	}
+	// Custom error pages for 404, 405, 500.
+	s.mux.NotFound(s.handleNotFound)
+	s.mux.MethodNotAllowed(s.handleMethodNotAllowed)
 	s.mux.Get("/healthz", s.handleHealthz)
 	s.mux.Get("/readyz", s.handleReadyz)
 	s.mux.Handle("/metrics", promhttp.Handler())
@@ -275,7 +282,7 @@ func (r *statusRecorder) Flush() {
 	}
 }
 
-// recover middleware catches panics and returns 500.
+// recover middleware catches panics and returns 500 via templ error page.
 func (s *Server) recover(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -284,7 +291,8 @@ func (s *Server) recover(next http.Handler) http.Handler {
 					"req_id", RequestID(r.Context()),
 					"recover", rec,
 				)
-				http.Error(w, "internal server error", http.StatusInternalServerError)
+				w.WriteHeader(http.StatusInternalServerError)
+				web.RenderErrorPage(w, r, 500, "Internal server error", "Something went wrong on our end. Please try again later.")
 			}
 		}()
 		next.ServeHTTP(w, r)
@@ -303,6 +311,16 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	serveJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "starting"})
+}
+
+func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotFound)
+	web.RenderErrorPage(w, r, 404, "Page not found", "The page you requested doesn't exist.")
+}
+
+func (s *Server) handleMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusMethodNotAllowed)
+	web.RenderErrorPage(w, r, 405, "Method not allowed", "This endpoint does not support the requested HTTP method.")
 }
 
 // serveJSON writes a JSON response.

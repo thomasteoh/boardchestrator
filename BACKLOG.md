@@ -232,7 +232,7 @@ Deps: 202, 204, 205, 211.
 Keyboard operability audit + fixes (board grab/move/drop shortcuts documented in a help dialog); ARIA roles on columns/cards/dialogs; focus management (open/close returns focus); visible focus rings; contrast fixes both themes; reduced-motion honoured everywhere.
 AC: automated: templ renders carry expected roles/labels (tests); axe-core check via chromedp if available, else Manual: documented keyboard walkthrough of board, task, palette.
 
-### WU-215 · Phase 2 hardening — `ready`
+### WU-215 · Phase 2 hardening — `done 2026-08-07 wu-215: phase 2 hardening — error pages, fuzz corpus, race soak, check-scope exemption, N+1 query budget`
 Deps: all 2xx.
 Fuzz markdown/mention/KEY-ref parsers; race-detector soak on board mutations; N+1 query audit on board/backlog renders (query-count assertions); error-page polish (403/404/500 templ pages).
 AC: fuzz corpora committed; query-count tests for board render ≤ fixed budget; error pages tested.

@@ -730,6 +730,37 @@ a {
   opacity: 0.4;
 }
 
+/* ---------- Error pages ---------- */
+
+.bc-error-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--bc-space-3);
+  padding: var(--bc-space-8) var(--bc-space-4);
+  text-align: center;
+  min-height: 40vh;
+}
+
+.bc-error-code {
+  font-size: 3rem;
+  font-weight: 800;
+  color: var(--bc-accent);
+  line-height: 1;
+}
+
+.bc-error-page h2 {
+  margin: 0;
+  font-size: var(--bc-text-lg);
+  font-weight: 600;
+}
+
+.bc-error-message {
+  color: var(--bc-text-muted);
+  max-width: 28rem;
+}
+
 /* ---------- Breakpoint: ≥640px (large phones / small tablets) ---------- */
 
 @media (min-width: 640px) {

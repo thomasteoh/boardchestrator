@@ -25,6 +25,10 @@
 #                      notification engine filters by user, not org.
 #   recurring_rules  — project-scoped (project_id FK), not org-scoped; the
 #                      scheduler reads by project, not org.
+#
+# Exempted queries (platform-level operations that bypass org scoping):
+#   data_export.sql: DeleteUserMemberships — deletes all memberships for a
+#   departing user across all orgs. Not scoped by org_id by design.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -47,6 +51,10 @@ scan_file() {
             for (i = 1; i <= n; i++) {
                 if (T[i] == "") continue
                 if (low ~ ("(^|[^a-z0-9_])" T[i] "([^a-z0-9_]|$)") && low !~ /org_id/) {
+                    # Skip exempted queries (platform-level ops without org_id).
+                    if (qname != "" && qname ~ /^(DeleteUserMemberships|PurgeExpiredSessions|DeleteUserSessions)$/) {
+                        continue
+                    }
                     printf "check-scope: %s: query \"%s\" touches tenant table \"%s\" without an org_id parameter\n", file, qname, T[i]
                     bad = 1
                 }
