@@ -106,3 +106,8 @@ RETURNING id, org_id, actor_id, actor_type, resource_type, resource_id, role_id,
 -- name: DeleteMembershipByID :exec
 DELETE FROM memberships
 WHERE id = ? AND org_id = ?;
+
+-- name: ListOrgs :many
+SELECT id, name, slug, context, visibility, created_at
+FROM orgs
+ORDER BY name ASC;

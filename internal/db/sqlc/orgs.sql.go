@@ -493,6 +493,42 @@ func (q *Queries) FindTeamByID(ctx context.Context, arg FindTeamByIDParams) (Tea
 	return i, err
 }
 
+const listOrgs = `-- name: ListOrgs :many
+SELECT id, name, slug, context, visibility, created_at
+FROM orgs
+ORDER BY name ASC
+`
+
+func (q *Queries) ListOrgs(ctx context.Context) ([]Org, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Org
+	for rows.Next() {
+		var i Org
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.Context,
+			&i.Visibility,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRolesByOrg2 = `-- name: ListRolesByOrg2 :many
 SELECT id, org_id, name, is_system, grants_json, created_at
 FROM roles

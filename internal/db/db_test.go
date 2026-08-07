@@ -31,6 +31,7 @@ var migratedTables = []string{
 	"task_templates",
 	"recurring_rules",
 	"notifications",
+	"providers", "provider_orgs",
 }
 
 func tableExists(t *testing.T, d *sql.DB, name string) bool {

@@ -499,4 +499,10 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/attachment.upload", handleAction)
 	r.Post("/api/action/attachment.delete", handleAction)
 	r.Get("/files/{attachmentID}", handleAttachmentDownload)
+
+	// Provider routes (WU-302)
+	r.Get("/admin/providers", handleProviders)
+	r.Post("/api/providers/create", handleProviderCreateAction)
+	r.Post("/api/providers/delete", handleProviderDeleteAction)
+	r.Post("/api/providers/allocate", handleProviderAllocateAction)
 }
