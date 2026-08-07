@@ -197,6 +197,24 @@ type Project struct {
 	CreatedAt   string
 }
 
+type Provider struct {
+	ID         string
+	Kind       string
+	Name       string
+	BaseUrl    string
+	KeyEnc     []byte
+	ModelsJson string
+	CreatedAt  string
+	UpdatedAt  string
+}
+
+type ProviderOrg struct {
+	ID         string
+	ProviderID string
+	OrgID      string
+	CreatedAt  string
+}
+
 type RecurringRule struct {
 	ID         string
 	OrgID      string

@@ -1,0 +1,42 @@
+package views
+
+type ProviderRow struct {
+	ID            string
+	Kind          string
+	Name          string
+	BaseURL       string
+	Models        string
+	AllocatedOrgs string
+}
+
+templ ProviderPage(s Shell, providers []ProviderRow) {
+	@Base(s) {
+		<h1>Providers</h1>
+		<form hx-post="/api/providers/create" hx-headers={ hxHeaders(s.CSRF) } hx-target="#provider-list" hx-swap="innerHTML">
+			<div>Name: <input type="text" name="name" required/></div>
+			<div>Kind: <select name="kind"><option value="openai-compatible">OpenAI-Compatible</option><option value="codex_sso">Codex SSO</option></select></div>
+			<div>Base URL: <input type="text" name="base_url" required/></div>
+			<div>Models: <input type="text" name="models" placeholder="gpt-4o"/></div>
+			<button type="submit">Create</button>
+		</form>
+		<div id="provider-list">
+			if len(providers) == 0 {
+				<p>No providers configured yet.</p>
+			}
+			for _, pr := range providers {
+				<div>
+					<h3>{ pr.Name }</h3>
+					<p>{ pr.Kind } — { pr.BaseURL }</p>
+					<p>Models: { pr.Models }</p>
+					<button hx-post="/api/providers/delete" hx-headers={ hxHeaders(s.CSRF) } hx-vals={ `{"id":"` + pr.ID + `"}` }>Delete</button>
+					if len(pr.AllocatedOrgs) == 0 {
+						<p>Not allocated.</p>
+					}
+					if len(pr.AllocatedOrgs) > 0 {
+						<p>Allocated: { pr.AllocatedOrgs }</p>
+					}
+				</div>
+			}
+		</div>
+	}
+}
