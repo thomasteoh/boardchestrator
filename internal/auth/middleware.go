@@ -146,6 +146,19 @@ func safeMethod(m string) bool {
 // (POST/PUT/PATCH/DELETE) lacking a valid per-session CSRF token. The token is
 // accepted from the X-CSRF-Token header (HTMX) or the csrf_token form field.
 // Must run after Session so the session is resolved.
+// ForbiddenHandler is a settable handler for 403 Forbidden responses.
+// Defaults to http.Error. The server overrides it to render the templ error page.
+var ForbiddenHandler func(w http.ResponseWriter, r *http.Request, title, message string)
+
+func forbidden(w http.ResponseWriter, r *http.Request, title, message string) {
+	if ForbiddenHandler != nil {
+		w.WriteHeader(http.StatusForbidden)
+		ForbiddenHandler(w, r, title, message)
+		return
+	}
+	http.Error(w, message, http.StatusForbidden)
+}
+
 func (c SessionConfig) CSRF() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -155,9 +168,7 @@ func (c SessionConfig) CSRF() func(http.Handler) http.Handler {
 			}
 			sess, ok := SessionFrom(r.Context())
 			if !ok {
-				// No session ⇒ nothing to protect against, but a mutating call
-				// without a session has no authority anyway; reject uniformly.
-				http.Error(w, "forbidden: no session", http.StatusForbidden)
+				forbidden(w, r, "Forbidden", "You must be logged in to perform this action.")
 				return
 			}
 			presented := r.Header.Get(CSRFHeader)
@@ -165,7 +176,7 @@ func (c SessionConfig) CSRF() func(http.Handler) http.Handler {
 				presented = r.PostFormValue(CSRFFormField)
 			}
 			if !ValidCSRF(c.Secret, sess.TokenHash, presented) {
-				http.Error(w, "forbidden: invalid CSRF token", http.StatusForbidden)
+				forbidden(w, r, "Forbidden", "Invalid or missing security token. Refresh the page and try again.")
 				return
 			}
 			next.ServeHTTP(w, r)

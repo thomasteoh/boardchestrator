@@ -27,6 +27,16 @@ type actionDispatcher interface {
 
 func SetDispatcher(d actionDispatcher) { disp = d }
 
+// RenderErrorPage renders an HTML error page via the error_pages templ component.
+// It is exported for use by the server package (404/405 handlers).
+func RenderErrorPage(w http.ResponseWriter, r *http.Request, status int, title, message string) {
+	s := shellData(r, title, "")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.ErrorPage(s, status, title, message).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
 func handleRoot(w http.ResponseWriter, r *http.Request) {
 	s := shellData(r, "Home", "")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
