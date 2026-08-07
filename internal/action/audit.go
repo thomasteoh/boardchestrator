@@ -10,13 +10,13 @@ import (
 )
 
 type auditListInput struct {
-	OrgID   string `json:"org_id"`
-	ActorID string `json:"actor_id,omitempty"`
-	Action  string `json:"action,omitempty"`
-	Since   string `json:"since,omitempty"`
-	Until   string `json:"until,omitempty"`
-	Limit   int    `json:"limit,omitempty"`
-	Offset  int    `json:"offset,omitempty"`
+	OrgID    string `json:"org_id"`
+	ActorID  string `json:"actor_id,omitempty"`
+	Action   string `json:"action,omitempty"`
+	Since    string `json:"since,omitempty"`
+	Until    string `json:"until,omitempty"`
+	Limit    int    `json:"limit,omitempty"`
+	Offset   int    `json:"offset,omitempty"`
 }
 
 type auditExportInput struct {
