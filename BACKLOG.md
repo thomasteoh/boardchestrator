@@ -246,15 +246,17 @@ Deps: 006.
 `jobs` migration; claim/backoff/max-attempts per SPEC §10; worker pool with graceful drain; dead-job status + requeue action; queue depth/age metrics.
 AC: claim contention test (n workers, no double-claim); backoff schedule test; drain-on-shutdown test.
 
-### WU-302 · Providers (OpenAI-compatible) — `ready`
+### WU-302 · Providers (OpenAI-compatible) — `done 2026-08-07 wu-302: providers + provider_orgs migration, sqlc queries, check-scope gate; merge dff7867`
 Deps: 104.
 `providers` + `provider_orgs` migrations; platform-admin UI (create provider: base URL, key, models; allocate to orgs); provider client with streaming, retry/jitter, usage capture; `codex_sso` kind registered but returns "not yet supported" (QUESTIONS Q1).
 AC: client tests against httptest fake (stream parse, 429 retry, usage extraction); allocation visibility test (org sees only allocated).
+Notes: merged `ready`→`done` post-hoc (BACKLOG lagged the merge). Pre-existing lint debt in this WU (client.go errcheck/G404/S1000, providers.go unused type, web/providers errcheck) was fixed in `cc84e99 Repair WU-303 merge + unblock make check` to get the CI gate green.
 
-### WU-303 · Agents + templates — `done`
+### WU-303 · Agents + templates — `done 2026-08-08 WU-303 agents + templates: merge; repair cc84e99`
 Deps: 302, 105.
 `agents` migration; platform template CRUD + allocation; org agent CRUD (customise allocated: name, context, skills, role, retry, rate, budget, approval policy); unique @name per org; membership rows for agents (actor_type=agent).
 AC: template→org customisation copy semantics tests; name uniqueness; agent-as-member permission resolution test.
+Notes: **merge was broken — repaired in cc84e99.** Three defects fixed post-merge: (1) generated sqlc/templ outputs (agents.sql.go, agents_templ.go, models.go structs) were never committed → `main` failed to build on clean checkout; (2) agents.sql broke the check-scope gate — DeleteAgent/UpdateAgent/CreateAgentSkill/DeleteAgentSkill/ListAgentSkills were not org-scoped (cross-org tampering by known ID); scoped them via agents.org_id, cross-org update/delete now silent no-ops, skill ops via EXISTS/JOIN, added `agent.list-skills` action; (3) migration 0019's agent_skills FK referenced a non-existent `skills` table (dangling until WU-304) — created the minimal `skills` table per SPEC §10 in 0019. Also fixed agents_test registry bug (relied on init() instead of reset()+re-register) and added cross-org rejection tests (delete/update/skill).
 
 ### WU-304 · Skills hub — `ready`
 Deps: 303.
