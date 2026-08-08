@@ -19,6 +19,7 @@ func serve(cfg *config.Config) {
 	action.RegisterTaskActions()
 	action.RegisterBoardActions()
 	action.RegisterSprintActions()
+	action.RegisterAgentActions()
 	if err := runServe(cfg); err != nil {
 		slog.Error("serve error", "error", err)
 		os.Exit(1)
