@@ -251,7 +251,7 @@ Deps: 104.
 `providers` + `provider_orgs` migrations; platform-admin UI (create provider: base URL, key, models; allocate to orgs); provider client with streaming, retry/jitter, usage capture; `codex_sso` kind registered but returns "not yet supported" (QUESTIONS Q1).
 AC: client tests against httptest fake (stream parse, 429 retry, usage extraction); allocation visibility test (org sees only allocated).
 
-### WU-303 · Agents + templates — `ready`
+### WU-303 · Agents + templates — `done`
 Deps: 302, 105.
 `agents` migration; platform template CRUD + allocation; org agent CRUD (customise allocated: name, context, skills, role, retry, rate, budget, approval policy); unique @name per org; membership rows for agents (actor_type=agent).
 AC: template→org customisation copy semantics tests; name uniqueness; agent-as-member permission resolution test.
