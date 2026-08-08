@@ -79,8 +79,14 @@ func handleAuditExport(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", "attachment; filename=audit.csv")
-	w.Write([]byte("id,actor_type,actor_id,action,subject,ip,created_at\n"))
+	if _, err := w.Write([]byte("id,actor_type,actor_id,action,subject,ip,created_at\n")); err != nil {
+		slog.Error("audit csv write", "error", err)
+		return
+	}
 	for _, r := range rows {
-		w.Write([]byte(r.ID + "," + r.ActorType + "," + r.ActorID + "," + r.Action + "," + r.Subject + "," + r.Ip + "," + r.CreatedAt + "\n"))
+		if _, err := w.Write([]byte(r.ID + "," + r.ActorType + "," + r.ActorID + "," + r.Action + "," + r.Subject + "," + r.Ip + "," + r.CreatedAt + "\n")); err != nil {
+			slog.Error("audit csv write", "error", err)
+			return
+		}
 	}
 }

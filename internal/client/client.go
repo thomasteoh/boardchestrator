@@ -7,12 +7,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
-	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -68,12 +69,12 @@ type ToolCall struct {
 
 // CompletionRequest is the request body for chat completions.
 type CompletionRequest struct {
-	Model       string         `json:"model"`
-	Messages    []Message      `json:"messages"`
-	Tools       []ToolDef      `json:"tools,omitempty"`
-	Stream      bool           `json:"stream"`
-	MaxTokens   int            `json:"max_tokens,omitempty"`
-	Temperature float64        `json:"temperature,omitempty"`
+	Model       string    `json:"model"`
+	Messages    []Message `json:"messages"`
+	Tools       []ToolDef `json:"tools,omitempty"`
+	Stream      bool      `json:"stream"`
+	MaxTokens   int       `json:"max_tokens,omitempty"`
+	Temperature float64   `json:"temperature,omitempty"`
 }
 
 // ToolDef is a function tool definition sent to the provider.
@@ -88,9 +89,9 @@ type ToolDef struct {
 
 // CompletionChoice is a single choice in a non-streaming response.
 type CompletionChoice struct {
-	Index        int       `json:"index"`
-	Message      Message   `json:"message"`
-	FinishReason string    `json:"finish_reason"`
+	Index        int        `json:"index"`
+	Message      Message    `json:"message"`
+	FinishReason string     `json:"finish_reason"`
 	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
 }
 
@@ -105,10 +106,10 @@ type CompletionResponse struct {
 
 // StreamDelta is a single delta from a streaming response.
 type StreamDelta struct {
-	Type    string `json:"type"`
-	Delta   struct {
-		Role      string    `json:"role,omitempty"`
-		Content   string    `json:"content,omitempty"`
+	Type  string `json:"type"`
+	Delta struct {
+		Role      string     `json:"role,omitempty"`
+		Content   string     `json:"content,omitempty"`
 		ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 	} `json:"delta,omitempty"`
 	FinishReason *string `json:"finish_reason,omitempty"`
@@ -300,7 +301,7 @@ func (c *client) do(ctx context.Context, body []byte, maxRetries int) (*http.Res
 		default:
 			// Non-retriable error
 			var bodyBuf bytes.Buffer
-			io.Copy(&bodyBuf, resp.Body)
+			_, _ = io.Copy(&bodyBuf, resp.Body)
 			resp.Body.Close()
 			return nil, ErrProviderUnavailable{
 				Status: resp.StatusCode,
@@ -362,10 +363,7 @@ func (c *client) readStream(ctx context.Context, r io.Reader, onDelta func(Strea
 }
 
 func (c *client) backoff(attempt int) {
-	d := c.backoffDuration(attempt)
-	select {
-	case <-time.After(d):
-	}
+	time.Sleep(c.backoffDuration(attempt))
 }
 
 func (c *client) backoffDuration(attempt int) time.Duration {
@@ -375,9 +373,19 @@ func (c *client) backoffDuration(attempt int) time.Duration {
 	if d > c.backoffMax {
 		d = c.backoffMax
 	}
-	// Apply jitter: ± jitterPct
-	jitter := time.Duration(float64(d) * c.jitterPct * (2*rand.Float64() - 1))
+	// Apply jitter: ± jitterPct. Uses crypto/rand so the jitter fraction is
+	// cryptographically random (gosec G404).
+	jitter := time.Duration(float64(d) * c.jitterPct * (2*randFloat64() - 1))
 	return d + jitter
+}
+
+// randFloat64 returns a uniformly random float64 in [0, 1) from crypto/rand.
+func randFloat64() float64 {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0.5
+	}
+	return float64(binary.LittleEndian.Uint64(b[:])>>11) / float64(1<<53)
 }
 
 func parseRetryAfter(s string) time.Duration {

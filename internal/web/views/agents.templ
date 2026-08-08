@@ -41,7 +41,7 @@ templ OrgAgentsPage(s Shell, orgID string, agents []AgentRow, templates []AgentR
 					<h3>{ a.Name }</h3>
 					<p>Provider: { a.ProviderID } — Model: { a.Model }</p>
 					<p>Status: if a.Active { "Active" } else { "Disabled" }</p>
-					<button hx-post="/api/agents/delete" hx-headers={ hxHeaders(s.CSRF) } hx-vals={ `{"id":"` + a.ID + `"}` }>Delete</button>
+					<button hx-post="/api/agents/delete" hx-headers={ hxHeaders(s.CSRF) } hx-vals={ `{"id":"` + a.ID + `","org_id":"` + orgID + `"}` }>Delete</button>
 				</div>
 			}
 		</div>

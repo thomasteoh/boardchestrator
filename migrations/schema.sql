@@ -488,6 +488,20 @@ CREATE TABLE IF NOT EXISTS agents (
     UNIQUE(org_id, name)
 );
 
+CREATE TABLE IF NOT EXISTS skills (
+    id                   TEXT PRIMARY KEY,
+    org_id               TEXT REFERENCES orgs(id),
+    name                 TEXT NOT NULL,
+    version              INTEGER NOT NULL DEFAULT 1,
+    description          TEXT NOT NULL DEFAULT '',
+    instructions         TEXT NOT NULL DEFAULT '',
+    allowed_actions_json TEXT NOT NULL DEFAULT '[]',
+    param_schema_json    TEXT NOT NULL DEFAULT '{}',
+    mcp_endpoints_enc    TEXT NOT NULL DEFAULT '',
+    created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
+    UNIQUE(org_id, name, version)
+);
+
 CREATE TABLE IF NOT EXISTS agent_skills (
     agent_id TEXT NOT NULL REFERENCES agents(id),
     skill_id TEXT NOT NULL REFERENCES skills(id),

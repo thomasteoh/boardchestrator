@@ -8,6 +8,31 @@ import (
 	"database/sql"
 )
 
+type Agent struct {
+	ID                 string
+	OrgID              sql.NullString
+	TemplateID         sql.NullString
+	Name               string
+	ProviderID         string
+	Model              string
+	Context            string
+	RoleID             sql.NullString
+	RetryMax           int64
+	BackoffSecs        int64
+	RunsPerHour        int64
+	TokenBudget        int64
+	ApprovalPolicyJson string
+	Active             int64
+	CreatedAt          string
+	UpdatedAt          string
+}
+
+type AgentSkill struct {
+	AgentID   string
+	SkillID   string
+	CreatedAt string
+}
+
 type ApiKey struct {
 	ID         string
 	UserID     string
@@ -255,6 +280,19 @@ type Session struct {
 	CreatedAt  string
 	LastSeenAt string
 	ExpiresAt  string
+}
+
+type Skill struct {
+	ID                 string
+	OrgID              sql.NullString
+	Name               string
+	Version            int64
+	Description        string
+	Instructions       string
+	AllowedActionsJson string
+	ParamSchemaJson    string
+	McpEndpointsEnc    string
+	CreatedAt          string
 }
 
 type Sprint struct {

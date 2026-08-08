@@ -17,38 +17,45 @@ type agentCreateInput struct {
 }
 
 type agentUpdateInput struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	ProviderID      string `json:"provider_id"`
-	Model           string `json:"model"`
-	Context         string `json:"context"`
-	RoleID          string `json:"role_id"`
-	RetryMax        int    `json:"retry_max"`
-	BackoffSecs     int    `json:"backoff_secs"`
-	RunsPerHour     int    `json:"runs_per_hour"`
-	TokenBudget     int    `json:"token_budget"`
-	ApprovalPolicy  string `json:"approval_policy"`
-	Active          bool   `json:"active"`
+	ID             string `json:"id"`
+	OrgID          string `json:"org_id"`
+	Name           string `json:"name"`
+	ProviderID     string `json:"provider_id"`
+	Model          string `json:"model"`
+	Context        string `json:"context"`
+	RoleID         string `json:"role_id"`
+	RetryMax       int    `json:"retry_max"`
+	BackoffSecs    int    `json:"backoff_secs"`
+	RunsPerHour    int    `json:"runs_per_hour"`
+	TokenBudget    int    `json:"token_budget"`
+	ApprovalPolicy string `json:"approval_policy"`
+	Active         bool   `json:"active"`
 }
 
 type agentDeleteInput struct {
-	ID string `json:"id"`
+	ID    string `json:"id"`
+	OrgID string `json:"org_id"`
 }
 
 type agentListInput struct {
 	OrgID string `json:"org_id"`
 }
 
-type agentListTemplatesInput struct{}
-
 type agentSkillAttachInput struct {
 	AgentID string `json:"agent_id"`
 	SkillID string `json:"skill_id"`
+	OrgID   string `json:"org_id"`
 }
 
 type agentSkillDetachInput struct {
 	AgentID string `json:"agent_id"`
 	SkillID string `json:"skill_id"`
+	OrgID   string `json:"org_id"`
+}
+
+type agentListSkillsInput struct {
+	AgentID string `json:"agent_id"`
+	OrgID   string `json:"org_id"`
 }
 
 func init() {
@@ -108,6 +115,14 @@ func init() {
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleAgentSkillDetach,
 	})
+	Register(Definition{
+		Name:       "agent.list-skills",
+		Impact:     ImpactRead,
+		Permission: "agent.list",
+		Scope:      ScopeOrg,
+		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
+		Handle:     handleAgentListSkills,
+	})
 }
 
 func RegisterAgentActions() {}
@@ -166,7 +181,13 @@ func handleAgentUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage) (a
 		ApprovalPolicyJson: input.ApprovalPolicy,
 		Active:             active,
 		ID:                 input.ID,
+		OrgID:              sql.NullString{String: input.OrgID, Valid: input.OrgID != ""},
 	})
+	// A no-match (agent not in this org) is a silent no-op, matching
+	// agent.delete: cross-org attempts never mutate another org's agent.
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("agent.update: %w", err)
 	}
@@ -178,7 +199,10 @@ func handleAgentDelete(ctx context.Context, ac ActionCtx, in json.RawMessage) (a
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("agent.delete: %w", err)
 	}
-	if err := ac.Tx.DeleteAgent(ctx, input.ID); err != nil {
+	if err := ac.Tx.DeleteAgent(ctx, sqlc.DeleteAgentParams{
+		ID:    input.ID,
+		OrgID: sql.NullString{String: input.OrgID, Valid: input.OrgID != ""},
+	}); err != nil {
 		return nil, fmt.Errorf("agent.delete: %w", err)
 	}
 	return nil, nil
@@ -219,6 +243,8 @@ func handleAgentSkillAttach(ctx context.Context, ac ActionCtx, in json.RawMessag
 	if err := ac.Tx.CreateAgentSkill(ctx, sqlc.CreateAgentSkillParams{
 		AgentID: input.AgentID,
 		SkillID: input.SkillID,
+		ID:      input.AgentID,
+		OrgID:   sql.NullString{String: input.OrgID, Valid: input.OrgID != ""},
 	}); err != nil {
 		return nil, fmt.Errorf("agent.skill-attach: %w", err)
 	}
@@ -233,8 +259,25 @@ func handleAgentSkillDetach(ctx context.Context, ac ActionCtx, in json.RawMessag
 	if err := ac.Tx.DeleteAgentSkill(ctx, sqlc.DeleteAgentSkillParams{
 		AgentID: input.AgentID,
 		SkillID: input.SkillID,
+		ID:      input.AgentID,
+		OrgID:   sql.NullString{String: input.OrgID, Valid: input.OrgID != ""},
 	}); err != nil {
 		return nil, fmt.Errorf("agent.skill-detach: %w", err)
 	}
 	return nil, nil
+}
+
+func handleAgentListSkills(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
+	var input agentListSkillsInput
+	if err := json.Unmarshal(in, &input); err != nil {
+		return nil, fmt.Errorf("agent.list-skills: %w", err)
+	}
+	skills, err := ac.Tx.ListAgentSkills(ctx, sqlc.ListAgentSkillsParams{
+		AgentID: input.AgentID,
+		OrgID:   sql.NullString{String: input.OrgID, Valid: input.OrgID != ""},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("agent.list-skills: %w", err)
+	}
+	return map[string][]string{"skills": skills}, nil
 }

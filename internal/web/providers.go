@@ -90,7 +90,9 @@ func handleProviderCreateAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		slog.Error("provider.create encode", "error", err)
+	}
 }
 
 // handleProviderDeleteAction handles POST /api/providers/delete

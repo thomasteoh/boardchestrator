@@ -11,25 +11,23 @@ import (
 // --- Action definitions for LLM providers (WU-302) ---
 
 type providerCreateInput struct {
-	Kind       string   `json:"kind"`
-	Name       string   `json:"name"`
-	BaseURL    string   `json:"base_url"`
-	Models     []string `json:"models"`
+	Kind    string   `json:"kind"`
+	Name    string   `json:"name"`
+	BaseURL string   `json:"base_url"`
+	Models  []string `json:"models"`
 }
 
 type providerUpdateInput struct {
-	ID         string   `json:"id"`
-	Kind       string   `json:"kind"`
-	Name       string   `json:"name"`
-	BaseURL    string   `json:"base_url"`
-	Models     []string `json:"models"`
+	ID      string   `json:"id"`
+	Kind    string   `json:"kind"`
+	Name    string   `json:"name"`
+	BaseURL string   `json:"base_url"`
+	Models  []string `json:"models"`
 }
 
 type providerDeleteInput struct {
 	ID string `json:"id"`
 }
-
-type providerListInput struct{}
 
 type providerOrgAllocateInput struct {
 	ProviderID string `json:"provider_id"`

@@ -38,10 +38,10 @@ func handleOrgAgents(w http.ResponseWriter, r *http.Request) {
 	for _, t := range templates {
 		if !t.OrgID.Valid {
 			platformTemplates = append(platformTemplates, views.AgentRow{
-				ID:        t.ID,
-				Name:      t.Name,
+				ID:         t.ID,
+				Name:       t.Name,
 				ProviderID: t.ProviderID,
-				Model:     t.Model,
+				Model:      t.Model,
 			})
 		}
 	}
@@ -49,11 +49,11 @@ func handleOrgAgents(w http.ResponseWriter, r *http.Request) {
 	rows := make([]views.AgentRow, 0, len(agents))
 	for _, a := range agents {
 		rows = append(rows, views.AgentRow{
-			ID:        a.ID,
-			Name:      a.Name,
+			ID:         a.ID,
+			Name:       a.Name,
 			ProviderID: a.ProviderID,
-			Model:     a.Model,
-			Active:    a.Active == 1,
+			Model:      a.Model,
+			Active:     a.Active == 1,
 		})
 	}
 
@@ -94,19 +94,22 @@ func handleAgentCreateAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		slog.Error("agent.create encode", "error", err)
+	}
 }
 
 // handleAgentDeleteAction handles POST /api/agents/delete
 func handleAgentDeleteAction(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		ID string `json:"id"`
+		ID    string `json:"id"`
+		OrgID string `json:"org_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	raw, _ := json.Marshal(map[string]string{"id": input.ID})
+	raw, _ := json.Marshal(map[string]string{"id": input.ID, "org_id": input.OrgID})
 	actor, ok := auth.APIKeyActorFrom(r.Context())
 	if !ok {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
