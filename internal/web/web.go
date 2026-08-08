@@ -505,4 +505,9 @@ func Routes(r chi.Router) {
 	r.Post("/api/providers/create", handleProviderCreateAction)
 	r.Post("/api/providers/delete", handleProviderDeleteAction)
 	r.Post("/api/providers/allocate", handleProviderAllocateAction)
+
+	// Agent routes (WU-303)
+	r.Get("/app/org/{orgID}/agents", handleOrgAgents)
+	r.Post("/api/agents/create", handleAgentCreateAction)
+	r.Post("/api/agents/delete", handleAgentDeleteAction)
 }

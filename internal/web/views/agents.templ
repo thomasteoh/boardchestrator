@@ -1,0 +1,49 @@
+package views
+
+type AgentRow struct {
+	ID         string
+	Name       string
+	ProviderID string
+	Model      string
+	Active     bool
+}
+
+templ OrgAgentsPage(s Shell, orgID string, agents []AgentRow, templates []AgentRow) {
+	@Base(s) {
+		<h1>Agents</h1>
+
+		<h2>Create Agent</h2>
+		<form hx-post="/api/agents/create" hx-headers={ hxHeaders(s.CSRF) } hx-target="#agent-list" hx-swap="innerHTML">
+			<input type="hidden" name="org_id" value={ orgID }/>
+			<div>Name: <input type="text" name="name" required/></div>
+			<div>Provider ID: <input type="text" name="provider_id" required/></div>
+			<div>Model: <input type="text" name="model" placeholder="gpt-4o"/></div>
+			if len(templates) > 0 {
+				<div>From template:
+					<select name="template_id">
+						<option value="">None</option>
+						for _, t := range templates {
+							<option value={ t.ID }>{ t.Name }</option>
+						}
+					</select>
+				</div>
+			}
+			<button type="submit">Create Agent</button>
+		</form>
+
+		<h2>Org Agents</h2>
+		<div id="agent-list">
+			if len(agents) == 0 {
+				<p>No agents configured for this org yet.</p>
+			}
+			for _, a := range agents {
+				<div>
+					<h3>{ a.Name }</h3>
+					<p>Provider: { a.ProviderID } — Model: { a.Model }</p>
+					<p>Status: if a.Active { "Active" } else { "Disabled" }</p>
+					<button hx-post="/api/agents/delete" hx-headers={ hxHeaders(s.CSRF) } hx-vals={ `{"id":"` + a.ID + `"}` }>Delete</button>
+				</div>
+			}
+		</div>
+	}
+}
