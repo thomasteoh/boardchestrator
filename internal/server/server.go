@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/thomasteoh/boardchestrator/internal/action"
+	"github.com/thomasteoh/boardchestrator/internal/agentrt"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/event"
@@ -76,6 +77,9 @@ type Server struct {
 	pool *job.Pool
 	// disp is the action dispatcher. Created in Start when DB is wired.
 	disp *action.Dispatcher
+	// eng is the agent run engine (SPEC §10). Created in Start when DB is
+	// wired; its Handler replaces the job pool's NoopHandler.
+	eng *agentrt.Engine
 }
 
 // New creates a configured server with routes and middleware, with no
@@ -361,12 +365,20 @@ func (s *Server) Start(ctx context.Context) error {
 		go s.hub.Run(hubCtx)
 	}
 
-	// Start the job worker pool.
+	// Create the agent run engine, then start the job worker pool with its
+	// run handler (SPEC §10: background jobs drive runs; WU-305 replaces the
+	// NoopHandler). The engine builds a provider client per run from the
+	// agent's provider row and decrypts the key with the tenant secret.
 	if s.db != nil {
+		s.eng = agentrt.New(agentrt.Config{
+			DB:        s.db,
+			Secret:    s.cfg.SecretKey,
+			EventSink: s.EventSink(),
+		})
 		store := job.NewJobStore(s.db)
 		s.pool = job.NewPool(ctx, job.PoolConfig{
 			Store:        store,
-			Handler:      job.NoopHandler,
+			Handler:      s.eng.Handler(store),
 			MaxWorkers:   s.cfg.AgentWorkers,
 			PollInterval: 5 * time.Second,
 			ClaimTimeout: 30 * time.Second,
