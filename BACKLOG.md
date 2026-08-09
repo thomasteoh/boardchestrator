@@ -263,10 +263,11 @@ Deps: 303.
 `skills`, `agent_skills` migrations; skill CRUD UI (instructions editor, allowed-actions picker from registry, param schema, optional external MCP endpoints with encrypted creds + SSRF-validated URLs); versioning (edit bumps version, agents pin latest by default); import/export JSON bundle; platform vs org scoping.
 AC: allowed-actions must be subset of registry (validation test); import round-trip golden; effective-permission intersection test with WU-105 engine; SSRF validator rejects private ranges.
 
-### WU-305 · Run engine + tool loop — `ready`
+### WU-305 · Run engine + tool loop — `done 2026-08-09 WU-305: agent run engine (internal/agentrt)`
 Deps: 301, 303, 006.
 `runs`, `run_steps` migrations; lifecycle per SPEC §10; context assembly (labelled cascade); tool loop with registry-derived tools filtered by effective perms; step cap; cancellation; transcripts stored; failure→retry per agent policy→notify; run detail UI (steps, tokens) linked from task.
 AC: fake-provider integration tests: happy multi-tool run, permission-denied tool call recorded + surfaced to model, step cap halt, cancel mid-run, retry-then-fail notifies; context assembly golden test (ordering + labels).
+Notes: run engine in `internal/agentrt`; provider client built per-run from agent's provider row + key decrypted via tenant secret; run-detail route `/app/org/{orgID}/project/{projectID}/task/{taskID}/run/{runID}` (task-detail DB handler still stubbed — link lands with WU-202's real handler).
 
 ### WU-306 · Approval gates — `ready`
 Deps: 305.
