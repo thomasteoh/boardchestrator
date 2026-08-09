@@ -49,3 +49,10 @@ FROM agent_skills
 JOIN agents ON agents.id = agent_skills.agent_id
 WHERE agent_skills.agent_id = ? AND agents.org_id = ?
 ORDER BY agent_skills.created_at;
+
+-- name: ListAgentSkillActions :many
+SELECT DISTINCT s.allowed_actions_json
+FROM agent_skills AS a
+JOIN skills AS s ON s.id = a.skill_id
+JOIN agents AS g ON g.id = a.agent_id
+WHERE a.agent_id = ? AND g.org_id = ?;

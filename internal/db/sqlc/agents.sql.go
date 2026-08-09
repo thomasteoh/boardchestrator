@@ -197,6 +197,42 @@ func (q *Queries) FindAgentByOrgAndName(ctx context.Context, arg FindAgentByOrgA
 	return i, err
 }
 
+const listAgentSkillActions = `-- name: ListAgentSkillActions :many
+SELECT DISTINCT s.allowed_actions_json
+FROM agent_skills AS a
+JOIN skills AS s ON s.id = a.skill_id
+JOIN agents AS g ON g.id = a.agent_id
+WHERE a.agent_id = ? AND g.org_id = ?
+`
+
+type ListAgentSkillActionsParams struct {
+	AgentID string
+	OrgID   sql.NullString
+}
+
+func (q *Queries) ListAgentSkillActions(ctx context.Context, arg ListAgentSkillActionsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentSkillActions, arg.AgentID, arg.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var allowed_actions_json string
+		if err := rows.Scan(&allowed_actions_json); err != nil {
+			return nil, err
+		}
+		items = append(items, allowed_actions_json)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAgentSkills = `-- name: ListAgentSkills :many
 SELECT agent_skills.skill_id
 FROM agent_skills

@@ -510,4 +510,10 @@ func Routes(r chi.Router) {
 	r.Get("/app/org/{orgID}/agents", handleOrgAgents)
 	r.Post("/api/agents/create", handleAgentCreateAction)
 	r.Post("/api/agents/delete", handleAgentDeleteAction)
+
+	// Skill routes (WU-304)
+	r.Get("/app/org/{orgID}/skills", handleOrgSkills)
+	r.Post("/api/skills/create", handleSkillCreateAction)
+	r.Post("/api/skills/update", handleSkillUpdateAction)
+	r.Post("/api/skills/delete", handleSkillDeleteAction)
 }

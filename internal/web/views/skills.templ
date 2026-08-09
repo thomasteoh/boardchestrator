@@ -1,0 +1,43 @@
+package views
+
+type SkillRow struct {
+	ID          string
+	Name        string
+	Version     int64
+	Description string
+	Actions     string
+}
+
+templ OrgSkillsPage(s Shell, orgID string, skills []SkillRow) {
+	@Base(s) {
+		<h1>Skills</h1>
+
+		<h2>Create Skill</h2>
+		<form hx-post="/api/skills/create" hx-headers={ hxHeaders(s.CSRF) } hx-target="#skill-list" hx-swap="innerHTML">
+			<input type="hidden" name="org_id" value={ orgID }/>
+			<div>Name: <input type="text" name="name" required/></div>
+			<div>Description: <input type="text" name="description" placeholder="What this skill does"/></div>
+			<div>Instructions:
+				<textarea name="instructions" rows="8" cols="60" placeholder="System prompt / instructions the agent follows when this skill is attached"></textarea>
+			</div>
+			<div>Allowed actions (comma-separated): <input type="text" name="allowed_actions" placeholder="search.query, task.list"/></div>
+			<div>Param schema (JSON): <input type="text" name="param_schema" placeholder='{"type":"object"}'/></div>
+			<button type="submit">Create Skill</button>
+		</form>
+
+		<h2>Org Skills</h2>
+		<div id="skill-list">
+			if len(skills) == 0 {
+				<p>No skills defined for this org yet.</p>
+			}
+			for _, sk := range skills {
+				<div>
+					<h3>{ sk.Name } <em>v{ sk.Version }</em></h3>
+					<p>{ sk.Description }</p>
+					<p>Allowed actions: { sk.Actions }</p>
+					<button hx-post="/api/skills/delete" hx-headers={ hxHeaders(s.CSRF) } hx-vals={ `{"id":"` + sk.ID + `","org_id":"` + orgID + `"}` }>Delete</button>
+				</div>
+			}
+		</div>
+	}
+}

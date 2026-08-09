@@ -142,6 +142,11 @@ type ActionCtx struct {
 	// DB is the raw database handle, available for read-only queries (e.g.
 	// FTS5 search) that don't need a transaction.
 	DB *sql.DB
+
+	// SecretKey is the AES-256 key for at-rest secrets (provider API keys,
+	// skill MCP endpoint credentials). Empty when not configured — handlers
+	// store plaintext (test/dev default).
+	SecretKey []byte
 }
 
 // HandlerFunc executes an action against its input, returning the output

@@ -29,6 +29,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/search"
 	"github.com/thomasteoh/boardchestrator/internal/sse"
 	"github.com/thomasteoh/boardchestrator/internal/storage"
+	"github.com/thomasteoh/boardchestrator/internal/tenant"
 	"github.com/thomasteoh/boardchestrator/internal/web"
 )
 
@@ -380,6 +381,7 @@ func (s *Server) Start(ctx context.Context) error {
 			action.WithScopeResolver(action.NewDBScopeResolver(s.db)),
 			action.WithEventSink(s.EventSink()),
 			action.WithPermissionChecker(perm.NewCheckerAdapter(s.db)),
+			action.WithSecretKey(tenant.PadKey(s.cfg.SecretKey)),
 		)
 		web.SetDispatcher(s.disp)
 		// Wire the attachment storage backend.

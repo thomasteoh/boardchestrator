@@ -24,6 +24,11 @@ type Dispatcher struct {
 	audit    AuditSink
 	idem     IdempotencyStore
 	now      Clock
+
+	// secretKey is the AES-256 key used to encrypt at-rest secrets (provider
+	// API keys, skill MCP endpoint credentials). Empty when not configured —
+	// handlers store plaintext only if no secret is set (test/dev default).
+	secretKey []byte
 }
 
 // DB returns the raw database handle for read-only queries.
@@ -53,6 +58,11 @@ func WithIdempotencyStore(s IdempotencyStore) Option { return func(d *Dispatcher
 
 // WithClock overrides the clock; test-only.
 func WithClock(c Clock) Option { return func(d *Dispatcher) { d.now = c } }
+
+// WithSecretKey sets the AES-256 key used to encrypt at-rest secrets
+// (provider API keys, skill MCP endpoint credentials). Must be 32 bytes;
+// pass tenant.PadKey(cfg.SecretKey) to normalise a config value.
+func WithSecretKey(key []byte) Option { return func(d *Dispatcher) { d.secretKey = key } }
 
 // New builds a Dispatcher over db with Phase 0 defaults: allow-all
 // permissions, no-op approval gate, no-op scope resolver, no-op event sink,
@@ -119,13 +129,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 	}
 
 	ac := ActionCtx{
-		Actor:  actor,
-		Org:    opts.Org,
-		Team:   opts.Team,
-		Proj:   opts.Proj,
-		DryRun: opts.DryRun,
-		Idem:   opts.Idem,
-		DB:     d.db,
+		Actor:     actor,
+		Org:       opts.Org,
+		Team:      opts.Team,
+		Proj:      opts.Proj,
+		DryRun:    opts.DryRun,
+		Idem:      opts.Idem,
+		DB:        d.db,
+		SecretKey: d.secretKey,
 	}
 
 	// 3. Validate input schema.
