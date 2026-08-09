@@ -258,10 +258,11 @@ Deps: 302, 105.
 AC: template→org customisation copy semantics tests; name uniqueness; agent-as-member permission resolution test.
 Notes: **merge was broken — repaired in cc84e99.** Three defects fixed post-merge: (1) generated sqlc/templ outputs (agents.sql.go, agents_templ.go, models.go structs) were never committed → `main` failed to build on clean checkout; (2) agents.sql broke the check-scope gate — DeleteAgent/UpdateAgent/CreateAgentSkill/DeleteAgentSkill/ListAgentSkills were not org-scoped (cross-org tampering by known ID); scoped them via agents.org_id, cross-org update/delete now silent no-ops, skill ops via EXISTS/JOIN, added `agent.list-skills` action; (3) migration 0019's agent_skills FK referenced a non-existent `skills` table (dangling until WU-304) — created the minimal `skills` table per SPEC §10 in 0019. Also fixed agents_test registry bug (relied on init() instead of reset()+re-register) and added cross-org rejection tests (delete/update/skill).
 
-### WU-304 · Skills hub — `ready`
+### WU-304 · Skills hub — `done 2026-08-08 wu-304: skills hub`
 Deps: 303.
 `skills`, `agent_skills` migrations; skill CRUD UI (instructions editor, allowed-actions picker from registry, param schema, optional external MCP endpoints with encrypted creds + SSRF-validated URLs); versioning (edit bumps version, agents pin latest by default); import/export JSON bundle; platform vs org scoping.
 AC: allowed-actions must be subset of registry (validation test); import round-trip golden; effective-permission intersection test with WU-105 engine; SSRF validator rejects private ranges.
+Notes: skills/agent_skills tables already created in migration 0019 (during cc84e99 repair); no new migration needed. Implemented org-scoped skill CRUD actions, version-bump update, latest-by-name resolution, import/export, SSRF + encryption, and the perm-engine AllowAgent intersection (role grants ∩ attached skills' allowed_actions).
 
 ### WU-305 · Run engine + tool loop — `ready`
 Deps: 301, 303, 006.
