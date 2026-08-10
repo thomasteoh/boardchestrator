@@ -19,6 +19,11 @@ SELECT id, org_id, template_id, name, provider_id, model, context, role_id, retr
 FROM agents
 WHERE org_id = ? AND name = ?;
 
+-- name: FindActiveAgentByOrgAndName :one
+SELECT id, org_id, template_id, name, provider_id, model, context, role_id, retry_max, backoff_secs, runs_per_hour, token_budget, approval_policy_json, active, created_at, updated_at
+FROM agents
+WHERE org_id = ? AND name = ? AND active = 1;
+
 -- name: ListAgentsByOrg :many
 SELECT id, org_id, template_id, name, provider_id, model, context, role_id, retry_max, backoff_secs, runs_per_hour, token_budget, approval_policy_json, active, created_at, updated_at
 FROM agents

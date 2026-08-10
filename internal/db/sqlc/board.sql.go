@@ -76,7 +76,7 @@ func (q *Queries) DeleteBoardColumn(ctx context.Context, arg DeleteBoardColumnPa
 }
 
 const findBoardColumn = `-- name: FindBoardColumn :one
-SELECT id, project_id, name, color, position, wip_limit, status, created_at
+SELECT id, project_id, name, color, position, wip_limit, status, trigger_agent_id, trigger_prompt, created_at
 FROM board_columns
 WHERE id = ? AND project_id = ?
 `
@@ -86,20 +86,9 @@ type FindBoardColumnParams struct {
 	ProjectID string
 }
 
-type FindBoardColumnRow struct {
-	ID        string
-	ProjectID string
-	Name      string
-	Color     string
-	Position  float64
-	WipLimit  int64
-	Status    string
-	CreatedAt string
-}
-
-func (q *Queries) FindBoardColumn(ctx context.Context, arg FindBoardColumnParams) (FindBoardColumnRow, error) {
+func (q *Queries) FindBoardColumn(ctx context.Context, arg FindBoardColumnParams) (BoardColumn, error) {
 	row := q.db.QueryRowContext(ctx, findBoardColumn, arg.ID, arg.ProjectID)
-	var i FindBoardColumnRow
+	var i BoardColumn
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -108,6 +97,38 @@ func (q *Queries) FindBoardColumn(ctx context.Context, arg FindBoardColumnParams
 		&i.Position,
 		&i.WipLimit,
 		&i.Status,
+		&i.TriggerAgentID,
+		&i.TriggerPrompt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const findBoardColumnByProjectAndStatus = `-- name: FindBoardColumnByProjectAndStatus :one
+SELECT id, project_id, name, color, position, wip_limit, status, trigger_agent_id, trigger_prompt, created_at
+FROM board_columns
+WHERE project_id = ? AND status = ?
+LIMIT 1
+`
+
+type FindBoardColumnByProjectAndStatusParams struct {
+	ProjectID string
+	Status    string
+}
+
+func (q *Queries) FindBoardColumnByProjectAndStatus(ctx context.Context, arg FindBoardColumnByProjectAndStatusParams) (BoardColumn, error) {
+	row := q.db.QueryRowContext(ctx, findBoardColumnByProjectAndStatus, arg.ProjectID, arg.Status)
+	var i BoardColumn
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Name,
+		&i.Color,
+		&i.Position,
+		&i.WipLimit,
+		&i.Status,
+		&i.TriggerAgentID,
+		&i.TriggerPrompt,
 		&i.CreatedAt,
 	)
 	return i, err

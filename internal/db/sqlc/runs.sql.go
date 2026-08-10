@@ -92,6 +92,23 @@ func (q *Queries) CancelRun(ctx context.Context, arg CancelRunParams) (Run, erro
 	return i, err
 }
 
+const countActiveRunsByTask = `-- name: CountActiveRunsByTask :one
+SELECT COUNT(*) FROM runs
+WHERE task_id = ? AND org_id = ? AND status IN ('queued', 'running', 'awaiting_approval')
+`
+
+type CountActiveRunsByTaskParams struct {
+	TaskID sql.NullString
+	OrgID  string
+}
+
+func (q *Queries) CountActiveRunsByTask(ctx context.Context, arg CountActiveRunsByTaskParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countActiveRunsByTask, arg.TaskID, arg.OrgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countRunningRunsForAgent = `-- name: CountRunningRunsForAgent :one
 SELECT COUNT(*) FROM runs
 WHERE agent_id = ? AND org_id = ? AND status IN ('queued', 'running', 'awaiting_approval')
