@@ -26,9 +26,18 @@ type RunStepRow struct {
 	Tokens   int64
 }
 
-// RunDetailPage renders the run detail view: run metadata and the full
-// model/tool step transcript (SPEC §10 run_steps).
-templ RunDetailPage(s Shell, run RunRow, steps []RunStepRow) {
+// ApprovalRow is one pending approval request on a run (SPEC §10).
+type ApprovalRow struct {
+	ID         string
+	ActionName string
+	Input      string
+	Status     string
+	Requested  string
+}
+
+// RunDetailPage renders the run detail view: run metadata, the full
+// model/tool step transcript, and any pending approval requests (SPEC §10).
+templ RunDetailPage(s Shell, run RunRow, steps []RunStepRow, approvals []ApprovalRow) {
 	@Base(s) {
 		<div class="bc-run-detail" id="run-{ run.ID }">
 			<h2 class="bc-run-id">Run { run.ID }</h2>
@@ -50,6 +59,23 @@ templ RunDetailPage(s Shell, run RunRow, steps []RunStepRow) {
 			</div>
 			if run.Error != "" {
 				<div class="bc-run-error">{ run.Error }</div>
+			}
+
+			if len(approvals) > 0 {
+				<h3 class="bc-run-approvals-title">Approvals</h3>
+				<div class="bc-run-approvals">
+					for _, ap := range approvals {
+						<div class="bc-approval bc-approval-{ ap.Status }">
+							<div class="bc-approval-head">
+								<span class="bc-approval-id">{ ap.ID }</span>
+								<span class="bc-approval-action">{ ap.ActionName }</span>
+								<span class="bc-approval-status">{ ap.Status }</span>
+								<span class="bc-approval-requested">{ ap.Requested }</span>
+							</div>
+							<pre class="bc-approval-input">{ ap.Input }</pre>
+						</div>
+					}
+				</div>
 			}
 
 			<h3 class="bc-run-steps-title">Steps</h3>

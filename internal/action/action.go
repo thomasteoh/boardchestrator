@@ -245,6 +245,13 @@ func (e ErrApprovalPending) Error() string {
 	return fmt.Sprintf("action: approval pending (id=%s)", e.ID)
 }
 
+// Is lets errors.Is match any ErrApprovalPending regardless of ID, so callers
+// can detect "parked" regardless of which approvals row it refers to.
+func (ErrApprovalPending) Is(target error) bool {
+	_, ok := target.(ErrApprovalPending)
+	return ok
+}
+
 // newID returns a 16-byte random, hex-encoded id (SPEC §3 ID convention).
 func newID() string {
 	var b [16]byte

@@ -91,10 +91,11 @@ const (
 )
 
 // ApprovalGate applies the agent approval policy for def.Impact. It is only
-// consulted for agent actors (SPEC §4). On ApprovalPending it returns the
-// approvals row id to embed in ErrApprovalPending.
+// consulted for agent actors (SPEC §4). input is the raw action input, stored
+// verbatim in the approvals row so approval.decide can re-dispatch it. On
+// ApprovalPending it returns the approvals row id to embed in ErrApprovalPending.
 type ApprovalGate interface {
-	Gate(ctx context.Context, ac ActionCtx, def Definition) (decision ApprovalDecision, approvalID string, err error)
+	Gate(ctx context.Context, ac ActionCtx, def Definition, input json.RawMessage) (decision ApprovalDecision, approvalID string, err error)
 }
 
 // noopApprovalGate always proceeds. This is the Phase 0 default; WU-306
@@ -102,7 +103,7 @@ type ApprovalGate interface {
 // persisting approvals rows and setting run state awaiting_approval).
 type noopApprovalGate struct{}
 
-func (noopApprovalGate) Gate(context.Context, ActionCtx, Definition) (ApprovalDecision, string, error) {
+func (noopApprovalGate) Gate(context.Context, ActionCtx, Definition, json.RawMessage) (ApprovalDecision, string, error) {
 	return ApprovalProceed, "", nil
 }
 

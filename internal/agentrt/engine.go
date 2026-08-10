@@ -44,6 +44,7 @@ func New(cfg Config) *Engine {
 	opts := []action.Option{
 		action.WithScopeResolver(action.NewDBScopeResolver(cfg.DB)),
 		action.WithPermissionChecker(agentPermChecker{db: cfg.DB}),
+		action.WithApprovalGate(newAgentApprovalGate(cfg.DB)),
 	}
 	if cfg.EventSink != nil {
 		opts = append(opts, action.WithEventSink(cfg.EventSink))
@@ -92,7 +93,7 @@ func (e *Engine) dispatchTool(ctx context.Context, run sqlc.Run, agent sqlc.Agen
 	actor := action.Actor{Type: action.ActorAgent, ID: agent.ID}
 	opts := action.Opts{Org: run.OrgID}
 	_ = run.TaskID // project scope is carried in the handler input
-	out, err := e.disp.Dispatch(ctx, actor, name, args, opts)
+	out, err := e.disp.Dispatch(withRunID(ctx, run.ID), actor, name, args, opts)
 	if err != nil {
 		if errors.Is(err, action.ErrForbidden) {
 			return toolResult{}, fmt.Errorf("forbidden: %s", name)
@@ -169,6 +170,14 @@ type loopOutcome struct {
 	completionTokens int64
 }
 
+// runJobKind is the jobs.kind for a run job; the pool handler (Handler) parses
+// the payload as runJob.
+const runJobKind = "run"
+
+// runDefaultMaxAttempts is the job retry cap for enqueued run jobs that don't
+// carry an agent-specific RetryMax (resume jobs).
+const runDefaultMaxAttempts = 3
+
 // runJob is the job payload carried in jobs.payload_json for a run.
 type runJob struct {
 	RunID string `json:"run_id"`
@@ -200,9 +209,29 @@ func (e *Engine) Handler(store *job.JobStore) job.JobHandler {
 		if err != nil {
 			return e.failAndRetry(ctx, store, j, run, agent, err)
 		}
-		_ = e.finishRun(ctx, run, out)
+		// A run waiting on approval must NOT be finished (succeeded): it parks
+		// as awaiting_approval until approval.decide resumes it (WU-306). Only
+		// finished, cancelled, or step-capped outcomes get finishRun.
+		if !out.approvalPending {
+			_ = e.finishRun(ctx, run, out)
+			return store.Complete(ctx, j.ID)
+		}
+		// Approval-pending: leave the run awaiting_approval and mark this job
+		// complete (the resume enqueues a fresh job). Nothing more to do here.
 		return store.Complete(ctx, j.ID)
 	}
+}
+
+// EnqueueResume enqueues a fresh run job for a run that approval.decide has
+// requeued (SPEC §10 resume). The gate sees the decided approvals row on the
+// next dispatch and proceeds or forbids accordingly.
+func (e *Engine) EnqueueResume(ctx context.Context, store *job.JobStore, orgID, runID string) error {
+	payload, err := json.Marshal(runJob{RunID: runID, OrgID: orgID})
+	if err != nil {
+		return fmt.Errorf("enqueue resume: marshal: %w", err)
+	}
+	return store.Enqueue(ctx, newID(), runJobKind, string(payload),
+		time.Now().UTC().Format(time.RFC3339), runDefaultMaxAttempts)
 }
 
 // executeRun runs the full lifecycle for an already-queued run row: assemble

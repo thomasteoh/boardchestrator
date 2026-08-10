@@ -545,3 +545,18 @@ CREATE TABLE IF NOT EXISTS run_steps (
 
 CREATE INDEX IF NOT EXISTS idx_run_steps_run ON run_steps(run_id, seq);
 
+
+CREATE TABLE IF NOT EXISTS approvals (
+    id            TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    run_id        TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    action_name   TEXT NOT NULL,
+    input_json    TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT 'pending',
+    requested_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
+    decided_by    TEXT,
+    decided_at    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_approvals_org ON approvals(org_id, status, requested_at);
+CREATE INDEX IF NOT EXISTS idx_approvals_run ON approvals(run_id, status);
