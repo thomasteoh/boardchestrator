@@ -270,7 +270,7 @@ Deps: 301, 303, 006.
 AC: fake-provider integration tests: happy multi-tool run, permission-denied tool call recorded + surfaced to model, step cap halt, cancel mid-run, retry-then-fail notifies; context assembly golden test (ordering + labels).
 Notes: run engine in `internal/agentrt`; provider client built per-run from agent's provider row + key decrypted via tenant secret; run-detail route `/app/org/{orgID}/project/{projectID}/task/{taskID}/run/{runID}` (task-detail DB handler still stubbed — link lands with WU-202's real handler).
 
-### WU-306 · Approval gates — `ready`
+### WU-306 · Approval gates — `done 2026-08-10 WU-306: approval gates — gate, decide action, resume path, notifications, run-detail UI`
 Deps: 305.
 `approvals` migration; dispatch approval hook implemented (policy per impact class from agent config); run state `awaiting_approval`; approval UI on task + notification (kind: approval requested); `approval.decide` resumes run with result; forbid class blocks with clear model-visible error; high-impact default require-approval on new agents.
 AC: gate matrix tests (auto/require/forbid × read/low/high); resume-after-approve continues run correctly (fake provider); reject surfaces to model and run completes gracefully.
