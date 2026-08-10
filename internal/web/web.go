@@ -226,12 +226,76 @@ func handleInviteAccept(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleTaskDetail renders the kanban task detail view.
+// handleTaskDetail renders the kanban task detail view including the agent
+// thread (runs + steps) for the task (WU-307).
 func handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	s := shellData(r, "Task Detail", "/tasks")
+	orgID := chi.URLParam(r, "orgID")
+	projectID := chi.URLParam(r, "projectID")
+	taskID := chi.URLParam(r, "taskID")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// Stub: return empty detail until the DB-backed handler is wired.
-	if err := views.TaskDetailPage(s, views.TaskDetail{}, nil, nil).Render(r.Context(), w); err != nil {
+
+	db := disp.DB()
+	if db == nil {
+		RenderErrorPage(w, r, http.StatusServiceUnavailable, "Database unavailable", "The task engine is not wired yet.")
+		return
+	}
+	q := sqlc.New(db)
+	ctx := r.Context()
+
+	task, err := q.FindTaskByID(ctx, sqlc.FindTaskByIDParams{ID: taskID, ProjectID: projectID})
+	if err != nil {
+		RenderErrorPage(w, r, http.StatusNotFound, "Task not found", err.Error())
+		return
+	}
+	view := views.TaskDetail{
+		ID:          task.ID,
+		ProjectID:   task.ProjectID,
+		Key:         task.Key,
+		Title:       task.Title,
+		Description: task.Description,
+		Points:      int(task.Points),
+		Priority:    int(task.Priority),
+		Status:      task.Status,
+		DueAt:       task.DueAt,
+	}
+
+	// Agent thread: runs for this task, newest first, with their steps.
+	runs, err := q.FindRunByTaskAndOrg(ctx, sqlc.FindRunByTaskAndOrgParams{
+		TaskID: sql.NullString{String: taskID, Valid: taskID != ""},
+		OrgID:  orgID,
+	})
+	if err != nil {
+		RenderErrorPage(w, r, http.StatusInternalServerError, "Could not load runs", err.Error())
+		return
+	}
+	for _, run := range runs {
+		agentName := run.AgentID
+		if ag, aerr := q.FindAgentByID(ctx, run.AgentID); aerr == nil {
+			agentName = ag.Name
+		}
+		row := views.RunThreadRow{
+			ID:        run.ID,
+			AgentName: agentName,
+			Trigger:   run.Trigger,
+			Status:    run.Status,
+			Error:     run.Error,
+		}
+		steps, serr := q.ListRunSteps(ctx, sqlc.ListRunStepsParams{RunID: run.ID, OrgID: orgID})
+		if serr == nil {
+			for _, st := range steps {
+				row.Steps = append(row.Steps, views.ThreadStepRow{
+					Seq:      st.Seq,
+					Kind:     st.Kind,
+					Request:  st.RequestJson,
+					Response: st.ResponseJson,
+				})
+			}
+		}
+		view.Runs = append(view.Runs, row)
+	}
+
+	if err := views.TaskDetailPage(s, view, nil, nil).Render(ctx, w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
