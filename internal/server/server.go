@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -24,6 +26,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/agentrt"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/config"
+	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/event"
 	"github.com/thomasteoh/boardchestrator/internal/job"
 	"github.com/thomasteoh/boardchestrator/internal/perm"
@@ -84,6 +87,13 @@ type Server struct {
 	// resumeSub is the approval.decided subscription that enqueues run resume
 	// jobs (WU-306). Its unsubscribe func is kept to stop on Shutdown.
 	resumeUnsub func()
+	// triggerUnsub is the mention/column subscription that enqueues agent runs
+	// (WU-307). Its unsubscribe func is kept to stop on Shutdown.
+	triggerUnsub func()
+	// trigq is the read query handle the trigger loop uses to re-read tasks,
+	// comments, and columns from the DB (source of truth for mention/column
+	// detection). Set in Start once the DB is wired.
+	trigq *sqlc.Queries
 }
 
 // New creates a configured server with routes and middleware, with no
@@ -380,6 +390,7 @@ func (s *Server) Start(ctx context.Context) error {
 			EventSink: s.EventSink(),
 		})
 		store := job.NewJobStore(s.db)
+		s.trigq = sqlc.New(s.db)
 		s.pool = job.NewPool(ctx, job.PoolConfig{
 			Store:        store,
 			Handler:      s.eng.Handler(store),
@@ -393,6 +404,17 @@ func (s *Server) Start(ctx context.Context) error {
 		var resumeSub *event.Subscription
 		resumeSub, s.resumeUnsub = s.bus.Subscribe(event.Filter{Names: map[string]struct{}{"approval.decided": {}}}, 16)
 		go s.resumeLoop(ctx, store, resumeSub)
+
+		// Mention + column triggers (WU-307): subscribe to the user-driven
+		// task/comment/move actions and enqueue agent runs on @mentions or
+		// movement into a trigger column.
+		var triggerSub *event.Subscription
+		triggerSub, s.triggerUnsub = s.bus.Subscribe(event.Filter{Names: map[string]struct{}{
+			"task.update":    {},
+			"comment.create": {},
+			"task.move":      {},
+		}}, 32)
+		go s.triggerLoop(ctx, store, triggerSub)
 	}
 
 	// Create the action dispatcher with DB-backed stores, scope resolver,
@@ -481,6 +503,10 @@ func (s *Server) Shutdown() {
 	if s.resumeUnsub != nil {
 		s.resumeUnsub()
 	}
+	// Stop the mention/column trigger subscriber (WU-307).
+	if s.triggerUnsub != nil {
+		s.triggerUnsub()
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -524,5 +550,136 @@ func (s *Server) resumeLoop(ctx context.Context, store *job.JobStore, sub *event
 				slog.Warn("resume: enqueue failed", "run_id", payload.RunID, "error", err)
 			}
 		}
+	}
+}
+
+// mentionRe matches an @Name token. Agent names are [A-Za-z0-9_\-].
+var mentionRe = regexp.MustCompile(`@([A-Za-z0-9_\-]+)`)
+
+// triggerLoop drains task.update / comment.create / task.move events and
+// enqueues agent runs (WU-307). It re-reads the source of truth from the DB
+// rather than trusting the event payload, so detection is robust to partial
+// updates. Guards: an agent's own actions never self-trigger, and a task with
+// an active run is skipped (per-task cap 1, enforced by EnqueueRun).
+func (s *Server) triggerLoop(ctx context.Context, store *job.JobStore, sub *event.Subscription) {
+	for {
+		select {
+		case <-ctx.Done():
+			sub.Close()
+			return
+		case ev, ok := <-sub.C:
+			if !ok {
+				return
+			}
+			if ev.ActorType == "agent" {
+				// Self-trigger guard: an agent's own actions must not trigger
+				// itself (loop prevention).
+				continue
+			}
+			switch ev.Name {
+			case "task.update":
+				s.triggerOnTask(ctx, store, ev)
+			case "comment.create":
+				s.triggerOnComment(ctx, store, ev)
+			case "task.move":
+				s.triggerOnColumn(ctx, store, ev)
+			}
+		}
+	}
+}
+
+// triggerOnTask scans a task's description for @mentions after a task.update
+// and enqueues a mention run per matched active agent.
+func (s *Server) triggerOnTask(ctx context.Context, store *job.JobStore, ev event.Event) {
+	var payload struct {
+		ID        string `json:"id"`
+		ProjectID string `json:"project_id"`
+	}
+	if err := json.Unmarshal(ev.Payload, &payload); err != nil || payload.ID == "" || payload.ProjectID == "" {
+		return
+	}
+	task, err := s.trigq.FindTaskByID(ctx, sqlc.FindTaskByIDParams{ID: payload.ID, ProjectID: payload.ProjectID})
+	if err != nil {
+		slog.Warn("trigger: task lookup", "error", err)
+		return
+	}
+	s.enqueueMentions(ctx, store, ev.Org, task.Description, payload.ID, payload.ProjectID, ev.ActorID)
+}
+
+// triggerOnComment scans a new comment's body for @mentions.
+func (s *Server) triggerOnComment(ctx context.Context, store *job.JobStore, ev event.Event) {
+	var payload struct {
+		ID        string `json:"id"`
+		TaskID    string `json:"task_id"`
+		ProjectID string `json:"project_id"`
+	}
+	if err := json.Unmarshal(ev.Payload, &payload); err != nil || payload.ID == "" || payload.TaskID == "" || payload.ProjectID == "" {
+		return
+	}
+	var comment sqlc.Comment
+	if _, err := s.trigq.FindCommentByID(ctx, sqlc.FindCommentByIDParams{ID: payload.ID, ProjectID: payload.ProjectID}); err != nil {
+		slog.Warn("trigger: comment lookup", "error", err)
+		return
+	}
+	s.enqueueMentions(ctx, store, ev.Org, comment.Body, payload.TaskID, payload.ProjectID, ev.ActorID)
+}
+
+// enqueueMentions parses @mentions in text and enqueues a mention run for each
+// matched active org agent. initiatedBy is the mentioning user (from the event
+// actor) — only user actors reach here (agent actors were guarded earlier).
+func (s *Server) enqueueMentions(ctx context.Context, store *job.JobStore, orgID, text, taskID, projectID, initiatedBy string) {
+	seen := map[string]bool{}
+	for _, m := range mentionRe.FindAllStringSubmatch(text, -1) {
+		name := m[1]
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		agent, err := s.trigq.FindActiveAgentByOrgAndName(ctx, sqlc.FindActiveAgentByOrgAndNameParams{
+			OrgID: sql.NullString{String: orgID, Valid: orgID != ""},
+			Name:  name,
+		})
+		if err != nil {
+			continue // not an active agent — not a mention
+		}
+		mention := "@" + name
+		if _, created, err := s.eng.EnqueueRun(ctx, store, orgID, agent.ID, "mention", taskID, "", initiatedBy, mention); err != nil {
+			slog.Warn("trigger: enqueue mention", "agent", agent.ID, "error", err)
+		} else if created {
+			slog.Debug("trigger: mention enqueued", "agent", agent.ID, "task", taskID)
+		}
+	}
+}
+
+// triggerOnColumn fires when a task moves into a column configured with a
+// trigger_agent_id. The column's trigger_prompt is interpolated with the task.
+func (s *Server) triggerOnColumn(ctx context.Context, store *job.JobStore, ev event.Event) {
+	var payload struct {
+		ID        string `json:"id"`
+		ProjectID string `json:"project_id"`
+		Status    string `json:"status"`
+	}
+	if err := json.Unmarshal(ev.Payload, &payload); err != nil || payload.ID == "" || payload.ProjectID == "" || payload.Status == "" {
+		return
+	}
+	task, err := s.trigq.FindTaskByID(ctx, sqlc.FindTaskByIDParams{ID: payload.ID, ProjectID: payload.ProjectID})
+	if err != nil {
+		slog.Warn("trigger: task lookup", "error", err)
+		return
+	}
+	col, err := s.trigq.FindBoardColumnByProjectAndStatus(ctx, sqlc.FindBoardColumnByProjectAndStatusParams{ProjectID: payload.ProjectID, Status: payload.Status})
+	if err != nil || !col.TriggerAgentID.Valid || col.TriggerAgentID.String == "" {
+		return // no trigger column at this status
+	}
+	// Interpolate the prompt: {title}, {key}, {id}, {status}.
+	prompt := col.TriggerPrompt
+	prompt = strings.ReplaceAll(prompt, "{title}", task.Title)
+	prompt = strings.ReplaceAll(prompt, "{key}", task.Key)
+	prompt = strings.ReplaceAll(prompt, "{id}", task.ID)
+	prompt = strings.ReplaceAll(prompt, "{status}", task.Status)
+	if _, created, err := s.eng.EnqueueRun(ctx, store, ev.Org, col.TriggerAgentID.String, "column", payload.ID, "", "", prompt); err != nil {
+		slog.Warn("trigger: enqueue column", "agent", col.TriggerAgentID.String, "error", err)
+	} else if created {
+		slog.Debug("trigger: column enqueued", "agent", col.TriggerAgentID.String, "task", payload.ID)
 	}
 }

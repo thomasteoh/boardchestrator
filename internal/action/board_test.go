@@ -2,11 +2,13 @@ package action
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/thomasteoh/boardchestrator/internal/db/dbtest"
+	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 )
 
 func TestBoardColumnCreateAndLookup(t *testing.T) {
@@ -108,16 +110,44 @@ func TestBoardColumnUpdate(t *testing.T) {
 	projOut, _ := d.Dispatch(ctx, userActor(), "project.create",
 		json.RawMessage(`{"org_id":"`+orgID+`","name":"Proj","key":"PROJ2","visibility":"private"}`), Opts{Org: orgID})
 	projID := extractID(t, mustJSON(t, projOut))
+
+	// Seed an agent so the column trigger_agent_id FK is satisfied.
+	q := sqlc.New(d.DB())
+	if _, err := q.CreateProvider(ctx, sqlc.CreateProviderParams{ID: "prov2", Kind: "openai-compatible", Name: "T", BaseUrl: "https://t/v1", KeyEnc: nil, ModelsJson: `["gpt-4o"]`}); err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+	if _, err := q.CreateRole(ctx, sqlc.CreateRoleParams{ID: "role2", OrgID: orgID, Name: "Editor", IsSystem: 0, GrantsJson: `["task.list"]`}); err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+	if _, err := q.CreateAgent(ctx, sqlc.CreateAgentParams{
+		ID: "agt2", OrgID: sql.NullString{String: orgID, Valid: true},
+		Name: "robo2", ProviderID: "prov2", Model: "gpt-4o", Context: "x",
+		RoleID:   sql.NullString{String: "role2", Valid: true},
+		RetryMax: 3, BackoffSecs: 30, RunsPerHour: 20, TokenBudget: 50000,
+		ApprovalPolicyJson: `{}`, Active: 1,
+	}); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+
 	colOut, _ := d.Dispatch(ctx, userActor(), "board.column.create",
-		json.RawMessage(`{"project_id":"`+projID+`","name":"Todo","color":"#6366f1","wip_limit":5,"status":"backlog"}`), Opts{Org: orgID})
+		json.RawMessage(`{"project_id":"`+projID+`","name":"Todo","color":"#6366f1","wip_limit":5,"status":"backlog","trigger_agent_id":"agt2","trigger_prompt":"Review {title}"}`), Opts{Org: orgID})
 	colID := extractID(t, mustJSON(t, colOut))
 
 	// Update
 	_, err := d.Dispatch(ctx, userActor(), "board.column.update",
-		json.RawMessage(`{"id":"`+colID+`","project_id":"`+projID+`","name":"In Progress","color":"#22c55e","wip_limit":3,"status":"active"}`),
+		json.RawMessage(`{"id":"`+colID+`","project_id":"`+projID+`","name":"In Progress","color":"#22c55e","wip_limit":3,"status":"active","trigger_agent_id":"agt2","trigger_prompt":"Triage {title} ({key})"}`),
 		Opts{Org: orgID})
 	if err != nil {
 		t.Fatalf("board.column.update: %v", err)
+	}
+
+	// Verify the trigger fields persisted (WU-307 column trigger config).
+	col, err := sqlc.New(d.DB()).FindBoardColumn(ctx, sqlc.FindBoardColumnParams{ID: colID, ProjectID: projID})
+	if err != nil {
+		t.Fatalf("find column: %v", err)
+	}
+	if !col.TriggerAgentID.Valid || col.TriggerAgentID.String != "agt2" || col.TriggerPrompt != "Triage {title} ({key})" {
+		t.Fatalf("trigger config not persisted: agent=%v prompt=%q", col.TriggerAgentID, col.TriggerPrompt)
 	}
 }
 

@@ -83,14 +83,16 @@ type AuditLog struct {
 }
 
 type BoardColumn struct {
-	ID        string
-	ProjectID string
-	Name      string
-	Color     string
-	Position  float64
-	WipLimit  int64
-	Status    string
-	CreatedAt string
+	ID             string
+	ProjectID      string
+	Name           string
+	Color          string
+	Position       float64
+	WipLimit       int64
+	Status         string
+	TriggerAgentID sql.NullString
+	TriggerPrompt  string
+	CreatedAt      string
 }
 
 type Comment struct {

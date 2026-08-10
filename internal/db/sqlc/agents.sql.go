@@ -132,6 +132,41 @@ func (q *Queries) DeleteAgentSkill(ctx context.Context, arg DeleteAgentSkillPara
 	return err
 }
 
+const findActiveAgentByOrgAndName = `-- name: FindActiveAgentByOrgAndName :one
+SELECT id, org_id, template_id, name, provider_id, model, context, role_id, retry_max, backoff_secs, runs_per_hour, token_budget, approval_policy_json, active, created_at, updated_at
+FROM agents
+WHERE org_id = ? AND name = ? AND active = 1
+`
+
+type FindActiveAgentByOrgAndNameParams struct {
+	OrgID sql.NullString
+	Name  string
+}
+
+func (q *Queries) FindActiveAgentByOrgAndName(ctx context.Context, arg FindActiveAgentByOrgAndNameParams) (Agent, error) {
+	row := q.db.QueryRowContext(ctx, findActiveAgentByOrgAndName, arg.OrgID, arg.Name)
+	var i Agent
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.TemplateID,
+		&i.Name,
+		&i.ProviderID,
+		&i.Model,
+		&i.Context,
+		&i.RoleID,
+		&i.RetryMax,
+		&i.BackoffSecs,
+		&i.RunsPerHour,
+		&i.TokenBudget,
+		&i.ApprovalPolicyJson,
+		&i.Active,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const findAgentByID = `-- name: FindAgentByID :one
 SELECT id, org_id, template_id, name, provider_id, model, context, role_id, retry_max, backoff_secs, runs_per_hour, token_budget, approval_policy_json, active, created_at, updated_at
 FROM agents

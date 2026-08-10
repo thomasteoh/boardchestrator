@@ -14,6 +14,10 @@ FROM runs
 WHERE task_id = ? AND org_id = ?
 ORDER BY created_at DESC;
 
+-- name: CountActiveRunsByTask :one
+SELECT COUNT(*) FROM runs
+WHERE task_id = ? AND org_id = ? AND status IN ('queued', 'running', 'awaiting_approval');
+
 -- name: ListRunsByOrg :many
 SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 FROM runs

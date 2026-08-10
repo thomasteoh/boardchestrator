@@ -17,6 +17,7 @@ func serve(cfg *config.Config) {
 	action.RegisterOrgActions()
 	action.RegisterInviteActions()
 	action.RegisterTaskActions()
+	action.RegisterCommentActions()
 	action.RegisterBoardActions()
 	action.RegisterSprintActions()
 	action.RegisterAgentActions()

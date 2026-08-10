@@ -114,13 +114,15 @@ templ BoardPage(s Shell, projectID string, columns []ColumnView, swimlanes []Swi
 
 // ColumnView is a board column with its cards.
 type ColumnView struct {
-	ID       string
-	Name     string
-	Color    string
-	Status   string
-	Count    int
-	WIPLimit int
-	Cards    []CardView
+	ID             string
+	Name           string
+	Color          string
+	Status         string
+	Count          int
+	WIPLimit       int
+	TriggerAgentID string
+	TriggerPrompt  string
+	Cards          []CardView
 }
 
 // CardView is a task card on the board.
@@ -165,6 +167,12 @@ templ ColumnSettingsPage(s Shell, projectID string, columns []ColumnView) {
 				<label>WIP Limit
 					<input type="number" name="wip_limit" value="0" min="0" class="bc-input"/>
 				</label>
+				<label>Trigger agent
+					<input type="text" name="trigger_agent_id" placeholder="agent id (blank = none)" class="bc-input"/>
+				</label>
+				<label>Trigger prompt
+					<input type="text" name="trigger_prompt" placeholder="{title} {key} {id} {status}" class="bc-input"/>
+				</label>
 				<button type="submit" class="bc-btn bc-btn-primary">Add Column</button>
 			</form>
 
@@ -173,6 +181,23 @@ templ ColumnSettingsPage(s Shell, projectID string, columns []ColumnView) {
 					<div class="bc-col-settings-row" id="col-{ col.ID }">
 						<span>{ col.Name }</span>
 						<span class="bc-col-count">{ fmt.Sprintf("%d cards", col.Count) }</span>
+						<form
+							hx-post="/api/action/board.column.update"
+							hx-headers={ hxHeaders(s.CSRF) }
+							hx-target="#col-{ col.ID }"
+							hx-swap="outerHTML"
+							class="bc-col-trigger-form"
+						>
+							<input type="hidden" name="id" value={ col.ID }/>
+							<input type="hidden" name="project_id" value={ projectID }/>
+							<input type="hidden" name="name" value={ col.Name }/>
+							<input type="hidden" name="color" value={ col.Color }/>
+							<input type="hidden" name="wip_limit" value={ fmt.Sprintf("%d", col.Count) }/>
+							<input type="hidden" name="status" value={ col.Status }/>
+							<input type="text" name="trigger_agent_id" placeholder="agent id" class="bc-input bc-input-sm" value={ col.TriggerAgentID }/>
+							<input type="text" name="trigger_prompt" placeholder="{title} {key}" class="bc-input bc-input-sm" value={ col.TriggerPrompt }/>
+							<button type="submit" class="bc-btn bc-btn-sm">Set trigger</button>
+						</form>
 						<button
 							class="bc-btn bc-btn-sm bc-btn-danger"
 							hx-post="/api/action/board.column.delete"

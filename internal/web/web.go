@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -181,11 +182,32 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.URL.Path[len("/api/action/"):]
 	var input json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	// Accept both JSON bodies (tool dispatches) and form-urlencoded bodies
+	// (htmx forms). Form values are stringified into a flat JSON object.
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form body", http.StatusBadRequest)
+			return
+		}
+		obj := map[string]string{}
+		for k, vs := range r.PostForm {
+			obj[k] = vs[0]
+		}
+		b, err := json.Marshal(obj)
+		if err != nil {
+			http.Error(w, "invalid form body", http.StatusBadRequest)
+			return
+		}
+		input = b
+	} else if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 	actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
+	if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
+		actor.ID = sess.UserID
+	}
 	result, err := disp.Dispatch(r.Context(), actor, name, input, action.Opts{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -204,12 +226,76 @@ func handleInviteAccept(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleTaskDetail renders the kanban task detail view.
+// handleTaskDetail renders the kanban task detail view including the agent
+// thread (runs + steps) for the task (WU-307).
 func handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	s := shellData(r, "Task Detail", "/tasks")
+	orgID := chi.URLParam(r, "orgID")
+	projectID := chi.URLParam(r, "projectID")
+	taskID := chi.URLParam(r, "taskID")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// Stub: return empty detail until the DB-backed handler is wired.
-	if err := views.TaskDetailPage(s, views.TaskDetail{}, nil, nil).Render(r.Context(), w); err != nil {
+
+	db := disp.DB()
+	if db == nil {
+		RenderErrorPage(w, r, http.StatusServiceUnavailable, "Database unavailable", "The task engine is not wired yet.")
+		return
+	}
+	q := sqlc.New(db)
+	ctx := r.Context()
+
+	task, err := q.FindTaskByID(ctx, sqlc.FindTaskByIDParams{ID: taskID, ProjectID: projectID})
+	if err != nil {
+		RenderErrorPage(w, r, http.StatusNotFound, "Task not found", err.Error())
+		return
+	}
+	view := views.TaskDetail{
+		ID:          task.ID,
+		ProjectID:   task.ProjectID,
+		Key:         task.Key,
+		Title:       task.Title,
+		Description: task.Description,
+		Points:      int(task.Points),
+		Priority:    int(task.Priority),
+		Status:      task.Status,
+		DueAt:       task.DueAt,
+	}
+
+	// Agent thread: runs for this task, newest first, with their steps.
+	runs, err := q.FindRunByTaskAndOrg(ctx, sqlc.FindRunByTaskAndOrgParams{
+		TaskID: sql.NullString{String: taskID, Valid: taskID != ""},
+		OrgID:  orgID,
+	})
+	if err != nil {
+		RenderErrorPage(w, r, http.StatusInternalServerError, "Could not load runs", err.Error())
+		return
+	}
+	for _, run := range runs {
+		agentName := run.AgentID
+		if ag, aerr := q.FindAgentByID(ctx, run.AgentID); aerr == nil {
+			agentName = ag.Name
+		}
+		row := views.RunThreadRow{
+			ID:        run.ID,
+			AgentName: agentName,
+			Trigger:   run.Trigger,
+			Status:    run.Status,
+			Error:     run.Error,
+		}
+		steps, serr := q.ListRunSteps(ctx, sqlc.ListRunStepsParams{RunID: run.ID, OrgID: orgID})
+		if serr == nil {
+			for _, st := range steps {
+				row.Steps = append(row.Steps, views.ThreadStepRow{
+					Seq:      st.Seq,
+					Kind:     st.Kind,
+					Request:  st.RequestJson,
+					Response: st.ResponseJson,
+				})
+			}
+		}
+		view.Runs = append(view.Runs, row)
+	}
+
+	if err := views.TaskDetailPage(s, view, nil, nil).Render(ctx, w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -308,7 +394,32 @@ func handleBoardColumns(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
 	s := shellData(r, "Board Columns", "/boards")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ColumnSettingsPage(s, projectID, nil).Render(r.Context(), w); err != nil {
+
+	db := disp.DB()
+	if db == nil {
+		RenderErrorPage(w, r, http.StatusServiceUnavailable, "Database unavailable", "The board engine is not wired yet.")
+		return
+	}
+	q := sqlc.New(db)
+	cols, err := q.ListBoardColumns(r.Context(), projectID)
+	if err != nil {
+		RenderErrorPage(w, r, http.StatusInternalServerError, "Could not load columns", err.Error())
+		return
+	}
+	viewsCols := make([]views.ColumnView, 0, len(cols))
+	for _, c := range cols {
+		viewsCols = append(viewsCols, views.ColumnView{
+			ID:             c.ID,
+			Name:           c.Name,
+			Color:          c.Color,
+			Status:         c.Status,
+			Count:          0,
+			WIPLimit:       int(c.WipLimit),
+			TriggerAgentID: c.TriggerAgentID.String,
+			TriggerPrompt:  c.TriggerPrompt,
+		})
+	}
+	if err := views.ColumnSettingsPage(s, projectID, viewsCols).Render(r.Context(), w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }

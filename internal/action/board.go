@@ -2,6 +2,7 @@ package action
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -9,20 +10,24 @@ import (
 )
 
 type boardColCreateInput struct {
-	ProjectID string `json:"project_id"`
-	Name      string `json:"name"`
-	Color     string `json:"color"`
-	WIPLimit  int    `json:"wip_limit"`
-	Status    string `json:"status"`
+	ProjectID      string `json:"project_id"`
+	Name           string `json:"name"`
+	Color          string `json:"color"`
+	WIPLimit       int    `json:"wip_limit"`
+	Status         string `json:"status"`
+	TriggerAgentID string `json:"trigger_agent_id,omitempty"`
+	TriggerPrompt  string `json:"trigger_prompt,omitempty"`
 }
 
 type boardColUpdateInput struct {
-	ID        string `json:"id"`
-	ProjectID string `json:"project_id"`
-	Name      string `json:"name"`
-	Color     string `json:"color"`
-	WIPLimit  int    `json:"wip_limit"`
-	Status    string `json:"status"`
+	ID             string `json:"id"`
+	ProjectID      string `json:"project_id"`
+	Name           string `json:"name"`
+	Color          string `json:"color"`
+	WIPLimit       int    `json:"wip_limit"`
+	Status         string `json:"status"`
+	TriggerAgentID string `json:"trigger_agent_id,omitempty"`
+	TriggerPrompt  string `json:"trigger_prompt,omitempty"`
 }
 
 type boardColReorderInput struct {
@@ -79,13 +84,15 @@ func handleBoardColCreate(ctx context.Context, ac ActionCtx, in json.RawMessage)
 	}
 	id := newID()
 	_, err = ac.Tx.CreateBoardColumn(ctx, sqlc.CreateBoardColumnParams{
-		ID:        id,
-		ProjectID: input.ProjectID,
-		Name:      input.Name,
-		Color:     input.Color,
-		Position:  float64(pos),
-		WipLimit:  int64(input.WIPLimit),
-		Status:    input.Status,
+		ID:             id,
+		ProjectID:      input.ProjectID,
+		Name:           input.Name,
+		Color:          input.Color,
+		Position:       float64(pos),
+		WipLimit:       int64(input.WIPLimit),
+		Status:         input.Status,
+		TriggerAgentID: sql.NullString{String: input.TriggerAgentID, Valid: input.TriggerAgentID != ""},
+		TriggerPrompt:  input.TriggerPrompt,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("board.column.create: %w", err)
@@ -99,13 +106,15 @@ func handleBoardColUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage)
 		return nil, fmt.Errorf("board.column.update: %w", err)
 	}
 	_, err := ac.Tx.UpdateBoardColumn(ctx, sqlc.UpdateBoardColumnParams{
-		Name:      input.Name,
-		Color:     input.Color,
-		Position:  0,
-		WipLimit:  int64(input.WIPLimit),
-		Status:    input.Status,
-		ID:        input.ID,
-		ProjectID: input.ProjectID,
+		Name:           input.Name,
+		Color:          input.Color,
+		Position:       0,
+		WipLimit:       int64(input.WIPLimit),
+		Status:         input.Status,
+		TriggerAgentID: sql.NullString{String: input.TriggerAgentID, Valid: input.TriggerAgentID != ""},
+		TriggerPrompt:  input.TriggerPrompt,
+		ID:             input.ID,
+		ProjectID:      input.ProjectID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("board.column.update: %w", err)

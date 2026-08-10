@@ -28,6 +28,48 @@ templ TaskDetailPage(s Shell, task TaskDetail, comments []CommentRow, activity [
 					>{ task.Description }</textarea>
 				</div>
 
+				<div class="bc-task-agent-thread" x-data="{ open: true }">
+					<details
+						class="bc-thread"
+						:open="open"
+						@toggle="open = $el.open"
+					>
+						<summary class="bc-thread-summary">
+							<h3>Agent thread</h3>
+							<span class="bc-thread-count">{ len(task.Runs) } run(s)</span>
+						</summary>
+						<div class="bc-thread-list">
+							for _, r := range task.Runs {
+								<div class={ fmt.Sprintf("bc-thread-run bc-thread-%s", r.Status) }>
+									<div class="bc-thread-run-head">
+										<span class={ fmt.Sprintf("bc-thread-status bc-status-%s", r.Status) }>{ r.Status }</span>
+										<span class="bc-thread-agent">{ r.AgentName }</span>
+										<span class="bc-thread-trigger">{ r.Trigger }</span>
+									</div>
+									if r.Error != "" {
+										<div class="bc-thread-error">{ r.Error }</div>
+									}
+									<details class="bc-thread-steps">
+										<summary>Steps ({ len(r.Steps) })</summary>
+										<div class="bc-thread-steps-list">
+											for _, step := range r.Steps {
+												<div class={ fmt.Sprintf("bc-step bc-step-%s", step.Kind) }>
+													<div class="bc-step-head">
+														<span class="bc-step-seq">#{ step.Seq }</span>
+														<span class="bc-step-kind">{ step.Kind }</span>
+													</div>
+													<pre class="bc-step-req">{ step.Request }</pre>
+													<pre class="bc-step-resp">{ step.Response }</pre>
+												</div>
+											}
+										</div>
+									</details>
+								</div>
+							}
+						</div>
+					</details>
+				</div>
+
 				<div class="bc-task-comments">
 					<h3>Comments</h3>
 					<div id="comments-list" role="region" aria-label="Comments" aria-live="polite" aria-atomic="false" aria-relevant="additions removals">
@@ -204,6 +246,7 @@ type TaskDetail struct {
 	Watchers    []WatcherRow
 	Relations   []RelationRow
 	Attachments []AttachmentRow
+	Runs        []RunThreadRow
 }
 
 // AttachmentRow is a file attached to a task.
@@ -229,6 +272,24 @@ type ActivityRow struct {
 	Actor     string
 	Action    string
 	CreatedAt string
+}
+
+// RunThreadRow is a single agent run on a task's thread (WU-307).
+type RunThreadRow struct {
+	ID        string
+	AgentName string
+	Trigger   string
+	Status    string
+	Error     string
+	Steps     []ThreadStepRow
+}
+
+// ThreadStepRow is one step within a run thread.
+type ThreadStepRow struct {
+	Seq      int64
+	Kind     string
+	Request  string
+	Response string
 }
 
 // AssigneeRow is an assigned user.

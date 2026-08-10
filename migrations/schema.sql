@@ -304,6 +304,8 @@ CREATE TABLE board_columns (
     position REAL NOT NULL DEFAULT 0,
     wip_limit INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'backlog',
+    trigger_agent_id TEXT REFERENCES agents(id),
+    trigger_prompt TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S'))
 );
 
