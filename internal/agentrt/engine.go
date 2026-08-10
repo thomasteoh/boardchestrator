@@ -234,7 +234,7 @@ func (e *Engine) EnqueueResume(ctx context.Context, store *job.JobStore, orgID, 
 		return fmt.Errorf("enqueue resume: marshal: %w", err)
 	}
 	return store.Enqueue(ctx, newID(), runJobKind, string(payload),
-		time.Now().UTC().Format(time.RFC3339), runDefaultMaxAttempts)
+		time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), runDefaultMaxAttempts)
 }
 
 // EnqueueRun creates a run for a mention/column trigger and enqueues its job
@@ -278,7 +278,7 @@ func (e *Engine) EnqueueRun(ctx context.Context, store *job.JobStore, orgID, age
 		return "", false, fmt.Errorf("enqueue run: marshal: %w", err)
 	}
 	if err := store.Enqueue(ctx, runID, runJobKind, string(payload),
-		time.Now().UTC().Format(time.RFC3339), runDefaultMaxAttempts); err != nil {
+		time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), runDefaultMaxAttempts); err != nil {
 		return "", false, fmt.Errorf("enqueue run: enqueue job: %w", err)
 	}
 	return runID, true, nil

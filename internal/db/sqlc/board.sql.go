@@ -7,36 +7,28 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createBoardColumn = `-- name: CreateBoardColumn :one
-INSERT INTO board_columns (id, project_id, name, color, position, wip_limit, status)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, project_id, name, color, position, wip_limit, status, created_at
+INSERT INTO board_columns (id, project_id, name, color, position, wip_limit, status, trigger_agent_id, trigger_prompt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, project_id, name, color, position, wip_limit, status, trigger_agent_id, trigger_prompt, created_at
 `
 
 type CreateBoardColumnParams struct {
-	ID        string
-	ProjectID string
-	Name      string
-	Color     string
-	Position  float64
-	WipLimit  int64
-	Status    string
+	ID             string
+	ProjectID      string
+	Name           string
+	Color          string
+	Position       float64
+	WipLimit       int64
+	Status         string
+	TriggerAgentID sql.NullString
+	TriggerPrompt  string
 }
 
-type CreateBoardColumnRow struct {
-	ID        string
-	ProjectID string
-	Name      string
-	Color     string
-	Position  float64
-	WipLimit  int64
-	Status    string
-	CreatedAt string
-}
-
-func (q *Queries) CreateBoardColumn(ctx context.Context, arg CreateBoardColumnParams) (CreateBoardColumnRow, error) {
+func (q *Queries) CreateBoardColumn(ctx context.Context, arg CreateBoardColumnParams) (BoardColumn, error) {
 	row := q.db.QueryRowContext(ctx, createBoardColumn,
 		arg.ID,
 		arg.ProjectID,
@@ -45,8 +37,10 @@ func (q *Queries) CreateBoardColumn(ctx context.Context, arg CreateBoardColumnPa
 		arg.Position,
 		arg.WipLimit,
 		arg.Status,
+		arg.TriggerAgentID,
+		arg.TriggerPrompt,
 	)
-	var i CreateBoardColumnRow
+	var i BoardColumn
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -55,6 +49,8 @@ func (q *Queries) CreateBoardColumn(ctx context.Context, arg CreateBoardColumnPa
 		&i.Position,
 		&i.WipLimit,
 		&i.Status,
+		&i.TriggerAgentID,
+		&i.TriggerPrompt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -214,43 +210,37 @@ func (q *Queries) ReorderBoardColumns(ctx context.Context, arg ReorderBoardColum
 }
 
 const updateBoardColumn = `-- name: UpdateBoardColumn :one
-UPDATE board_columns SET name = ?, color = ?, position = ?, wip_limit = ?, status = ?
+UPDATE board_columns
+SET name = ?, color = ?, position = ?, wip_limit = ?, status = ?, trigger_agent_id = ?, trigger_prompt = ?
 WHERE id = ? AND project_id = ?
-RETURNING id, project_id, name, color, position, wip_limit, status, created_at
+RETURNING id, project_id, name, color, position, wip_limit, status, trigger_agent_id, trigger_prompt, created_at
 `
 
 type UpdateBoardColumnParams struct {
-	Name      string
-	Color     string
-	Position  float64
-	WipLimit  int64
-	Status    string
-	ID        string
-	ProjectID string
+	Name           string
+	Color          string
+	Position       float64
+	WipLimit       int64
+	Status         string
+	TriggerAgentID sql.NullString
+	TriggerPrompt  string
+	ID             string
+	ProjectID      string
 }
 
-type UpdateBoardColumnRow struct {
-	ID        string
-	ProjectID string
-	Name      string
-	Color     string
-	Position  float64
-	WipLimit  int64
-	Status    string
-	CreatedAt string
-}
-
-func (q *Queries) UpdateBoardColumn(ctx context.Context, arg UpdateBoardColumnParams) (UpdateBoardColumnRow, error) {
+func (q *Queries) UpdateBoardColumn(ctx context.Context, arg UpdateBoardColumnParams) (BoardColumn, error) {
 	row := q.db.QueryRowContext(ctx, updateBoardColumn,
 		arg.Name,
 		arg.Color,
 		arg.Position,
 		arg.WipLimit,
 		arg.Status,
+		arg.TriggerAgentID,
+		arg.TriggerPrompt,
 		arg.ID,
 		arg.ProjectID,
 	)
-	var i UpdateBoardColumnRow
+	var i BoardColumn
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -259,6 +249,8 @@ func (q *Queries) UpdateBoardColumn(ctx context.Context, arg UpdateBoardColumnPa
 		&i.Position,
 		&i.WipLimit,
 		&i.Status,
+		&i.TriggerAgentID,
+		&i.TriggerPrompt,
 		&i.CreatedAt,
 	)
 	return i, err

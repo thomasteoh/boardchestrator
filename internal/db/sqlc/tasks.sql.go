@@ -450,6 +450,42 @@ func (q *Queries) DeleteTaskRelation(ctx context.Context, arg DeleteTaskRelation
 	return err
 }
 
+const findCommentByID = `-- name: FindCommentByID :one
+SELECT id, task_id, project_id, author_id, body, created_at, updated_at
+FROM comments
+WHERE id = ? AND project_id = ?
+`
+
+type FindCommentByIDParams struct {
+	ID        string
+	ProjectID string
+}
+
+type FindCommentByIDRow struct {
+	ID        string
+	TaskID    string
+	ProjectID string
+	AuthorID  string
+	Body      string
+	CreatedAt string
+	UpdatedAt string
+}
+
+func (q *Queries) FindCommentByID(ctx context.Context, arg FindCommentByIDParams) (FindCommentByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, findCommentByID, arg.ID, arg.ProjectID)
+	var i FindCommentByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.TaskID,
+		&i.ProjectID,
+		&i.AuthorID,
+		&i.Body,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const findLabelByID = `-- name: FindLabelByID :one
 SELECT id, org_id, name, color, description, created_at
 FROM labels

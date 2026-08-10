@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -181,11 +182,32 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.URL.Path[len("/api/action/"):]
 	var input json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	// Accept both JSON bodies (tool dispatches) and form-urlencoded bodies
+	// (htmx forms). Form values are stringified into a flat JSON object.
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form body", http.StatusBadRequest)
+			return
+		}
+		obj := map[string]string{}
+		for k, vs := range r.PostForm {
+			obj[k] = vs[0]
+		}
+		b, err := json.Marshal(obj)
+		if err != nil {
+			http.Error(w, "invalid form body", http.StatusBadRequest)
+			return
+		}
+		input = b
+	} else if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 	actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
+	if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
+		actor.ID = sess.UserID
+	}
 	result, err := disp.Dispatch(r.Context(), actor, name, input, action.Opts{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

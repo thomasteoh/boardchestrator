@@ -151,6 +151,11 @@ FROM comments
 WHERE task_id = ? AND project_id = ?
 ORDER BY created_at ASC;
 
+-- name: FindCommentByID :one
+SELECT id, task_id, project_id, author_id, body, created_at, updated_at
+FROM comments
+WHERE id = ? AND project_id = ?;
+
 -- name: CreateTaskActivity :one
 INSERT INTO task_activity (id, task_id, project_id, actor_id, actor_type, action, detail_json)
 VALUES (?, ?, ?, ?, ?, ?, ?)

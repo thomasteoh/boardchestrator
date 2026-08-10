@@ -16,14 +16,15 @@ WHERE project_id = ? AND status = ?
 LIMIT 1;
 
 -- name: CreateBoardColumn :one
-INSERT INTO board_columns (id, project_id, name, color, position, wip_limit, status)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, project_id, name, color, position, wip_limit, status, created_at;
+INSERT INTO board_columns (id, project_id, name, color, position, wip_limit, status, trigger_agent_id, trigger_prompt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, project_id, name, color, position, wip_limit, status, trigger_agent_id, trigger_prompt, created_at;
 
 -- name: UpdateBoardColumn :one
-UPDATE board_columns SET name = ?, color = ?, position = ?, wip_limit = ?, status = ?
+UPDATE board_columns
+SET name = ?, color = ?, position = ?, wip_limit = ?, status = ?, trigger_agent_id = ?, trigger_prompt = ?
 WHERE id = ? AND project_id = ?
-RETURNING id, project_id, name, color, position, wip_limit, status, created_at;
+RETURNING id, project_id, name, color, position, wip_limit, status, trigger_agent_id, trigger_prompt, created_at;
 
 -- name: DeleteBoardColumn :exec
 DELETE FROM board_columns
