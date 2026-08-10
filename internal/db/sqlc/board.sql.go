@@ -131,32 +131,21 @@ func (q *Queries) FindBoardColumnByProjectAndStatus(ctx context.Context, arg Fin
 }
 
 const listBoardColumns = `-- name: ListBoardColumns :many
-SELECT id, project_id, name, color, position, wip_limit, status, created_at
+SELECT id, project_id, name, color, position, wip_limit, status, trigger_agent_id, trigger_prompt, created_at
 FROM board_columns
 WHERE project_id = ?
 ORDER BY position ASC
 `
 
-type ListBoardColumnsRow struct {
-	ID        string
-	ProjectID string
-	Name      string
-	Color     string
-	Position  float64
-	WipLimit  int64
-	Status    string
-	CreatedAt string
-}
-
-func (q *Queries) ListBoardColumns(ctx context.Context, projectID string) ([]ListBoardColumnsRow, error) {
+func (q *Queries) ListBoardColumns(ctx context.Context, projectID string) ([]BoardColumn, error) {
 	rows, err := q.db.QueryContext(ctx, listBoardColumns, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListBoardColumnsRow
+	var items []BoardColumn
 	for rows.Next() {
-		var i ListBoardColumnsRow
+		var i BoardColumn
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
@@ -165,6 +154,8 @@ func (q *Queries) ListBoardColumns(ctx context.Context, projectID string) ([]Lis
 			&i.Position,
 			&i.WipLimit,
 			&i.Status,
+			&i.TriggerAgentID,
+			&i.TriggerPrompt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

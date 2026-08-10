@@ -1,5 +1,5 @@
 -- name: ListBoardColumns :many
-SELECT id, project_id, name, color, position, wip_limit, status, created_at
+SELECT id, project_id, name, color, position, wip_limit, status, trigger_agent_id, trigger_prompt, created_at
 FROM board_columns
 WHERE project_id = ?
 ORDER BY position ASC;

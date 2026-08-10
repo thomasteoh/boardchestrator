@@ -394,7 +394,32 @@ func handleBoardColumns(w http.ResponseWriter, r *http.Request) {
 	projectID := chi.URLParam(r, "projectID")
 	s := shellData(r, "Board Columns", "/boards")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ColumnSettingsPage(s, projectID, nil).Render(r.Context(), w); err != nil {
+
+	db := disp.DB()
+	if db == nil {
+		RenderErrorPage(w, r, http.StatusServiceUnavailable, "Database unavailable", "The board engine is not wired yet.")
+		return
+	}
+	q := sqlc.New(db)
+	cols, err := q.ListBoardColumns(r.Context(), projectID)
+	if err != nil {
+		RenderErrorPage(w, r, http.StatusInternalServerError, "Could not load columns", err.Error())
+		return
+	}
+	var viewsCols []views.ColumnView
+	for _, c := range cols {
+		viewsCols = append(viewsCols, views.ColumnView{
+			ID:             c.ID,
+			Name:           c.Name,
+			Color:          c.Color,
+			Status:         c.Status,
+			Count:          0,
+			WIPLimit:       int(c.WipLimit),
+			TriggerAgentID: c.TriggerAgentID.String,
+			TriggerPrompt:  c.TriggerPrompt,
+		})
+	}
+	if err := views.ColumnSettingsPage(s, projectID, viewsCols).Render(r.Context(), w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
