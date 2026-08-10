@@ -164,7 +164,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 	// 6. Approval gate — agents only (SPEC §4). No-op default proceeds; WU-306
 	// implements per-impact policy.
 	if actor.Type == ActorAgent {
-		decision, approvalID, gerr := d.approval.Gate(ctx, ac, def)
+		decision, approvalID, gerr := d.approval.Gate(ctx, ac, def, input)
 		if gerr != nil {
 			return nil, fmt.Errorf("action: approval gate: %w", gerr)
 		}

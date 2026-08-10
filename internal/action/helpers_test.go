@@ -28,13 +28,13 @@ func (denyScope) Resolve(context.Context, ActionCtx, Definition) error {
 
 type pendingGate struct{ id string }
 
-func (g pendingGate) Gate(context.Context, ActionCtx, Definition) (ApprovalDecision, string, error) {
+func (g pendingGate) Gate(context.Context, ActionCtx, Definition, json.RawMessage) (ApprovalDecision, string, error) {
 	return ApprovalPending, g.id, nil
 }
 
 type forbidGate struct{}
 
-func (forbidGate) Gate(context.Context, ActionCtx, Definition) (ApprovalDecision, string, error) {
+func (forbidGate) Gate(context.Context, ActionCtx, Definition, json.RawMessage) (ApprovalDecision, string, error) {
 	return ApprovalForbid, "", nil
 }
 

@@ -46,6 +46,18 @@ type ApiKey struct {
 	RevokedAt  sql.NullString
 }
 
+type Approval struct {
+	ID          string
+	OrgID       string
+	RunID       string
+	ActionName  string
+	InputJson   string
+	Status      string
+	RequestedAt string
+	DecidedBy   sql.NullString
+	DecidedAt   sql.NullString
+}
+
 type Attachment struct {
 	ID         string
 	OrgID      string

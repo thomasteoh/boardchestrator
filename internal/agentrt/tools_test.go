@@ -359,3 +359,20 @@ func mustJSON(v any) string {
 	}
 	return string(b)
 }
+
+// mustJob returns the queued job with the given id from the store, or fails.
+func mustJob(t *testing.T, store *job.JobStore, id string) sqlc.Job {
+	t.Helper()
+	ctx := context.Background()
+	q, err := store.ListQueued(ctx)
+	if err != nil {
+		t.Fatalf("list queued: %v", err)
+	}
+	for _, j := range q {
+		if j.ID == id {
+			return j
+		}
+	}
+	t.Fatalf("job %s not queued", id)
+	return sqlc.Job{}
+}

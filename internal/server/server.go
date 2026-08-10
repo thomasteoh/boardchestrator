@@ -81,6 +81,9 @@ type Server struct {
 	// eng is the agent run engine (SPEC §10). Created in Start when DB is
 	// wired; its Handler replaces the job pool's NoopHandler.
 	eng *agentrt.Engine
+	// resumeSub is the approval.decided subscription that enqueues run resume
+	// jobs (WU-306). Its unsubscribe func is kept to stop on Shutdown.
+	resumeUnsub func()
 }
 
 // New creates a configured server with routes and middleware, with no
@@ -384,6 +387,12 @@ func (s *Server) Start(ctx context.Context) error {
 			PollInterval: 5 * time.Second,
 			ClaimTimeout: 30 * time.Second,
 		})
+		// Approval resume (WU-306): when approval.decide marks a decision and
+		// requeues a run, enqueue a fresh run job so the engine re-runs it. The
+		// gate sees the decided row and proceeds/forbids accordingly.
+		var resumeSub *event.Subscription
+		resumeSub, s.resumeUnsub = s.bus.Subscribe(event.Filter{Names: map[string]struct{}{"approval.decided": {}}}, 16)
+		go s.resumeLoop(ctx, store, resumeSub)
 	}
 
 	// Create the action dispatcher with DB-backed stores, scope resolver,
@@ -468,6 +477,11 @@ func (s *Server) Shutdown() {
 		s.pool.Stop()
 	}
 
+	// Stop the approval resume subscriber (WU-306).
+	if s.resumeUnsub != nil {
+		s.resumeUnsub()
+	}
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := s.srv.Shutdown(shutdownCtx); err != nil {
@@ -479,4 +493,36 @@ func (s *Server) Shutdown() {
 // ListenedAddr returns the actual address the server is bound to, after Start.
 func (s *Server) ListenedAddr() string {
 	return s.srv.Addr
+}
+
+// resumeLoop drains approval.decided events and enqueues a fresh run job for
+// the requeued run (WU-306 resume). It stops when the subscription channel
+// closes (Shutdown calls resumeUnsub).
+func (s *Server) resumeLoop(ctx context.Context, store *job.JobStore, sub *event.Subscription) {
+	for {
+		select {
+		case <-ctx.Done():
+			sub.Close()
+			return
+		case ev, ok := <-sub.C:
+			if !ok {
+				return
+			}
+			var payload struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+				RunID  string `json:"run_id"`
+			}
+			if err := json.Unmarshal(ev.Payload, &payload); err != nil {
+				slog.Warn("resume: bad payload", "name", ev.Name, "error", err)
+				continue
+			}
+			if payload.RunID == "" {
+				continue
+			}
+			if err := s.eng.EnqueueResume(ctx, store, ev.Org, payload.RunID); err != nil {
+				slog.Warn("resume: enqueue failed", "run_id", payload.RunID, "error", err)
+			}
+		}
+	}
 }

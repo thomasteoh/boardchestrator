@@ -39,6 +39,12 @@ SET status = 'awaiting_approval'
 WHERE id = ? AND org_id = ?
 RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
 
+-- name: RequeueRun :one
+UPDATE runs
+SET status = 'queued', error = ''
+WHERE id = ? AND org_id = ? AND status = 'awaiting_approval'
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
+
 -- name: CancelRun :one
 UPDATE runs
 SET status = 'cancelled', finished_at = ?, error = ?

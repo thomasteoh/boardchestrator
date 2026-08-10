@@ -246,6 +246,11 @@ func handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		RenderErrorPage(w, r, http.StatusInternalServerError, "Steps lookup failed", err.Error())
 		return
 	}
+	approvals, err := q.ListApprovalsByRun(ctx, sqlc.ListApprovalsByRunParams{RunID: run.ID, OrgID: orgID})
+	if err != nil {
+		RenderErrorPage(w, r, http.StatusInternalServerError, "Approvals lookup failed", err.Error())
+		return
+	}
 
 	row := views.RunRow{
 		ID:               run.ID,
@@ -272,8 +277,18 @@ func handleRunDetail(w http.ResponseWriter, r *http.Request) {
 			Tokens:   st.Tokens,
 		})
 	}
+	approvalRows := make([]views.ApprovalRow, 0, len(approvals))
+	for _, ap := range approvals {
+		approvalRows = append(approvalRows, views.ApprovalRow{
+			ID:         ap.ID,
+			ActionName: ap.ActionName,
+			Input:      ap.InputJson,
+			Status:     ap.Status,
+			Requested:  ap.RequestedAt,
+		})
+	}
 
-	if err := views.RunDetailPage(s, row, stepRows).Render(ctx, w); err != nil {
+	if err := views.RunDetailPage(s, row, stepRows, approvalRows).Render(ctx, w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
