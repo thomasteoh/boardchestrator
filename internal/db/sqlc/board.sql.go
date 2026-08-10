@@ -25,7 +25,18 @@ type CreateBoardColumnParams struct {
 	Status    string
 }
 
-func (q *Queries) CreateBoardColumn(ctx context.Context, arg CreateBoardColumnParams) (BoardColumn, error) {
+type CreateBoardColumnRow struct {
+	ID        string
+	ProjectID string
+	Name      string
+	Color     string
+	Position  float64
+	WipLimit  int64
+	Status    string
+	CreatedAt string
+}
+
+func (q *Queries) CreateBoardColumn(ctx context.Context, arg CreateBoardColumnParams) (CreateBoardColumnRow, error) {
 	row := q.db.QueryRowContext(ctx, createBoardColumn,
 		arg.ID,
 		arg.ProjectID,
@@ -35,7 +46,7 @@ func (q *Queries) CreateBoardColumn(ctx context.Context, arg CreateBoardColumnPa
 		arg.WipLimit,
 		arg.Status,
 	)
-	var i BoardColumn
+	var i CreateBoardColumnRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -75,9 +86,20 @@ type FindBoardColumnParams struct {
 	ProjectID string
 }
 
-func (q *Queries) FindBoardColumn(ctx context.Context, arg FindBoardColumnParams) (BoardColumn, error) {
+type FindBoardColumnRow struct {
+	ID        string
+	ProjectID string
+	Name      string
+	Color     string
+	Position  float64
+	WipLimit  int64
+	Status    string
+	CreatedAt string
+}
+
+func (q *Queries) FindBoardColumn(ctx context.Context, arg FindBoardColumnParams) (FindBoardColumnRow, error) {
 	row := q.db.QueryRowContext(ctx, findBoardColumn, arg.ID, arg.ProjectID)
-	var i BoardColumn
+	var i FindBoardColumnRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -98,15 +120,26 @@ WHERE project_id = ?
 ORDER BY position ASC
 `
 
-func (q *Queries) ListBoardColumns(ctx context.Context, projectID string) ([]BoardColumn, error) {
+type ListBoardColumnsRow struct {
+	ID        string
+	ProjectID string
+	Name      string
+	Color     string
+	Position  float64
+	WipLimit  int64
+	Status    string
+	CreatedAt string
+}
+
+func (q *Queries) ListBoardColumns(ctx context.Context, projectID string) ([]ListBoardColumnsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listBoardColumns, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []BoardColumn
+	var items []ListBoardColumnsRow
 	for rows.Next() {
-		var i BoardColumn
+		var i ListBoardColumnsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
@@ -175,7 +208,18 @@ type UpdateBoardColumnParams struct {
 	ProjectID string
 }
 
-func (q *Queries) UpdateBoardColumn(ctx context.Context, arg UpdateBoardColumnParams) (BoardColumn, error) {
+type UpdateBoardColumnRow struct {
+	ID        string
+	ProjectID string
+	Name      string
+	Color     string
+	Position  float64
+	WipLimit  int64
+	Status    string
+	CreatedAt string
+}
+
+func (q *Queries) UpdateBoardColumn(ctx context.Context, arg UpdateBoardColumnParams) (UpdateBoardColumnRow, error) {
 	row := q.db.QueryRowContext(ctx, updateBoardColumn,
 		arg.Name,
 		arg.Color,
@@ -185,7 +229,7 @@ func (q *Queries) UpdateBoardColumn(ctx context.Context, arg UpdateBoardColumnPa
 		arg.ID,
 		arg.ProjectID,
 	)
-	var i BoardColumn
+	var i UpdateBoardColumnRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
