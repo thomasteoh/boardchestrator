@@ -182,6 +182,9 @@ const runDefaultMaxAttempts = 3
 type runJob struct {
 	RunID string `json:"run_id"`
 	OrgID string `json:"org_id"`
+	// Instruction is the trigger text (mention / column prompt) threaded into
+	// the run's [trigger] context block (WU-307). Empty for resume/plain runs.
+	Instruction string `json:"instruction,omitempty"`
 }
 
 // Handler returns the job-pool handler that executes a run job (SPEC §10).
@@ -205,7 +208,7 @@ func (e *Engine) Handler(store *job.JobStore) job.JobHandler {
 			return fmt.Errorf("run job: find agent: %w", err)
 		}
 
-		out, err := e.executeRun(ctx, run, agent)
+		out, err := e.executeRun(ctx, run, agent, rj.Instruction)
 		if err != nil {
 			return e.failAndRetry(ctx, store, j, run, agent, err)
 		}
@@ -234,9 +237,56 @@ func (e *Engine) EnqueueResume(ctx context.Context, store *job.JobStore, orgID, 
 		time.Now().UTC().Format(time.RFC3339), runDefaultMaxAttempts)
 }
 
+// EnqueueRun creates a run for a mention/column trigger and enqueues its job
+// (SPEC §10, WU-307). trigger is the trigger kind label ("mention"/"column");
+// instruction is the trigger text threaded into the run's [trigger] context.
+// taskID/chatSessionID may be empty. Enforces the per-task concurrent-run cap
+// of 1: if the task already has an active (non-terminal) run, the trigger is
+// skipped and no run is created. Returns (runID, created, err); created=false
+// when skipped.
+func (e *Engine) EnqueueRun(ctx context.Context, store *job.JobStore, orgID, agentID, trigger, taskID, chatSessionID, initiatedBy, instruction string) (string, bool, error) {
+	// Per-task cap 1: a task with an active run serialises further triggers.
+	if taskID != "" {
+		n, err := e.q.CountActiveRunsByTask(ctx, sqlc.CountActiveRunsByTaskParams{
+			TaskID: sql.NullString{String: taskID, Valid: true},
+			OrgID:  orgID,
+		})
+		if err != nil {
+			return "", false, fmt.Errorf("enqueue run: count active: %w", err)
+		}
+		if n > 0 {
+			return "", false, nil // already running/queued/awaiting — skip
+		}
+	}
+
+	runID := newID()
+	if _, err := e.q.CreateRun(ctx, sqlc.CreateRunParams{
+		ID:            runID,
+		OrgID:         orgID,
+		AgentID:       agentID,
+		Trigger:       trigger,
+		TaskID:        sql.NullString{String: taskID, Valid: taskID != ""},
+		ChatSessionID: sql.NullString{String: chatSessionID, Valid: chatSessionID != ""},
+		InitiatedBy:   sql.NullString{String: initiatedBy, Valid: initiatedBy != ""},
+		Status:        "queued",
+	}); err != nil {
+		return "", false, fmt.Errorf("enqueue run: create run: %w", err)
+	}
+
+	payload, err := json.Marshal(runJob{RunID: runID, OrgID: orgID, Instruction: instruction})
+	if err != nil {
+		return "", false, fmt.Errorf("enqueue run: marshal: %w", err)
+	}
+	if err := store.Enqueue(ctx, runID, runJobKind, string(payload),
+		time.Now().UTC().Format(time.RFC3339), runDefaultMaxAttempts); err != nil {
+		return "", false, fmt.Errorf("enqueue run: enqueue job: %w", err)
+	}
+	return runID, true, nil
+}
+
 // executeRun runs the full lifecycle for an already-queued run row: assemble
 // context, then the tool loop, returning the loop outcome.
-func (e *Engine) executeRun(ctx context.Context, run sqlc.Run, agent sqlc.Agent) (*loopOutcome, error) {
+func (e *Engine) executeRun(ctx context.Context, run sqlc.Run, agent sqlc.Agent, instruction string) (*loopOutcome, error) {
 	// Start the run.
 	started, err := e.q.StartRun(ctx, sqlc.StartRunParams{ID: run.ID, OrgID: run.OrgID})
 	if err != nil {
@@ -244,7 +294,7 @@ func (e *Engine) executeRun(ctx context.Context, run sqlc.Run, agent sqlc.Agent)
 	}
 	run = started
 
-	prompt, err := assembleContext(ctx, e.q, agent, run.OrgID, run.TaskID.String, "", "")
+	prompt, err := assembleContext(ctx, e.q, agent, run.OrgID, run.TaskID.String, "", instruction)
 	if err != nil {
 		return nil, err
 	}
