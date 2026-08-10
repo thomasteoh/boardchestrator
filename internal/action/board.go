@@ -10,22 +10,22 @@ import (
 )
 
 type boardColCreateInput struct {
-	ProjectID     string `json:"project_id"`
-	Name          string `json:"name"`
-	Color         string `json:"color"`
-	WIPLimit      int    `json:"wip_limit"`
-	Status        string `json:"status"`
+	ProjectID      string `json:"project_id"`
+	Name           string `json:"name"`
+	Color          string `json:"color"`
+	WIPLimit       int    `json:"wip_limit"`
+	Status         string `json:"status"`
 	TriggerAgentID string `json:"trigger_agent_id,omitempty"`
 	TriggerPrompt  string `json:"trigger_prompt,omitempty"`
 }
 
 type boardColUpdateInput struct {
-	ID        string `json:"id"`
-	ProjectID string `json:"project_id"`
-	Name      string `json:"name"`
-	Color     string `json:"color"`
-	WIPLimit  int    `json:"wip_limit"`
-	Status    string `json:"status"`
+	ID             string `json:"id"`
+	ProjectID      string `json:"project_id"`
+	Name           string `json:"name"`
+	Color          string `json:"color"`
+	WIPLimit       int    `json:"wip_limit"`
+	Status         string `json:"status"`
 	TriggerAgentID string `json:"trigger_agent_id,omitempty"`
 	TriggerPrompt  string `json:"trigger_prompt,omitempty"`
 }

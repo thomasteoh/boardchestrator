@@ -406,7 +406,7 @@ func handleBoardColumns(w http.ResponseWriter, r *http.Request) {
 		RenderErrorPage(w, r, http.StatusInternalServerError, "Could not load columns", err.Error())
 		return
 	}
-	var viewsCols []views.ColumnView
+	viewsCols := make([]views.ColumnView, 0, len(cols))
 	for _, c := range cols {
 		viewsCols = append(viewsCols, views.ColumnView{
 			ID:             c.ID,

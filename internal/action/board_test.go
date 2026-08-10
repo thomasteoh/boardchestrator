@@ -122,7 +122,7 @@ func TestBoardColumnUpdate(t *testing.T) {
 	if _, err := q.CreateAgent(ctx, sqlc.CreateAgentParams{
 		ID: "agt2", OrgID: sql.NullString{String: orgID, Valid: true},
 		Name: "robo2", ProviderID: "prov2", Model: "gpt-4o", Context: "x",
-		RoleID: sql.NullString{String: "role2", Valid: true},
+		RoleID:   sql.NullString{String: "role2", Valid: true},
 		RetryMax: 3, BackoffSecs: 30, RunsPerHour: 20, TokenBudget: 50000,
 		ApprovalPolicyJson: `{}`, Active: 1,
 	}); err != nil {
