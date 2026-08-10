@@ -264,10 +264,11 @@ Deps: 303.
 AC: allowed-actions must be subset of registry (validation test); import round-trip golden; effective-permission intersection test with WU-105 engine; SSRF validator rejects private ranges.
 Notes: skills/agent_skills tables already created in migration 0019 (during cc84e99 repair); no new migration needed. Implemented org-scoped skill CRUD actions, version-bump update, latest-by-name resolution, import/export, SSRF + encryption, and the perm-engine AllowAgent intersection (role grants ∩ attached skills' allowed_actions).
 
-### WU-305 · Run engine + tool loop — `ready`
+### WU-305 · Run engine + tool loop — `done 2026-08-09 WU-305: agent run engine (internal/agentrt)`
 Deps: 301, 303, 006.
 `runs`, `run_steps` migrations; lifecycle per SPEC §10; context assembly (labelled cascade); tool loop with registry-derived tools filtered by effective perms; step cap; cancellation; transcripts stored; failure→retry per agent policy→notify; run detail UI (steps, tokens) linked from task.
 AC: fake-provider integration tests: happy multi-tool run, permission-denied tool call recorded + surfaced to model, step cap halt, cancel mid-run, retry-then-fail notifies; context assembly golden test (ordering + labels).
+Notes: run engine in `internal/agentrt`; provider client built per-run from agent's provider row + key decrypted via tenant secret; run-detail route `/app/org/{orgID}/project/{projectID}/task/{taskID}/run/{runID}` (task-detail DB handler still stubbed — link lands with WU-202's real handler).
 
 ### WU-306 · Approval gates — `ready`
 Deps: 305.

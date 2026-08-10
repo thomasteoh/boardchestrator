@@ -12,6 +12,7 @@ import (
 
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
+	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/search"
 	"github.com/thomasteoh/boardchestrator/internal/storage"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
@@ -203,12 +204,76 @@ func handleInviteAccept(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleTaskDetail renders the full task detail page.
+// handleTaskDetail renders the kanban task detail view.
 func handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 	s := shellData(r, "Task Detail", "/tasks")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	// Stub: return empty detail until the DB-backed handler is wired.
 	if err := views.TaskDetailPage(s, views.TaskDetail{}, nil, nil).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+// handleRunDetail renders the agent run detail view: run metadata plus the
+// full model/tool step transcript (SPEC §10 run_steps). The route is linked
+// from the task detail view.
+func handleRunDetail(w http.ResponseWriter, r *http.Request) {
+	s := shellData(r, "Run Detail", "/tasks")
+	orgID := chi.URLParam(r, "orgID")
+	runID := chi.URLParam(r, "runID")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	db := disp.DB()
+	if db == nil {
+		RenderErrorPage(w, r, http.StatusServiceUnavailable, "Database unavailable", "The run engine is not wired yet.")
+		return
+	}
+	q := sqlc.New(db)
+	ctx := r.Context()
+
+	run, err := q.FindRunByID(ctx, sqlc.FindRunByIDParams{ID: runID, OrgID: orgID})
+	if err != nil {
+		RenderErrorPage(w, r, http.StatusNotFound, "Run not found", err.Error())
+		return
+	}
+	agent, err := q.FindAgentByID(ctx, run.AgentID)
+	if err != nil {
+		RenderErrorPage(w, r, http.StatusInternalServerError, "Agent lookup failed", err.Error())
+		return
+	}
+	steps, err := q.ListRunSteps(ctx, sqlc.ListRunStepsParams{RunID: run.ID, OrgID: orgID})
+	if err != nil {
+		RenderErrorPage(w, r, http.StatusInternalServerError, "Steps lookup failed", err.Error())
+		return
+	}
+
+	row := views.RunRow{
+		ID:               run.ID,
+		AgentID:          agent.ID,
+		AgentName:        agent.Name,
+		Trigger:          run.Trigger,
+		Status:           run.Status,
+		TaskID:           run.TaskID.String,
+		TaskKey:          "",
+		CreatedAt:        run.CreatedAt,
+		StartedAt:        run.StartedAt.String,
+		FinishedAt:       run.FinishedAt.String,
+		Error:            run.Error,
+		PromptTokens:     run.PromptTokens,
+		CompletionTokens: run.CompletionTokens,
+	}
+	stepRows := make([]views.RunStepRow, 0, len(steps))
+	for _, st := range steps {
+		stepRows = append(stepRows, views.RunStepRow{
+			Seq:      st.Seq,
+			Kind:     st.Kind,
+			Request:  st.RequestJson,
+			Response: st.ResponseJson,
+			Tokens:   st.Tokens,
+		})
+	}
+
+	if err := views.RunDetailPage(s, row, stepRows).Render(ctx, w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -448,6 +513,7 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/audit.log.export", handleAction)
 	// Task detail routes
 	r.Get("/app/org/{orgID}/project/{projectID}/task/{taskID}", handleTaskDetail)
+	r.Get("/app/org/{orgID}/project/{projectID}/task/{taskID}/run/{runID}", handleRunDetail)
 	r.Post("/api/action/task.create", handleAction)
 	r.Post("/api/action/task.update", handleAction)
 	r.Post("/api/action/task.assign", handleAction)

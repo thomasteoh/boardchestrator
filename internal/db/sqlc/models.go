@@ -261,6 +261,34 @@ type Role struct {
 	CreatedAt  string
 }
 
+type Run struct {
+	ID               string
+	OrgID            string
+	AgentID          string
+	Trigger          string
+	TaskID           sql.NullString
+	ChatSessionID    sql.NullString
+	InitiatedBy      sql.NullString
+	Status           string
+	Error            string
+	PromptTokens     int64
+	CompletionTokens int64
+	CreatedAt        string
+	StartedAt        sql.NullString
+	FinishedAt       sql.NullString
+}
+
+type RunStep struct {
+	ID           string
+	RunID        string
+	Seq          int64
+	Kind         string
+	RequestJson  string
+	ResponseJson string
+	Tokens       int64
+	CreatedAt    string
+}
+
 type SavedFilter struct {
 	ID        string
 	ProjectID string

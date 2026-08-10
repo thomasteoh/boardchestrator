@@ -1,0 +1,71 @@
+package views
+
+// RunRow is the display row for a single run.
+type RunRow struct {
+	ID               string
+	AgentID          string
+	AgentName        string
+	Trigger          string
+	Status           string
+	TaskID           string
+	TaskKey          string
+	CreatedAt        string
+	StartedAt        string
+	FinishedAt       string
+	Error            string
+	PromptTokens     int64
+	CompletionTokens int64
+}
+
+// RunStepRow is a single tool-loop step in the run transcript.
+type RunStepRow struct {
+	Seq      int64
+	Kind     string
+	Request  string
+	Response string
+	Tokens   int64
+}
+
+// RunDetailPage renders the run detail view: run metadata and the full
+// model/tool step transcript (SPEC §10 run_steps).
+templ RunDetailPage(s Shell, run RunRow, steps []RunStepRow) {
+	@Base(s) {
+		<div class="bc-run-detail" id="run-{ run.ID }">
+			<h2 class="bc-run-id">Run { run.ID }</h2>
+			<div class="bc-run-meta">
+				<span class="bc-run-status bc-status-{ run.Status }">{ run.Status }</span>
+				<span>agent: { run.AgentName }</span>
+				<span>trigger: { run.Trigger }</span>
+				if run.TaskKey != "" {
+					<span>task: { run.TaskKey }</span>
+				}
+				<span>created: { run.CreatedAt }</span>
+				if run.FinishedAt != "" {
+					<span>finished: { run.FinishedAt }</span>
+				}
+			</div>
+			<div class="bc-run-tokens">
+				<span>prompt tokens: { run.PromptTokens }</span>
+				<span>completion tokens: { run.CompletionTokens }</span>
+			</div>
+			if run.Error != "" {
+				<div class="bc-run-error">{ run.Error }</div>
+			}
+
+			<h3 class="bc-run-steps-title">Steps</h3>
+			<div class="bc-run-steps">
+				for _, step := range steps {
+					<div class="bc-run-step bc-step-{ step.Kind }">
+						<div class="bc-step-head">
+							<span class="bc-step-seq">#{ step.Seq }</span>
+							<span class="bc-step-kind">{ step.Kind }</span>
+							<span class="bc-step-tokens">{ step.Tokens } tokens</span>
+						</div>
+						<pre class="bc-step-req">{ step.Request }</pre>
+						<pre class="bc-step-resp">{ step.Response }</pre>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
