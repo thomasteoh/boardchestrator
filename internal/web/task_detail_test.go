@@ -50,7 +50,7 @@ func TestTaskDetailAgentThread(t *testing.T) {
 	}
 	if _, err := q.CreateRun(ctx, sqlc.CreateRunParams{
 		ID: "run1", OrgID: org.ID, AgentID: "agt1", Trigger: "mention",
-		TaskID: sql.NullString{String: task.ID, Valid: true},
+		TaskID:      sql.NullString{String: task.ID, Valid: true},
 		InitiatedBy: sql.NullString{String: "u1", Valid: true},
 		Status:      "succeeded",
 	}); err != nil {

@@ -410,9 +410,9 @@ func (s *Server) Start(ctx context.Context) error {
 		// movement into a trigger column.
 		var triggerSub *event.Subscription
 		triggerSub, s.triggerUnsub = s.bus.Subscribe(event.Filter{Names: map[string]struct{}{
-			"task.update":   {},
+			"task.update":    {},
 			"comment.create": {},
-			"task.move":     {},
+			"task.move":      {},
 		}}, 32)
 		go s.triggerLoop(ctx, store, triggerSub)
 	}

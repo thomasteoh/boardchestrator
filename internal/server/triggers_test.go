@@ -7,25 +7,12 @@ import (
 	"testing"
 
 	"github.com/thomasteoh/boardchestrator/internal/agentrt"
-	"github.com/thomasteoh/boardchestrator/internal/client"
 	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/db/dbtest"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/event"
 	"github.com/thomasteoh/boardchestrator/internal/job"
 )
-
-// noopClient satisfies client.ProviderClient; trigger paths only enqueue runs
-// and never invoke the model, so it is never called.
-type noopClient struct{}
-
-func (noopClient) ChatCompletion(ctx context.Context, req client.CompletionRequest) (*client.CompletionResponse, error) {
-	return nil, nil
-}
-func (noopClient) ChatCompletionStream(ctx context.Context, req client.CompletionRequest, onDelta func(client.StreamDelta) error) (*client.StreamResult, error) {
-	return nil, nil
-}
-func (noopClient) Model() string { return "gpt-4o" }
 
 // seedTriggerFixture seeds org, provider, role, agent, project, task, and a
 // board column with a trigger config, then returns a Server with eng+trigq set
