@@ -275,7 +275,7 @@ Deps: 305.
 `approvals` migration; dispatch approval hook implemented (policy per impact class from agent config); run state `awaiting_approval`; approval UI on task + notification (kind: approval requested); `approval.decide` resumes run with result; forbid class blocks with clear model-visible error; high-impact default require-approval on new agents.
 AC: gate matrix tests (auto/require/forbid × read/low/high); resume-after-approve continues run correctly (fake provider); reject surfaces to model and run completes gracefully.
 
-### WU-307 · @mention + column triggers — `ready`
+### WU-307 · @mention + column triggers — `done 2026-08-10 WU-307: @mention + column triggers — comment actions, EnqueueRun, triggerLoop, agent thread UI`
 Deps: 305, 204.
 Mention parser recognises active org agents in saved description/comments → enqueue run (trigger=mention, task context, the mentioning text as instruction); column `trigger_agent_id/prompt` settings UI; `task.move` into trigger column enqueues (trigger=column, prompt template with task interpolation); agent thread rendering on task (distinct styling, collapsible steps); loop guard: an agent's own actions never trigger mentions/column runs of itself; per-task concurrent-run cap 1 (queue serialises).
 AC: mention→run created (not for inactive/unknown names, not self-trigger); column trigger fires once per entry; template interpolation golden; agent thread renders transcript.
