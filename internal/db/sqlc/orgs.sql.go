@@ -66,17 +66,19 @@ func (q *Queries) CreateMembershipFromOrgQuery(ctx context.Context, arg CreateMe
 }
 
 const createOrg = `-- name: CreateOrg :one
-INSERT INTO orgs (id, name, slug, context, visibility)
-VALUES (?, ?, ?, ?, ?)
-RETURNING id, name, slug, context, visibility, created_at
+INSERT INTO orgs (id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at
 `
 
 type CreateOrgParams struct {
-	ID         string
-	Name       string
-	Slug       string
-	Context    string
-	Visibility string
+	ID            string
+	Name          string
+	Slug          string
+	Context       string
+	Visibility    string
+	MonthlyCapUsd float64
+	CapAlertPct   float64
 }
 
 func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, error) {
@@ -86,6 +88,8 @@ func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, erro
 		arg.Slug,
 		arg.Context,
 		arg.Visibility,
+		arg.MonthlyCapUsd,
+		arg.CapAlertPct,
 	)
 	var i Org
 	err := row.Scan(
@@ -94,6 +98,8 @@ func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, erro
 		&i.Slug,
 		&i.Context,
 		&i.Visibility,
+		&i.MonthlyCapUsd,
+		&i.CapAlertPct,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -325,7 +331,7 @@ func (q *Queries) FindMembershipsForActor(ctx context.Context, arg FindMembershi
 }
 
 const findOrgByID = `-- name: FindOrgByID :one
-SELECT id, name, slug, context, visibility, created_at
+SELECT id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at
 FROM orgs
 WHERE id = ?
 `
@@ -339,13 +345,15 @@ func (q *Queries) FindOrgByID(ctx context.Context, id string) (Org, error) {
 		&i.Slug,
 		&i.Context,
 		&i.Visibility,
+		&i.MonthlyCapUsd,
+		&i.CapAlertPct,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const findOrgBySlug = `-- name: FindOrgBySlug :one
-SELECT id, name, slug, context, visibility, created_at
+SELECT id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at
 FROM orgs
 WHERE slug = ?
 `
@@ -359,6 +367,8 @@ func (q *Queries) FindOrgBySlug(ctx context.Context, slug string) (Org, error) {
 		&i.Slug,
 		&i.Context,
 		&i.Visibility,
+		&i.MonthlyCapUsd,
+		&i.CapAlertPct,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -494,7 +504,7 @@ func (q *Queries) FindTeamByID(ctx context.Context, arg FindTeamByIDParams) (Tea
 }
 
 const listOrgs = `-- name: ListOrgs :many
-SELECT id, name, slug, context, visibility, created_at
+SELECT id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at
 FROM orgs
 ORDER BY name ASC
 `
@@ -514,6 +524,8 @@ func (q *Queries) ListOrgs(ctx context.Context) ([]Org, error) {
 			&i.Slug,
 			&i.Context,
 			&i.Visibility,
+			&i.MonthlyCapUsd,
+			&i.CapAlertPct,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -663,7 +675,7 @@ func (q *Queries) UnarchiveProject(ctx context.Context, arg UnarchiveProjectPara
 const updateOrg = `-- name: UpdateOrg :one
 UPDATE orgs SET name = ?, context = ?, visibility = ?
 WHERE id = ?
-RETURNING id, name, slug, context, visibility, created_at
+RETURNING id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at
 `
 
 type UpdateOrgParams struct {
@@ -687,6 +699,36 @@ func (q *Queries) UpdateOrg(ctx context.Context, arg UpdateOrgParams) (Org, erro
 		&i.Slug,
 		&i.Context,
 		&i.Visibility,
+		&i.MonthlyCapUsd,
+		&i.CapAlertPct,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateOrgCap = `-- name: UpdateOrgCap :one
+UPDATE orgs SET monthly_cap_usd = ?, cap_alert_pct = ?
+WHERE id = ?
+RETURNING id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at
+`
+
+type UpdateOrgCapParams struct {
+	MonthlyCapUsd float64
+	CapAlertPct   float64
+	ID            string
+}
+
+func (q *Queries) UpdateOrgCap(ctx context.Context, arg UpdateOrgCapParams) (Org, error) {
+	row := q.db.QueryRowContext(ctx, updateOrgCap, arg.MonthlyCapUsd, arg.CapAlertPct, arg.ID)
+	var i Org
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Context,
+		&i.Visibility,
+		&i.MonthlyCapUsd,
+		&i.CapAlertPct,
 		&i.CreatedAt,
 	)
 	return i, err

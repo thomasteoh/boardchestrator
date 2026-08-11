@@ -1,20 +1,25 @@
 -- name: CreateOrg :one
-INSERT INTO orgs (id, name, slug, context, visibility)
-VALUES (?, ?, ?, ?, ?)
-RETURNING id, name, slug, context, visibility, created_at;
+INSERT INTO orgs (id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at;
 
 -- name: UpdateOrg :one
 UPDATE orgs SET name = ?, context = ?, visibility = ?
 WHERE id = ?
-RETURNING id, name, slug, context, visibility, created_at;
+RETURNING id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at;
+
+-- name: UpdateOrgCap :one
+UPDATE orgs SET monthly_cap_usd = ?, cap_alert_pct = ?
+WHERE id = ?
+RETURNING id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at;
 
 -- name: FindOrgByID :one
-SELECT id, name, slug, context, visibility, created_at
+SELECT id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at
 FROM orgs
 WHERE id = ?;
 
 -- name: FindOrgBySlug :one
-SELECT id, name, slug, context, visibility, created_at
+SELECT id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at
 FROM orgs
 WHERE slug = ?;
 
@@ -120,6 +125,6 @@ DELETE FROM memberships
 WHERE id = ? AND org_id = ?;
 
 -- name: ListOrgs :many
-SELECT id, name, slug, context, visibility, created_at
+SELECT id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at
 FROM orgs
 ORDER BY name ASC;

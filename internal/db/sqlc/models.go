@@ -209,6 +209,16 @@ type Membership struct {
 	CreatedAt    string
 }
 
+type ModelPricing struct {
+	ID            string
+	ProviderID    string
+	Model         string
+	InputPerMtok  float64
+	OutputPerMtok float64
+	CreatedAt     string
+	UpdatedAt     string
+}
+
 type Notification struct {
 	ID          string
 	OrgID       string
@@ -223,12 +233,22 @@ type Notification struct {
 }
 
 type Org struct {
-	ID         string
-	Name       string
-	Slug       string
-	Context    string
-	Visibility string
-	CreatedAt  string
+	ID            string
+	Name          string
+	Slug          string
+	Context       string
+	Visibility    string
+	MonthlyCapUsd float64
+	CapAlertPct   float64
+	CreatedAt     string
+}
+
+type OrgCapAlert struct {
+	ID        string
+	OrgID     string
+	SpendUsd  float64
+	CapUsd    float64
+	CreatedAt string
 }
 
 type OrgSecret struct {

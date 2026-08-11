@@ -1,0 +1,91 @@
+package views
+
+import "fmt"
+
+// UsageAgentRow is a per-agent usage aggregate for the month (WU-310).
+type UsageAgentRow struct {
+	AgentID   string
+	AgentName string
+	Runs      int64
+	Tokens    int64
+	TotalUSD  float64
+}
+
+// UsageProjectRow is a per-project usage aggregate for the month (WU-310).
+type UsageProjectRow struct {
+	ProjectID string
+	Runs      int64
+	Tokens    int64
+	TotalUSD  float64
+}
+
+// UsageCapAlert is an org_cap_alerts row shown on the dashboard (WU-310).
+type UsageCapAlert struct {
+	ID       string
+	SpendUSD float64
+	CapUSD   float64
+	At       string
+}
+
+// UsagePage renders the org usage dashboard: monthly total + cap status, then
+// per-agent and per-project tables, then recent cap-threshold alerts (WU-310).
+templ UsagePage(s Shell, orgID string, totalUSD float64, totalTokens int64, capUSD float64, month string, agents []UsageAgentRow, projects []UsageProjectRow, alerts []UsageCapAlert) {
+	<div class="pane">
+		<h2>Usage</h2>
+		<p class="muted">Month: { month }</p>
+		<div class="usage-total">
+			<span>Total spend</span>
+			<strong>$ { fmt.Sprintf("%.2f", totalUSD) }</strong>
+			<span class="muted">{ fmt.Sprintf("%d", totalTokens) } tokens</span>
+			if capUSD > 0 {
+				<span class="muted">cap ${ fmt.Sprintf("%.2f", capUSD) }</span>
+			}
+		</div>
+
+		<h3>By agent</h3>
+		<table class="usage-table">
+			<thead>
+				<tr><th>Agent</th><th>Runs</th><th>Tokens</th><th>Cost</th></tr>
+			</thead>
+			<tbody>
+				for _, a := range agents {
+					<tr>
+						<td>{ a.AgentName }</td>
+						<td>{ fmt.Sprintf("%d", a.Runs) }</td>
+						<td>{ fmt.Sprintf("%d", a.Tokens) }</td>
+						<td>${ fmt.Sprintf("%.2f", a.TotalUSD) }</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+
+		<h3>By project</h3>
+		<table class="usage-table">
+			<thead>
+				<tr><th>Project</th><th>Runs</th><th>Tokens</th><th>Cost</th></tr>
+			</thead>
+			<tbody>
+				for _, p := range projects {
+					<tr>
+						<td>{ p.ProjectID }</td>
+						<td>{ fmt.Sprintf("%d", p.Runs) }</td>
+						<td>{ fmt.Sprintf("%d", p.Tokens) }</td>
+						<td>${ fmt.Sprintf("%.2f", p.TotalUSD) }</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+
+		if len(alerts) > 0 {
+			<h3>Cap alerts</h3>
+			<ul class="usage-alerts">
+				for _, al := range alerts {
+					<li>
+						Spend ${ fmt.Sprintf("%.2f", al.SpendUSD) } of cap ${ fmt.Sprintf("%.2f", al.CapUSD) }
+						<span class="muted">{ al.At }</span>
+					</li>
+				}
+			</ul>
+		}
+	</div>
+}

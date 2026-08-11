@@ -396,10 +396,11 @@ func (s *Server) Start(ctx context.Context) error {
 	// agent's provider row and decrypts the key with the tenant secret.
 	if s.db != nil {
 		s.eng = agentrt.New(agentrt.Config{
-			DB:        s.db,
-			Secret:    s.cfg.SecretKey,
-			EventSink: s.EventSink(),
-			DeltaSink: s.chatDeltaSink(),
+			DB:         s.db,
+			Secret:     s.cfg.SecretKey,
+			EventSink:  s.EventSink(),
+			DeltaSink:  s.chatDeltaSink(),
+			OnCapAlert: s.orgCapAlertSink(),
 		})
 		store := job.NewJobStore(s.db)
 		s.trigq = sqlc.New(s.db)
@@ -780,6 +781,55 @@ func (s *Server) chatDeltaSink() func(chatID, runID, userID, delta string) {
 		}
 		s.hub.SendToUser(userID, sse.EventChatDelta, payload)
 	}
+}
+
+// orgCapAlertSink returns the callback the engine invokes once per org when
+// the org's monthly spend first crosses cap*alert%/100 (WU-310). It records an
+// org_cap_alerts row and publishes an org.cap.threshold bus event so the UI
+// surfaces the alert.
+func (s *Server) orgCapAlertSink() func(orgID string) {
+	return func(orgID string) {
+		ctx := context.Background()
+		q := sqlc.New(s.db)
+		org, err := q.FindOrgByID(ctx, orgID)
+		if err != nil {
+			slog.Warn("cap alert: find org", "org", orgID, "error", err)
+			return
+		}
+		spend, err := q.OrgMonthlySpend(ctx, sqlc.OrgMonthlySpendParams{
+			OrgID:      orgID,
+			FinishedAt: sql.NullString{String: monthStartUTC(), Valid: true},
+		})
+		if err != nil {
+			slog.Warn("cap alert: spend", "org", orgID, "error", err)
+			return
+		}
+		alert, err := q.CreateOrgCapAlert(ctx, sqlc.CreateOrgCapAlertParams{
+			ID:       capAlertID(),
+			OrgID:    orgID,
+			SpendUsd: spend,
+			CapUsd:   org.MonthlyCapUsd,
+		})
+		if err != nil {
+			slog.Warn("cap alert: record", "org", orgID, "error", err)
+			return
+		}
+		// Publish the alert event on the bus so connected UIs can surface it.
+		payload, _ := json.Marshal(alert)
+		s.bus.Publish(event.Event{Name: "org.cap.threshold", Org: orgID, Subject: "org.cap.threshold", Payload: payload})
+	}
+}
+
+// monthStartUTC returns the UTC start-of-month timestamp for the current month
+// in the canonical format (WU-310 usage window).
+func monthStartUTC() string {
+	now := time.Now().UTC()
+	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02T15:04:05.000Z")
+}
+
+// capAlertID returns a unique id for an org_cap_alerts row (WU-310).
+func capAlertID() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
 // schedulerLoop polls due scheduled triggers on a ticker and enqueues agent

@@ -28,6 +28,13 @@ type Engine struct {
 	secret []byte
 	now    func() time.Time
 	delta  func(chatID, runID, userID, delta string) // chat streaming sink (WU-308); nil for batch
+	// onCapAlert is called once per org the first time its monthly spend
+	// crosses the configured threshold % (WU-310). The server wires it to emit
+	// an org.cap.threshold notification.
+	onCapAlert func(orgID string)
+	// capAlerted tracks orgs whose threshold alert has fired, so the alert
+	// emits once per crossing (WU-310).
+	capAlerted map[string]bool
 }
 
 // Config wires the engine. Client is required; secret is the tenant key used
@@ -45,6 +52,10 @@ type Config struct {
 	// streamed content chunk of a chat run. userID may be "" when the run's
 	// initiator cannot be mapped to a user id (e.g. an API-key actor).
 	DeltaSink func(chatID, runID, userID, delta string)
+	// OnCapAlert, when set, is called once per org the first time the org's
+	// monthly spend crosses the cap threshold % (WU-310). Wired by the server
+	// to emit an org.cap.threshold notification.
+	OnCapAlert func(orgID string)
 }
 
 // New builds a run engine over db. The dispatcher mirrors the server's but
@@ -60,13 +71,15 @@ func New(cfg Config) *Engine {
 	}
 	disp := action.New(cfg.DB, opts...)
 	return &Engine{
-		db:     cfg.DB,
-		q:      sqlc.New(cfg.DB),
-		client: cfg.Client,
-		disp:   disp,
-		secret: tenant.PadKey(cfg.Secret),
-		now:    time.Now,
-		delta:  cfg.DeltaSink,
+		db:         cfg.DB,
+		q:          sqlc.New(cfg.DB),
+		client:     cfg.Client,
+		disp:       disp,
+		secret:     tenant.PadKey(cfg.Secret),
+		now:        time.Now,
+		delta:      cfg.DeltaSink,
+		onCapAlert: cfg.OnCapAlert,
+		capAlerted: map[string]bool{},
 	}
 }
 
@@ -289,6 +302,65 @@ func (e *Engine) EnqueueRun(ctx context.Context, store *job.JobStore, orgID, age
 		}
 	}
 
+	// Per-agent limits (WU-310): enforce runs/hour + token budget at enqueue.
+	// 0 disables the limit. Over-limit runs are skipped (created=false).
+	agent, err := e.q.FindAgentByID(ctx, agentID)
+	if err != nil {
+		return "", false, fmt.Errorf("enqueue run: find agent: %w", err)
+	}
+	if agent.RunsPerHour > 0 {
+		n, err := e.q.CountRunsByAgentInWindow(ctx, sqlc.CountRunsByAgentInWindowParams{
+			AgentID:   agentID,
+			OrgID:     orgID,
+			CreatedAt: time.Now().UTC().Add(-time.Hour).Format("2006-01-02T15:04:05.000Z"),
+		})
+		if err != nil {
+			return "", false, fmt.Errorf("enqueue run: count agent window: %w", err)
+		}
+		if int64(n) >= agent.RunsPerHour {
+			return "", false, nil // agent over its hourly run cap — skip
+		}
+	}
+	if agent.TokenBudget > 0 {
+		tok, err := e.q.SumAgentTokensInWindow(ctx, sqlc.SumAgentTokensInWindowParams{
+			AgentID:   agentID,
+			OrgID:     orgID,
+			CreatedAt: monthStartUTC(),
+		})
+		if err != nil {
+			return "", false, fmt.Errorf("enqueue run: sum agent tokens: %w", err)
+		}
+		if tok >= agent.TokenBudget {
+			return "", false, nil // agent over its monthly token budget — skip
+		}
+	}
+
+	// Org monthly cap (WU-310): hard stop when spend >= cap. Threshold alert
+	// fires once per org when spend first crosses cap*alert%/100.
+	org, err := e.q.FindOrgByID(ctx, orgID)
+	if err != nil {
+		return "", false, fmt.Errorf("enqueue run: find org: %w", err)
+	}
+	if org.MonthlyCapUsd > 0 {
+		spend, err := e.q.OrgMonthlySpend(ctx, sqlc.OrgMonthlySpendParams{
+			OrgID:      orgID,
+			FinishedAt: sql.NullString{String: monthStartUTC(), Valid: true},
+		})
+		if err != nil {
+			return "", false, fmt.Errorf("enqueue run: org spend: %w", err)
+		}
+		// Threshold alert: once per org when spend crosses cap*alert%/100.
+		// Checked before the hard stop so the alert fires even when the spend
+		// has already blown past the cap (WU-310).
+		if e.onCapAlert != nil && org.CapAlertPct > 0 && spend >= org.MonthlyCapUsd*org.CapAlertPct/100 && !e.capAlertFired(orgID) {
+			e.markCapAlertFired(orgID)
+			e.onCapAlert(orgID)
+		}
+		if spend >= org.MonthlyCapUsd {
+			return "", false, fmt.Errorf("enqueue run: org %s monthly cap reached (spend $%.2f >= cap $%.2f)", orgID, spend, org.MonthlyCapUsd)
+		}
+	}
+
 	runID := newID()
 	if _, err := e.q.CreateRun(ctx, sqlc.CreateRunParams{
 		ID:            runID,
@@ -473,4 +545,21 @@ func (e *Engine) notifyFailure(ctx context.Context, run sqlc.Run, agent sqlc.Age
 
 func newID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// monthStartUTC returns the UTC start-of-month timestamp for the current month
+// in the canonical format (WU-310 usage aggregation window).
+func monthStartUTC() string {
+	now := time.Now().UTC()
+	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02T15:04:05.000Z")
+}
+
+// capAlertFired reports whether the org's threshold alert already fired (WU-310).
+func (e *Engine) capAlertFired(orgID string) bool {
+	return e.capAlerted[orgID]
+}
+
+// markCapAlertFired records that the org's threshold alert fired (WU-310).
+func (e *Engine) markCapAlertFired(orgID string) {
+	e.capAlerted[orgID] = true
 }

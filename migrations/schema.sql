@@ -99,6 +99,8 @@ CREATE TABLE orgs (
     slug TEXT NOT NULL UNIQUE,
     context TEXT NOT NULL DEFAULT '',
     visibility TEXT NOT NULL DEFAULT 'private',
+    monthly_cap_usd REAL NOT NULL DEFAULT 0,
+    cap_alert_pct REAL NOT NULL DEFAULT 80,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now'))
 );
 
@@ -465,6 +467,29 @@ CREATE TABLE IF NOT EXISTS provider_orgs (
 );
 
 CREATE INDEX idx_provider_orgs_org ON provider_orgs (org_id);
+
+CREATE TABLE IF NOT EXISTS model_pricing (
+    id            TEXT PRIMARY KEY,
+    provider_id   TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+    model         TEXT NOT NULL,
+    input_per_mtok  REAL NOT NULL DEFAULT 0,
+    output_per_mtok REAL NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
+    updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
+    UNIQUE(provider_id, model)
+);
+
+CREATE INDEX IF NOT EXISTS idx_model_pricing_provider ON model_pricing(provider_id);
+
+CREATE TABLE IF NOT EXISTS org_cap_alerts (
+    id         TEXT PRIMARY KEY,
+    org_id     TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    spend_usd  REAL NOT NULL,
+    cap_usd    REAL NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_org_cap_alerts_org ON org_cap_alerts(org_id);
 -- 0019: agents + agent_skills (SPEC §10 — AI agent management)
 --
 -- agents: platform templates (org_id NULL) and org-customised agents
