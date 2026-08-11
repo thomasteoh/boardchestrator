@@ -36,7 +36,7 @@ func TestEnqueueRunPerTaskCap(t *testing.T) {
 	store := job.NewJobStore(eng.db)
 
 	// First trigger creates a run + enqueues a job.
-	runID1, created1, err := eng.EnqueueRun(ctx, store, orgID, agent.ID, "mention", task.ID, "", "u1", "@robo")
+	runID1, created1, err := eng.EnqueueRun(ctx, store, orgID, agent.ID, "mention", task.ID, "", proj.ID, "u1", "@robo")
 	if err != nil {
 		t.Fatalf("enqueue run 1: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestEnqueueRunPerTaskCap(t *testing.T) {
 	}
 
 	// Second trigger for the same task is skipped (cap 1).
-	runID2, created2, err := eng.EnqueueRun(ctx, store, orgID, agent.ID, "mention", task.ID, "", "u1", "@robo")
+	runID2, created2, err := eng.EnqueueRun(ctx, store, orgID, agent.ID, "mention", task.ID, "", proj.ID, "u1", "@robo")
 	if err != nil {
 		t.Fatalf("enqueue run 2: %v", err)
 	}
@@ -54,15 +54,23 @@ func TestEnqueueRunPerTaskCap(t *testing.T) {
 	}
 
 	// A different task accepts a new run (cap is per-task, not per-agent).
+	// It lives in a different project so the per-project overlap guard (WU-309)
+	// doesn't also block it.
 	store2 := job.NewJobStore(eng.db)
+	proj2, err := eng.q.CreateProject(ctx, sqlc.CreateProjectParams{
+		ID: "proj2", OrgID: orgID, Name: "P2", Key: "P2", Visibility: "private",
+	})
+	if err != nil {
+		t.Fatalf("seed project2: %v", err)
+	}
 	task2, err := eng.q.CreateTask(ctx, sqlc.CreateTaskParams{
-		ID: "task2", ProjectID: proj.ID, Title: "T2", Description: "", Key: "P1-2",
-		KeyNum: 2, Points: 0, Priority: 0, Status: "todo", DueAt: "", SortOrder: 1,
+		ID: "task2", ProjectID: proj2.ID, Title: "T2", Description: "", Key: "P2-1",
+		KeyNum: 1, Points: 0, Priority: 0, Status: "todo", DueAt: "", SortOrder: 0,
 	})
 	if err != nil {
 		t.Fatalf("seed task2: %v", err)
 	}
-	if _, created, err := eng.EnqueueRun(ctx, store2, orgID, agent.ID, "mention", task2.ID, "", "u1", "@robo"); err != nil || !created {
+	if _, created, err := eng.EnqueueRun(ctx, store2, orgID, agent.ID, "mention", task2.ID, "", proj2.ID, "u1", "@robo"); err != nil || !created {
 		t.Fatalf("expected task2 trigger to create, created=%v err=%v", created, err)
 	}
 
@@ -73,7 +81,7 @@ func TestEnqueueRunPerTaskCap(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("finish run1: %v", err)
 	}
-	if _, created, err := eng.EnqueueRun(ctx, store3, orgID, agent.ID, "column", task.ID, "", "", "prompt"); err != nil || !created {
+	if _, created, err := eng.EnqueueRun(ctx, store3, orgID, agent.ID, "column", task.ID, "", proj.ID, "", "prompt"); err != nil || !created {
 		t.Fatalf("expected re-trigger after terminal to create, created=%v err=%v", created, err)
 	}
 }
@@ -88,7 +96,7 @@ func TestEnqueueRunInstructionThreads(t *testing.T) {
 	ctx := context.Background()
 
 	store := job.NewJobStore(eng.db)
-	runID, created, err := eng.EnqueueRun(ctx, store, orgID, agent.ID, "column", "", "", "", "Triage {title}")
+	runID, created, err := eng.EnqueueRun(ctx, store, orgID, agent.ID, "column", "", "", "", "", "Triage {title}")
 	if err != nil || !created {
 		t.Fatalf("enqueue run: %v created=%v", err, created)
 	}

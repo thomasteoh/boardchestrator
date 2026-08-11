@@ -14,7 +14,7 @@ const addRunTokens = `-- name: AddRunTokens :one
 UPDATE runs
 SET prompt_tokens = prompt_tokens + ?, completion_tokens = completion_tokens + ?
 WHERE id = ? AND org_id = ?
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 `
 
 type AddRunTokensParams struct {
@@ -39,6 +39,7 @@ func (q *Queries) AddRunTokens(ctx context.Context, arg AddRunTokensParams) (Run
 		&i.Trigger,
 		&i.TaskID,
 		&i.ChatSessionID,
+		&i.ProjectID,
 		&i.InitiatedBy,
 		&i.Status,
 		&i.Error,
@@ -55,7 +56,7 @@ const cancelRun = `-- name: CancelRun :one
 UPDATE runs
 SET status = 'cancelled', finished_at = ?, error = ?
 WHERE id = ? AND org_id = ?
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 `
 
 type CancelRunParams struct {
@@ -80,6 +81,7 @@ func (q *Queries) CancelRun(ctx context.Context, arg CancelRunParams) (Run, erro
 		&i.Trigger,
 		&i.TaskID,
 		&i.ChatSessionID,
+		&i.ProjectID,
 		&i.InitiatedBy,
 		&i.Status,
 		&i.Error,
@@ -90,6 +92,25 @@ func (q *Queries) CancelRun(ctx context.Context, arg CancelRunParams) (Run, erro
 		&i.FinishedAt,
 	)
 	return i, err
+}
+
+const countActiveRunsByProject = `-- name: CountActiveRunsByProject :one
+SELECT COUNT(*) FROM runs
+WHERE project_id = ? AND org_id = ? AND status IN ('queued', 'running', 'awaiting_approval')
+`
+
+type CountActiveRunsByProjectParams struct {
+	ProjectID sql.NullString
+	OrgID     string
+}
+
+// WU-309 overlap guard: skip firing a schedule when the project already has
+// an active run (queued/running/awaiting_approval) so schedules don't pile up.
+func (q *Queries) CountActiveRunsByProject(ctx context.Context, arg CountActiveRunsByProjectParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countActiveRunsByProject, arg.ProjectID, arg.OrgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const countActiveRunsByTask = `-- name: CountActiveRunsByTask :one
@@ -145,9 +166,9 @@ func (q *Queries) CountRunsByAgentSince(ctx context.Context, arg CountRunsByAgen
 }
 
 const createRun = `-- name: CreateRun :one
-INSERT INTO runs (id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+INSERT INTO runs (id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 `
 
 type CreateRunParams struct {
@@ -157,6 +178,7 @@ type CreateRunParams struct {
 	Trigger       string
 	TaskID        sql.NullString
 	ChatSessionID sql.NullString
+	ProjectID     sql.NullString
 	InitiatedBy   sql.NullString
 	Status        string
 }
@@ -169,6 +191,7 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, erro
 		arg.Trigger,
 		arg.TaskID,
 		arg.ChatSessionID,
+		arg.ProjectID,
 		arg.InitiatedBy,
 		arg.Status,
 	)
@@ -180,6 +203,7 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) (Run, erro
 		&i.Trigger,
 		&i.TaskID,
 		&i.ChatSessionID,
+		&i.ProjectID,
 		&i.InitiatedBy,
 		&i.Status,
 		&i.Error,
@@ -226,7 +250,7 @@ func (q *Queries) CreateRunStep(ctx context.Context, arg CreateRunStepParams) er
 }
 
 const findRunByID = `-- name: FindRunByID :one
-SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 FROM runs
 WHERE id = ? AND org_id = ?
 `
@@ -246,6 +270,7 @@ func (q *Queries) FindRunByID(ctx context.Context, arg FindRunByIDParams) (Run, 
 		&i.Trigger,
 		&i.TaskID,
 		&i.ChatSessionID,
+		&i.ProjectID,
 		&i.InitiatedBy,
 		&i.Status,
 		&i.Error,
@@ -259,7 +284,7 @@ func (q *Queries) FindRunByID(ctx context.Context, arg FindRunByIDParams) (Run, 
 }
 
 const findRunByTaskAndOrg = `-- name: FindRunByTaskAndOrg :many
-SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 FROM runs
 WHERE task_id = ? AND org_id = ?
 ORDER BY created_at DESC
@@ -286,6 +311,7 @@ func (q *Queries) FindRunByTaskAndOrg(ctx context.Context, arg FindRunByTaskAndO
 			&i.Trigger,
 			&i.TaskID,
 			&i.ChatSessionID,
+			&i.ProjectID,
 			&i.InitiatedBy,
 			&i.Status,
 			&i.Error,
@@ -312,7 +338,7 @@ const finishRun = `-- name: FinishRun :one
 UPDATE runs
 SET status = ?, finished_at = ?, error = ?, prompt_tokens = ?, completion_tokens = ?
 WHERE id = ? AND org_id = ?
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 `
 
 type FinishRunParams struct {
@@ -343,6 +369,7 @@ func (q *Queries) FinishRun(ctx context.Context, arg FinishRunParams) (Run, erro
 		&i.Trigger,
 		&i.TaskID,
 		&i.ChatSessionID,
+		&i.ProjectID,
 		&i.InitiatedBy,
 		&i.Status,
 		&i.Error,
@@ -460,7 +487,7 @@ func (q *Queries) ListRunSteps(ctx context.Context, arg ListRunStepsParams) ([]R
 }
 
 const listRunsByOrg = `-- name: ListRunsByOrg :many
-SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 FROM runs
 WHERE org_id = ?
 ORDER BY created_at DESC
@@ -488,6 +515,7 @@ func (q *Queries) ListRunsByOrg(ctx context.Context, arg ListRunsByOrgParams) ([
 			&i.Trigger,
 			&i.TaskID,
 			&i.ChatSessionID,
+			&i.ProjectID,
 			&i.InitiatedBy,
 			&i.Status,
 			&i.Error,
@@ -514,7 +542,7 @@ const requeueRun = `-- name: RequeueRun :one
 UPDATE runs
 SET status = 'queued', error = ''
 WHERE id = ? AND org_id = ? AND status = 'awaiting_approval'
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 `
 
 type RequeueRunParams struct {
@@ -532,6 +560,7 @@ func (q *Queries) RequeueRun(ctx context.Context, arg RequeueRunParams) (Run, er
 		&i.Trigger,
 		&i.TaskID,
 		&i.ChatSessionID,
+		&i.ProjectID,
 		&i.InitiatedBy,
 		&i.Status,
 		&i.Error,
@@ -548,7 +577,7 @@ const setRunAwaitingApproval = `-- name: SetRunAwaitingApproval :one
 UPDATE runs
 SET status = 'awaiting_approval'
 WHERE id = ? AND org_id = ?
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 `
 
 type SetRunAwaitingApprovalParams struct {
@@ -566,6 +595,7 @@ func (q *Queries) SetRunAwaitingApproval(ctx context.Context, arg SetRunAwaiting
 		&i.Trigger,
 		&i.TaskID,
 		&i.ChatSessionID,
+		&i.ProjectID,
 		&i.InitiatedBy,
 		&i.Status,
 		&i.Error,
@@ -582,7 +612,7 @@ const startRun = `-- name: StartRun :one
 UPDATE runs
 SET status = 'running', started_at = ?, error = ''
 WHERE id = ? AND org_id = ? AND status = 'queued'
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 `
 
 type StartRunParams struct {
@@ -601,6 +631,7 @@ func (q *Queries) StartRun(ctx context.Context, arg StartRunParams) (Run, error)
 		&i.Trigger,
 		&i.TaskID,
 		&i.ChatSessionID,
+		&i.ProjectID,
 		&i.InitiatedBy,
 		&i.Status,
 		&i.Error,

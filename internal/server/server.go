@@ -30,12 +30,17 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/event"
 	"github.com/thomasteoh/boardchestrator/internal/job"
 	"github.com/thomasteoh/boardchestrator/internal/perm"
+	"github.com/thomasteoh/boardchestrator/internal/schedule"
 	"github.com/thomasteoh/boardchestrator/internal/search"
 	"github.com/thomasteoh/boardchestrator/internal/sse"
 	"github.com/thomasteoh/boardchestrator/internal/storage"
 	"github.com/thomasteoh/boardchestrator/internal/tenant"
 	"github.com/thomasteoh/boardchestrator/internal/web"
 )
+
+// timeFormat is the canonical UTC timestamp layout used across the codebase
+// (matches the action package's store.go timeFormat).
+const timeFormat = "2006-01-02T15:04:05.000Z"
 
 // metrics for Prometheus /metrics endpoint.
 var (
@@ -93,6 +98,9 @@ type Server struct {
 	// chatUnsub is the chat.sent subscription that enqueues chat runs (WU-308).
 	// Kept to stop on Shutdown.
 	chatUnsub func()
+	// schedStop cancels the scheduled-trigger poller goroutine (WU-309).
+	// Kept to stop on Shutdown.
+	schedStop context.CancelFunc
 	// trigq is the read query handle the trigger loop uses to re-read tasks,
 	// comments, and columns from the DB (source of truth for mention/column
 	// detection). Set in Start once the DB is wired.
@@ -427,6 +435,13 @@ func (s *Server) Start(ctx context.Context) error {
 		var chatSub *event.Subscription
 		chatSub, s.chatUnsub = s.bus.Subscribe(event.Filter{Names: map[string]struct{}{"chat.sent": {}}}, 16)
 		go s.chatLoop(ctx, store, chatSub)
+
+		// Scheduled triggers (WU-309): poll due triggers on a ticker and enqueue
+		// agent runs (trigger='schedule', prompt as instruction). Per-project
+		// overlap guard skips a project with an active run. Stopped on Shutdown.
+		var schedCtx context.Context
+		schedCtx, s.schedStop = context.WithCancel(ctx)
+		go s.schedulerLoop(schedCtx, store)
 	}
 
 	// Create the action dispatcher with DB-backed stores, scope resolver,
@@ -522,6 +537,10 @@ func (s *Server) Shutdown() {
 	// Stop the chat run subscriber (WU-308).
 	if s.chatUnsub != nil {
 		s.chatUnsub()
+	}
+	// Stop the scheduled-trigger poller (WU-309).
+	if s.schedStop != nil {
+		s.schedStop()
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -659,7 +678,7 @@ func (s *Server) enqueueMentions(ctx context.Context, store *job.JobStore, orgID
 			continue // not an active agent — not a mention
 		}
 		mention := "@" + name
-		if _, created, err := s.eng.EnqueueRun(ctx, store, orgID, agent.ID, "mention", taskID, "", initiatedBy, mention); err != nil {
+		if _, created, err := s.eng.EnqueueRun(ctx, store, orgID, agent.ID, "mention", taskID, "", projectID, initiatedBy, mention); err != nil {
 			slog.Warn("trigger: enqueue mention", "agent", agent.ID, "error", err)
 		} else if created {
 			slog.Debug("trigger: mention enqueued", "agent", agent.ID, "task", taskID)
@@ -693,7 +712,7 @@ func (s *Server) triggerOnColumn(ctx context.Context, store *job.JobStore, ev ev
 	prompt = strings.ReplaceAll(prompt, "{key}", task.Key)
 	prompt = strings.ReplaceAll(prompt, "{id}", task.ID)
 	prompt = strings.ReplaceAll(prompt, "{status}", task.Status)
-	if _, created, err := s.eng.EnqueueRun(ctx, store, ev.Org, col.TriggerAgentID.String, "column", payload.ID, "", "", prompt); err != nil {
+	if _, created, err := s.eng.EnqueueRun(ctx, store, ev.Org, col.TriggerAgentID.String, "column", payload.ID, "", task.ProjectID, "", prompt); err != nil {
 		slog.Warn("trigger: enqueue column", "agent", col.TriggerAgentID.String, "error", err)
 	} else if created {
 		slog.Debug("trigger: column enqueued", "agent", col.TriggerAgentID.String, "task", payload.ID)
@@ -733,7 +752,7 @@ func (s *Server) chatLoop(ctx context.Context, store *job.JobStore, sub *event.S
 				slog.Warn("chat: session lookup", "chat_id", payload.ChatID, "error", err)
 				continue
 			}
-			if _, created, err := s.eng.EnqueueRun(ctx, store, ev.Org, sess.AgentID, "chat", "", payload.ChatID, sess.CreatedBy, payload.Text); err != nil {
+			if _, created, err := s.eng.EnqueueRun(ctx, store, ev.Org, sess.AgentID, "chat", "", payload.ChatID, sess.ProjectID.String, sess.CreatedBy, payload.Text); err != nil {
 				slog.Warn("chat: enqueue run", "chat_id", payload.ChatID, "error", err)
 			} else if created {
 				slog.Debug("chat: run enqueued", "chat_id", payload.ChatID, "agent", sess.AgentID)
@@ -760,5 +779,74 @@ func (s *Server) chatDeltaSink() func(chatID, runID, userID, delta string) {
 			return
 		}
 		s.hub.SendToUser(userID, sse.EventChatDelta, payload)
+	}
+}
+
+// schedulerLoop polls due scheduled triggers on a ticker and enqueues agent
+// runs (WU-309). Each due trigger fires once per poll: it re-reads the trigger,
+// enqueues a run with trigger='schedule' and the prompt as the instruction, then
+// advances next_at via the cron expression. The EnqueueRun per-project overlap
+// guard skips a project with an active run, so schedules don't pile up.
+func (s *Server) schedulerLoop(ctx context.Context, store *job.JobStore) {
+	interval := time.Duration(s.cfg.SchedPollInterval) * time.Second
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			s.fireDueTriggers(ctx, store, now)
+		}
+	}
+}
+
+// fireDueTriggers enqueues a run for every enabled trigger whose next_at is at
+// or before now, then advances each trigger's next_at (or clears it on a cron
+// error / pause). Runs are enqueued with the trigger's agent + prompt; the
+// overlap guard (per-project cap) is enforced inside EnqueueRun.
+func (s *Server) fireDueTriggers(ctx context.Context, store *job.JobStore, now time.Time) {
+	q := sqlc.New(s.db)
+	// Compare against RFC3339 to match schedule.NextAt's format so the
+	// lexicographic next_at <= now comparison is consistent.
+	due, err := q.ListDueScheduledTriggers(ctx, now.UTC().Format(time.RFC3339))
+	if err != nil {
+		slog.Warn("scheduler: list due", "error", err)
+		return
+	}
+	for _, t := range due {
+		if ctx.Err() != nil {
+			return
+		}
+		// Fire: enqueue a run for the project's agent with the prompt. The
+		// per-project overlap guard inside EnqueueRun skips if the project has
+		// an active run. initiatedBy is the schedule (system), not a user.
+		if _, created, err := s.eng.EnqueueRun(ctx, store, t.OrgID, t.AgentID, "schedule", "", "", t.ProjectID, "schedule", t.Prompt); err != nil {
+			slog.Warn("scheduler: enqueue", "trigger", t.ID, "error", err)
+		} else if created {
+			slog.Debug("scheduler: fired", "trigger", t.ID, "agent", t.AgentID, "project", t.ProjectID)
+		}
+
+		// Advance next_at from the cron expression. On error, clear next_at so
+		// the row stops firing until edited.
+		nextAt, err := schedule.NextAt(t.CronExpr, now)
+		if err != nil {
+			nextAt = ""
+		}
+		if err := q.UpdateScheduledTrigger(ctx, sqlc.UpdateScheduledTriggerParams{
+			CronExpr:  t.CronExpr,
+			Prompt:    t.Prompt,
+			AgentID:   t.AgentID,
+			Enabled:   t.Enabled,
+			NextAt:    nextAt,
+			UpdatedAt: now.UTC().Format(timeFormat),
+			ID:        t.ID,
+			OrgID:     t.OrgID,
+		}); err != nil {
+			slog.Warn("scheduler: advance next_at", "trigger", t.ID, "error", err)
+		}
 	}
 }

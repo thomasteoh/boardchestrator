@@ -305,6 +305,7 @@ type Run struct {
 	Trigger          string
 	TaskID           sql.NullString
 	ChatSessionID    sql.NullString
+	ProjectID        sql.NullString
 	InitiatedBy      sql.NullString
 	Status           string
 	Error            string
@@ -333,6 +334,19 @@ type SavedFilter struct {
 	QueryJson string
 	Pinned    int64
 	CreatedBy string
+	CreatedAt string
+	UpdatedAt string
+}
+
+type ScheduledTrigger struct {
+	ID        string
+	OrgID     string
+	ProjectID string
+	AgentID   string
+	CronExpr  string
+	Prompt    string
+	NextAt    string
+	Enabled   int64
 	CreatedAt string
 	UpdatedAt string
 }

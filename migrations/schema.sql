@@ -519,6 +519,7 @@ CREATE TABLE IF NOT EXISTS runs (
     trigger            TEXT NOT NULL,
     task_id            TEXT REFERENCES tasks(id) ON DELETE SET NULL,
     chat_session_id    TEXT,
+    project_id         TEXT REFERENCES projects(id) ON DELETE SET NULL,
     initiated_by       TEXT,
     status             TEXT NOT NULL DEFAULT 'queued',
     error              TEXT NOT NULL DEFAULT '',
@@ -532,6 +533,7 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE INDEX IF NOT EXISTS idx_runs_org ON runs(org_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_runs_task ON runs(task_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_runs_project ON runs(project_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_runs_agent ON runs(agent_id, created_at);
 
 CREATE TABLE IF NOT EXISTS run_steps (
@@ -590,3 +592,20 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON chat_messages(chat_id, created_at);
+
+CREATE TABLE IF NOT EXISTS scheduled_triggers (
+    id          TEXT PRIMARY KEY,
+    org_id      TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    agent_id    TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    cron_expr   TEXT NOT NULL,
+    prompt      TEXT NOT NULL DEFAULT '',
+    next_at     TEXT NOT NULL DEFAULT '',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
+    updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sched_triggers_org ON scheduled_triggers(org_id);
+CREATE INDEX IF NOT EXISTS idx_sched_triggers_project ON scheduled_triggers(project_id);
+CREATE INDEX IF NOT EXISTS idx_sched_triggers_due ON scheduled_triggers(enabled, next_at);

@@ -260,7 +260,7 @@ func (e *Engine) EnqueueResume(ctx context.Context, store *job.JobStore, orgID, 
 // of 1: if the task already has an active (non-terminal) run, the trigger is
 // skipped and no run is created. Returns (runID, created, err); created=false
 // when skipped.
-func (e *Engine) EnqueueRun(ctx context.Context, store *job.JobStore, orgID, agentID, trigger, taskID, chatSessionID, initiatedBy, instruction string) (string, bool, error) {
+func (e *Engine) EnqueueRun(ctx context.Context, store *job.JobStore, orgID, agentID, trigger, taskID, chatSessionID, projectID, initiatedBy, instruction string) (string, bool, error) {
 	// Per-task cap 1: a task with an active run serialises further triggers.
 	if taskID != "" {
 		n, err := e.q.CountActiveRunsByTask(ctx, sqlc.CountActiveRunsByTaskParams{
@@ -274,6 +274,20 @@ func (e *Engine) EnqueueRun(ctx context.Context, store *job.JobStore, orgID, age
 			return "", false, nil // already running/queued/awaiting — skip
 		}
 	}
+	// Per-project cap 1 (WU-309): scheduled triggers fire into a project only
+	// when no run is active, so schedules don't pile up.
+	if projectID != "" {
+		n, err := e.q.CountActiveRunsByProject(ctx, sqlc.CountActiveRunsByProjectParams{
+			ProjectID: sql.NullString{String: projectID, Valid: projectID != ""},
+			OrgID:     orgID,
+		})
+		if err != nil {
+			return "", false, fmt.Errorf("enqueue run: count project active: %w", err)
+		}
+		if n > 0 {
+			return "", false, nil // project already has an active run — skip
+		}
+	}
 
 	runID := newID()
 	if _, err := e.q.CreateRun(ctx, sqlc.CreateRunParams{
@@ -283,6 +297,7 @@ func (e *Engine) EnqueueRun(ctx context.Context, store *job.JobStore, orgID, age
 		Trigger:       trigger,
 		TaskID:        sql.NullString{String: taskID, Valid: taskID != ""},
 		ChatSessionID: sql.NullString{String: chatSessionID, Valid: chatSessionID != ""},
+		ProjectID:     sql.NullString{String: projectID, Valid: projectID != ""},
 		InitiatedBy:   sql.NullString{String: initiatedBy, Valid: initiatedBy != ""},
 		Status:        "queued",
 	}); err != nil {

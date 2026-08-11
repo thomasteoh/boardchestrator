@@ -1,0 +1,105 @@
+package views
+
+import "fmt"
+
+// ScheduledTriggerView is one scheduled trigger row for the per-project panel.
+type ScheduledTriggerView struct {
+	ID       string
+	AgentID  string
+	CronExpr string
+	Prompt   string
+	NextAt   string
+	Enabled  bool
+}
+
+// ScheduledTriggersPage renders the per-project scheduled trigger settings
+// (WU-309): list of triggers + an add form (cron, agent, prompt). Each row has
+// update (pause/resume + edit cron/agent/prompt) and delete controls.
+templ ScheduledTriggersPage(s Shell, orgID, projectID string, triggers []ScheduledTriggerView) {
+	@Base(s) {
+		<div class="bc-trigger-settings" id="triggers-{ projectID }">
+			<h2>Scheduled Triggers</h2>
+			<p class="bc-muted">Runs an agent on a cron schedule. Overlap guard: a project with an active run skips the fire. Cron is evaluated in the org's configured timezone (default UTC).</p>
+
+			<div id="trig-list">
+				for _, t := range triggers {
+					<div class="bc-trigger-row" id="trig-{ t.ID }">
+						<span class="bc-trigger-cron">{ t.CronExpr }</span>
+						<span class="bc-trigger-agent">agent { t.AgentID }</span>
+						<span class="bc-trigger-next">next { t.NextAt }</span>
+						<span class="bc-trigger-state" if t.Enabled { class="bc-trigger-on" }>
+							if t.Enabled {
+								on
+							} else {
+								paused
+							}
+						</span>
+						<form
+							hx-post="/api/action/trigger.update"
+							hx-headers={ hxHeaders(s.CSRF) }
+							hx-target="#trig-{ t.ID }"
+							hx-swap="outerHTML"
+							class="bc-trigger-form"
+						>
+							<input type="hidden" name="id" value={ t.ID }/>
+							<input type="hidden" name="project_id" value={ projectID }/>
+							<input type="text" name="cron_expr" value={ t.CronExpr } placeholder="cron" class="bc-input bc-input-sm"/>
+							<input type="text" name="agent_id" value={ t.AgentID } placeholder="agent id" class="bc-input bc-input-sm"/>
+							<input type="text" name="prompt" value={ t.Prompt } placeholder="prompt" class="bc-input bc-input-sm"/>
+							<input type="number" name="enabled" value={ fmt.Sprintf("%d", boolInt(t.Enabled)) } hidden/>
+							<button type="submit" class="bc-btn bc-btn-sm">Update</button>
+						</form>
+						<button
+							class="bc-btn bc-btn-sm"
+							hx-post="/api/action/trigger.update"
+							hx-headers={ hxHeaders(s.CSRF) }
+							hx-target="#trig-{ t.ID }"
+							hx-swap="outerHTML"
+							hx-vals={ templ.URL(`{"id":"`+t.ID+`","project_id":"`+projectID+`","enabled":`+fmt.Sprintf("%d", boolInt(!t.Enabled))+`}`,) }
+						>
+							Pause/Resume
+						</button>
+						<button
+							class="bc-btn bc-btn-sm bc-btn-danger"
+							hx-post="/api/action/trigger.delete"
+							hx-headers={ hxHeaders(s.CSRF) }
+							hx-target="#trig-{ t.ID }"
+							hx-swap="outerHTML"
+							hx-vals={ templ.URL(`{"id":"`+t.ID+`"}`,) }
+						>
+							Delete
+						</button>
+					</div>
+				}
+			</div>
+
+			<form
+				hx-post="/api/action/trigger.create"
+				hx-headers={ hxHeaders(s.CSRF) }
+				hx-target="#trig-list"
+				hx-swap="beforeend"
+				class="bc-form bc-trigger-add"
+			>
+				<input type="hidden" name="project_id" value={ projectID }/>
+				<label>Cron
+					<input type="text" name="cron_expr" placeholder="e.g. 0 9 * * *" required class="bc-input"/>
+				</label>
+				<label>Agent
+					<input type="text" name="agent_id" placeholder="agent id" required class="bc-input"/>
+				</label>
+				<label>Prompt
+					<input type="text" name="prompt" placeholder="instruction sent to the agent" class="bc-input"/>
+				</label>
+				<button type="submit" class="bc-btn bc-btn-primary">Add Trigger</button>
+			</form>
+		</div>
+	}
+}
+
+// boolInt renders a Go bool as a 0/1 int for form values (WU-309).
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}

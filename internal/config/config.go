@@ -26,6 +26,7 @@ type Config struct {
 	GitHubClientID     string
 	GitHubClientSecret string
 	AgentWorkers       int
+	SchedPollInterval  int
 }
 
 // Load reads configuration from environment variables with defaults.
@@ -45,6 +46,7 @@ func Load() (*Config, error) {
 	c.GitHubClientID = envOrDefault("BC_GITHUB_CLIENT_ID", "")
 	c.GitHubClientSecret = envOrDefault("BC_GITHUB_CLIENT_SECRET", "")
 	c.AgentWorkers = intEnvOrDefault("BC_AGENT_WORKERS", 4)
+	c.SchedPollInterval = intEnvOrDefault("BC_SCHED_POLL_INTERVAL", 60)
 
 	// Parse log level.
 	switch strings.ToLower(c.LogLevelStr) {

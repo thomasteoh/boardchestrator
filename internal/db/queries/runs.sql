@@ -1,15 +1,15 @@
 -- name: CreateRun :one
-INSERT INTO runs (id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
+INSERT INTO runs (id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
 
 -- name: FindRunByID :one
-SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 FROM runs
 WHERE id = ? AND org_id = ?;
 
 -- name: FindRunByTaskAndOrg :many
-SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 FROM runs
 WHERE task_id = ? AND org_id = ?
 ORDER BY created_at DESC;
@@ -18,8 +18,14 @@ ORDER BY created_at DESC;
 SELECT COUNT(*) FROM runs
 WHERE task_id = ? AND org_id = ? AND status IN ('queued', 'running', 'awaiting_approval');
 
+-- name: CountActiveRunsByProject :one
+-- WU-309 overlap guard: skip firing a schedule when the project already has
+-- an active run (queued/running/awaiting_approval) so schedules don't pile up.
+SELECT COUNT(*) FROM runs
+WHERE project_id = ? AND org_id = ? AND status IN ('queued', 'running', 'awaiting_approval');
+
 -- name: ListRunsByOrg :many
-SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
+SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at
 FROM runs
 WHERE org_id = ?
 ORDER BY created_at DESC
@@ -29,37 +35,37 @@ LIMIT ?;
 UPDATE runs
 SET status = 'running', started_at = ?, error = ''
 WHERE id = ? AND org_id = ? AND status = 'queued'
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
 
 -- name: FinishRun :one
 UPDATE runs
 SET status = ?, finished_at = ?, error = ?, prompt_tokens = ?, completion_tokens = ?
 WHERE id = ? AND org_id = ?
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
 
 -- name: SetRunAwaitingApproval :one
 UPDATE runs
 SET status = 'awaiting_approval'
 WHERE id = ? AND org_id = ?
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
 
 -- name: RequeueRun :one
 UPDATE runs
 SET status = 'queued', error = ''
 WHERE id = ? AND org_id = ? AND status = 'awaiting_approval'
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
 
 -- name: CancelRun :one
 UPDATE runs
 SET status = 'cancelled', finished_at = ?, error = ?
 WHERE id = ? AND org_id = ?
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
 
 -- name: AddRunTokens :one
 UPDATE runs
 SET prompt_tokens = prompt_tokens + ?, completion_tokens = completion_tokens + ?
 WHERE id = ? AND org_id = ?
-RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
+RETURNING id, org_id, agent_id, trigger, task_id, chat_session_id, project_id, initiated_by, status, error, prompt_tokens, completion_tokens, created_at, started_at, finished_at;
 
 -- name: CountRunningRunsForAgent :one
 SELECT COUNT(*) FROM runs
