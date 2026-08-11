@@ -161,6 +161,35 @@ func handleOrgCreate(ctx context.Context, ac ActionCtx, in json.RawMessage) (any
 	if err != nil {
 		return nil, fmt.Errorf("org.create: %w", err)
 	}
+	// Seed the org-owner system role (WU-311 kill-switch): the creator becomes
+	// an owner holding org.* + agent.* + agent.kill, so they can kill all
+	// agents instantly. A new org starts with exactly one owner.
+	ownerGrants, _ := json.Marshal([]string{"org.*", "agent.*", "agent.kill", "org.cap.set", "org.read"})
+	if _, err := ac.Tx.CreateRole(ctx, sqlc.CreateRoleParams{
+		ID:         newID(),
+		OrgID:      id,
+		Name:       "Owner",
+		IsSystem:   1,
+		GrantsJson: string(ownerGrants),
+	}); err != nil {
+		return nil, fmt.Errorf("org.create: seed owner role: %w", err)
+	}
+	// The creator actor holds the owner membership (actor_type "user").
+	ownerRole, err := ac.Tx.FindRoleByName2(ctx, sqlc.FindRoleByName2Params{OrgID: id, Name: "Owner"})
+	if err != nil {
+		return nil, fmt.Errorf("org.create: find owner role: %w", err)
+	}
+	if _, err := ac.Tx.CreateMembership(ctx, sqlc.CreateMembershipParams{
+		ID:           newID(),
+		OrgID:        id,
+		ActorID:      ac.Actor.ID,
+		ActorType:    "user",
+		ResourceType: "org",
+		ResourceID:   id,
+		RoleID:       sql.NullString{String: ownerRole.ID, Valid: true},
+	}); err != nil {
+		return nil, fmt.Errorf("org.create: seed owner membership: %w", err)
+	}
 	return map[string]string{"id": id}, nil
 }
 

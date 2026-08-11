@@ -95,6 +95,16 @@ func (q *Queries) CreateAgentSkill(ctx context.Context, arg CreateAgentSkillPara
 	return err
 }
 
+const deactivateAllAgentsByOrg = `-- name: DeactivateAllAgentsByOrg :exec
+UPDATE agents SET active = 0 WHERE org_id = ?
+`
+
+// Kill-switch (WU-311): set every agent in an org to inactive instantly.
+func (q *Queries) DeactivateAllAgentsByOrg(ctx context.Context, orgID sql.NullString) error {
+	_, err := q.db.ExecContext(ctx, deactivateAllAgentsByOrg, orgID)
+	return err
+}
+
 const deleteAgent = `-- name: DeleteAgent :exec
 DELETE FROM agents WHERE id = ? AND org_id = ?
 `

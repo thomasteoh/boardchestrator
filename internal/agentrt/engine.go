@@ -85,20 +85,21 @@ func New(cfg Config) *Engine {
 
 // clientFor returns the provider client for an agent's run: the fixed
 // override if set (tests), else a client built from the agent's provider row
-// (base_url + decrypted key + model).
-func (e *Engine) clientFor(ctx context.Context, agent sqlc.Agent) (client.ProviderClient, error) {
+// (base_url + decrypted key + model). It also returns the live provider API
+// key so the transcript recorder can redact it before persisting (WU-311).
+func (e *Engine) clientFor(ctx context.Context, agent sqlc.Agent) (client.ProviderClient, string, error) {
 	if e.client != nil {
-		return e.client, nil
+		return e.client, "", nil
 	}
 	prov, err := e.q.FindProviderByID(ctx, agent.ProviderID)
 	if err != nil {
-		return nil, fmt.Errorf("run: find provider %s: %w", agent.ProviderID, err)
+		return nil, "", fmt.Errorf("run: find provider %s: %w", agent.ProviderID, err)
 	}
 	apiKey := ""
 	if len(prov.KeyEnc) > 0 {
 		k, err := tenant.Decrypt(e.secret, string(prov.KeyEnc))
 		if err != nil {
-			return nil, fmt.Errorf("run: decrypt provider key: %w", err)
+			return nil, "", fmt.Errorf("run: decrypt provider key: %w", err)
 		}
 		apiKey = k
 	}
@@ -106,7 +107,7 @@ func (e *Engine) clientFor(ctx context.Context, agent sqlc.Agent) (client.Provid
 		BaseURL: prov.BaseUrl,
 		APIKey:  apiKey,
 		Model:   agent.Model,
-	}), nil
+	}), apiKey, nil
 }
 
 // dispatchTool executes one registry action as the agent actor via Dispatch.
@@ -133,10 +134,16 @@ func (e *Engine) dispatchTool(ctx context.Context, run sqlc.Run, agent sqlc.Agen
 	return toolResult{Name: name, CallID: name, Content: string(content)}, nil
 }
 
-// recordStep persists one tool-loop iteration as a run_steps row.
-func (e *Engine) recordStep(ctx context.Context, run sqlc.Run, seq int, kind string, req, resp any, tokens int) error {
+// recordStep persists one tool-loop iteration as a run_steps row. The live
+// provider API key (if any) is redacted from both the request and response
+// bodies before persisting, so the transcript never stores the key (WU-311).
+func (e *Engine) recordStep(ctx context.Context, run sqlc.Run, seq int, kind string, req, resp any, tokens int, key string) error {
 	reqJSON, _ := json.Marshal(req)
 	respJSON, _ := json.Marshal(resp)
+	if key != "" {
+		reqJSON = []byte(redactSecrets(string(reqJSON), key))
+		respJSON = []byte(redactSecrets(string(respJSON), key))
+	}
 	err := e.q.CreateRunStep(ctx, sqlc.CreateRunStepParams{
 		ID:           newID(),
 		RunID:        run.ID,
@@ -152,6 +159,21 @@ func (e *Engine) recordStep(ctx context.Context, run sqlc.Run, seq int, kind str
 		return fmt.Errorf("record step: %w", err)
 	}
 	return nil
+}
+
+// redactSecrets masks every occurrence of the live secret in a serialized
+// transcript body, replacing the value with a placeholder (WU-311). It guards
+// against both the bare value and a common JSON `"key":"<value>"` shape.
+func redactSecrets(body string, secret string) string {
+	if secret == "" {
+		return body
+	}
+	const mask = "[REDACTED]"
+	out := strings.ReplaceAll(body, secret, mask)
+	// Also mask a JSON string value that exactly equals the secret, e.g.
+	// `"sk-..."` (the value alone), by blanking it.
+	out = strings.ReplaceAll(out, "\""+secret+"\"", "\""+mask+"\"")
+	return out
 }
 
 // cancelFlag is the cancellation signal checked between tool-loop steps

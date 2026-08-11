@@ -121,7 +121,7 @@ func runToolLoop(ctx context.Context, eng *Engine, run sqlc.Run, agent sqlc.Agen
 
 	steps := 0
 	var promptTokens, completionTokens int64
-	cl, err := eng.clientFor(ctx, agent)
+	cl, key, err := eng.clientFor(ctx, agent)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func runToolLoop(ctx context.Context, eng *Engine, run sqlc.Run, agent sqlc.Agen
 		}
 		promptTokens += int64(resp.Usage.PromptTokens)
 		completionTokens += int64(resp.Usage.CompletionTokens)
-		_ = eng.recordStep(ctx, run, steps, "model", req, resp, resp.Usage.PromptTokens+resp.Usage.CompletionTokens)
+		_ = eng.recordStep(ctx, run, steps, "model", req, resp, resp.Usage.PromptTokens+resp.Usage.CompletionTokens, key)
 
 		if len(resp.Choices) == 0 {
 			return &loopOutcome{promptTokens: promptTokens, completionTokens: completionTokens}, nil
@@ -220,7 +220,7 @@ func chatStreamLoop(ctx context.Context, eng *Engine, run sqlc.Run, agent sqlc.A
 
 	steps := 0
 	var promptTokens, completionTokens int64
-	cl, err := eng.clientFor(ctx, agent)
+	cl, key, err := eng.clientFor(ctx, agent)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,7 @@ func chatStreamLoop(ctx context.Context, eng *Engine, run sqlc.Run, agent sqlc.A
 			promptTokens += int64(res.Usage.PromptTokens)
 			completionTokens += int64(res.Usage.CompletionTokens)
 		}
-		_ = eng.recordStep(ctx, run, steps, "model", req, res, int(promptTokens+completionTokens))
+		_ = eng.recordStep(ctx, run, steps, "model", req, res, int(promptTokens+completionTokens), key)
 
 		content := sb.String()
 		messages = append(messages, client.Message{Role: "assistant", Content: content})

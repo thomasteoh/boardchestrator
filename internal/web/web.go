@@ -694,6 +694,7 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/pricing.list", handleAction)
 	r.Post("/api/action/org.cap.set", handleAction)
 	r.Post("/api/action/usage.read", handleAction)
+	r.Post("/api/action/agent.kill-all", handleAction)
 	r.Post("/api/action/board.column.create", handleAction)
 	r.Post("/api/action/board.column.update", handleAction)
 	r.Post("/api/action/board.column.delete", handleAction)

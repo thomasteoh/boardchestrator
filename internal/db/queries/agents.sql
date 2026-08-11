@@ -38,6 +38,10 @@ ORDER BY name ASC;
 -- name: DeleteAgent :exec
 DELETE FROM agents WHERE id = ? AND org_id = ?;
 
+-- name: DeactivateAllAgentsByOrg :exec
+-- Kill-switch (WU-311): set every agent in an org to inactive instantly.
+UPDATE agents SET active = 0 WHERE org_id = ?;
+
 -- name: CreateAgentSkill :exec
 INSERT INTO agent_skills (agent_id, skill_id)
 SELECT ?, ?
