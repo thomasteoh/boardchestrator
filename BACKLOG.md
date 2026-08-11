@@ -292,10 +292,11 @@ Deps: 305, 209.
 AC: schedule fire test with fake clock; overlap skip test; timezone handling (cron evaluated in UTC — org-tz documented as future refinement, orgs have no tz column yet).
 Notes: added `project_id` to runs (migration 0025) + `CountActiveRunsByProject` for the overlap guard; `EnqueueRun` gained a projectID arg threaded through mention/column/chat callers; scheduler is a ticker goroutine (`schedulerLoop`/`fireDueTriggers`) stopped on Shutdown; `SchedPollInterval` config (BC_SCHED_POLL_INTERVAL, default 60s); next_at compared in RFC3339 to match `schedule.NextAt`.
 
-### WU-310 · Cost controls + usage — `ready`
+### WU-310 · Cost controls + usage — `done 2026-08-11 WU-310: cost controls + usage — model pricing, org cap + threshold alert, per-agent limits, usage dashboard`
 Deps: 305.
 Token/cost aggregation from run_steps (pricing table per provider model, editable by platform admin); org monthly spend vs cap: threshold alert notification, hard stop blocks new runs (clear error to trigger); per-agent runs/hour + token budget enforced at claim; org usage dashboard (by agent/project/timeframe).
 AC: cap threshold + hard stop tests; rate limit claim test; dashboard aggregation golden.
+Notes: `model_pricing` (0026) is platform-global (no org_id) — exempted from check-scope tenant list; orgs gained `monthly_cap_usd` + `cap_alert_pct`; per-agent `runs_per_hour`/`token_budget` enforced in `EnqueueRun`; threshold alert fires once per org (in-memory `capAlerted` map) and records an `org_cap_alerts` row + publishes `org.cap.threshold`; `pricing.*`/`org.cap.set`/`usage.read` actions + `/app/org/{orgID}/usage` dashboard (by agent/project).
 
 ### WU-311 · Phase 3 hardening — `ready`
 Deps: all 3xx.
