@@ -308,10 +308,11 @@ Notes: `agent.kill-all` (ScopeOrg, perm `agent.kill`) deactivates every org agen
 
 ## Phase 4 — API Surface (branch `build/phase-4`)
 
-### WU-401 · REST API core — `ready`
+### WU-401 · REST API core — `done 2026-08-11 WU-401: REST API core — RPC, bearer auth, problem+json, idempotency, rate limit`
 Deps: 109, 006.
 `/api/v1/actions/{name}` uniform RPC from registry; bearer auth; problem+json errors with stable codes; `Idempotency-Key`; per-key token-bucket rate limit + headers.
 AC: RPC dispatch tests (auth, scope, unknown action, validation error shape); idempotent replay; 429 with headers.
+Notes: `handleRPCv1` in `internal/web/rpc_v1.go` reads the actor from `auth.APIKeyActorFrom` (bearer middleware already in the server chain), maps dispatch sentinels to RFC 7807 problem+json with stable codes (`unauthorized`, `unknown_action`, `invalid_input`, `scope_error`, `forbidden`, `approval_pending`, `internal`, `rate_limited`), honors `Idempotency-Key` + `X-Org-Id`/`X-Project-Id`/`X-Team-Id` scope headers, and applies an in-memory per-key token bucket (burst 60 / 1 per sec, tunable via `SetRateLimit`) with `X-RateLimit-Limit`/`X-RateLimit-Remaining`/`Retry-After` headers.
 
 ### WU-402 · Resource routes + OpenAPI — `ready`
 Deps: 401.
