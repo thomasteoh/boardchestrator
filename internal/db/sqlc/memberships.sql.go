@@ -192,3 +192,39 @@ func (q *Queries) FindMembershipsByResource(ctx context.Context, arg FindMembers
 	}
 	return items, nil
 }
+
+const findOrgsByActor = `-- name: FindOrgsByActor :many
+SELECT o.id, o.name
+FROM memberships m
+JOIN orgs o ON o.id = m.org_id
+WHERE m.actor_id = ? AND m.actor_type = 'user' AND m.resource_type = 'org'
+ORDER BY o.name ASC
+`
+
+type FindOrgsByActorRow struct {
+	ID   string
+	Name string
+}
+
+func (q *Queries) FindOrgsByActor(ctx context.Context, actorID string) ([]FindOrgsByActorRow, error) {
+	rows, err := q.db.QueryContext(ctx, findOrgsByActor, actorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindOrgsByActorRow
+	for rows.Next() {
+		var i FindOrgsByActorRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

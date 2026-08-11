@@ -22,3 +22,10 @@ WHERE org_id = ? AND resource_type = ? AND resource_id = ?;
 -- name: DeleteMembership :exec
 DELETE FROM memberships
 WHERE org_id = ? AND actor_id = ? AND actor_type = ? AND resource_type = ? AND resource_id = ?;
+
+-- name: FindOrgsByActor :many
+SELECT o.id, o.name
+FROM memberships m
+JOIN orgs o ON o.id = m.org_id
+WHERE m.actor_id = ? AND m.actor_type = 'user' AND m.resource_type = 'org'
+ORDER BY o.name ASC;

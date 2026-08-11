@@ -95,6 +95,29 @@ type BoardColumn struct {
 	CreatedAt      string
 }
 
+type ChatMessage struct {
+	ID          string
+	ChatID      string
+	Role        string
+	Content     string
+	RunID       sql.NullString
+	ActionName  string
+	ActionInput string
+	CreatedAt   string
+}
+
+type ChatSession struct {
+	ID        string
+	OrgID     string
+	ProjectID sql.NullString
+	TeamID    sql.NullString
+	AgentID   string
+	Name      string
+	CreatedBy string
+	CreatedAt string
+	UpdatedAt string
+}
+
 type Comment struct {
 	ID        string
 	TaskID    string

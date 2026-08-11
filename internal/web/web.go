@@ -208,7 +208,24 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 	if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
 		actor.ID = sess.UserID
 	}
-	result, err := disp.Dispatch(r.Context(), actor, name, input, action.Opts{})
+	// X-Dry-Run: chat propose→approve (WU-308) runs the inner action in dry-run
+	// mode to render a preview without mutating anything. X-Org-Id/X-Project-Id/
+	// X-Team-Id carry the chat session's scope so the inner action re-dispatches
+	// in the session's project/team rather than the actor's default scope.
+	opts := action.Opts{}
+	if r.Header.Get("X-Dry-Run") == "true" {
+		opts.DryRun = true
+	}
+	if v := r.Header.Get("X-Org-Id"); v != "" {
+		opts.Org = v
+	}
+	if v := r.Header.Get("X-Project-Id"); v != "" {
+		opts.Proj = v
+	}
+	if v := r.Header.Get("X-Team-Id"); v != "" {
+		opts.Team = v
+	}
+	result, err := disp.Dispatch(r.Context(), actor, name, input, opts)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -640,6 +657,7 @@ func Routes(r chi.Router) {
 	// Task detail routes
 	r.Get("/app/org/{orgID}/project/{projectID}/task/{taskID}", handleTaskDetail)
 	r.Get("/app/org/{orgID}/project/{projectID}/task/{taskID}/run/{runID}", handleRunDetail)
+	r.Get("/app/org/{orgID}/run/{runID}", handleRunDetail) // generic run detail (chat runs, WU-308)
 	r.Post("/api/action/task.create", handleAction)
 	r.Post("/api/action/task.update", handleAction)
 	r.Post("/api/action/task.assign", handleAction)
@@ -656,6 +674,13 @@ func Routes(r chi.Router) {
 	r.Get("/app/org/{orgID}/project/{projectID}/board", handleBoardView)
 	r.Get("/app/project/{projectID}/board/columns", handleBoardColumns)
 	r.Get("/app/org/{orgID}/project/{projectID}/backlog", handleBacklogView)
+	// Chat routes (WU-308)
+	r.Get("/app/chat", handleChatPage)
+	r.Get("/app/chat/{chatID}/history", handleChatHistoryPartial)
+	r.Post("/api/action/chat.session.create", handleAction)
+	r.Post("/api/action/chat.send", handleAction)
+	r.Post("/api/action/chat.history", handleAction)
+	r.Post("/api/action/chat.session.list", handleAction)
 	r.Post("/api/action/board.column.create", handleAction)
 	r.Post("/api/action/board.column.update", handleAction)
 	r.Post("/api/action/board.column.delete", handleAction)

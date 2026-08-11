@@ -90,6 +90,84 @@ func assembleContext(ctx context.Context, q *sqlc.Queries, agent sqlc.Agent, org
 	return b.String(), nil
 }
 
+// assembleChatContext builds the model prompt for a chat run (WU-308). It
+// mirrors assembleContext but, in place of the task snapshot, threads the chat
+// session's transcript ([chat] block) so the agent sees prior turns. The
+// chatID/orgID scope the history read; the run's project is the session's
+// project (assembleContext already loads project/team context from orgID —
+// here we pass the session's projectID explicitly).
+func assembleChatContext(ctx context.Context, q *sqlc.Queries, agent sqlc.Agent, orgID, projectID, chatID string, instruction string) (string, error) {
+	var b strings.Builder
+	write := func(label string, body string) {
+		if body == "" {
+			return
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(&b, "[%s]\n%s\n[/%s]", label, body, label)
+	}
+
+	// Org context.
+	if orgID != "" {
+		org, err := q.FindOrgByID(ctx, orgID)
+		if err == nil {
+			write("org-context", org.Context)
+		}
+	}
+
+	// Team + project context.
+	if projectID != "" {
+		p, err := q.FindProjectByID(ctx, sqlc.FindProjectByIDParams{ID: projectID, OrgID: orgID})
+		if err == nil {
+			if p.TeamID.Valid && p.TeamID.String != "" {
+				team, err := q.FindTeamByID(ctx, sqlc.FindTeamByIDParams{ID: p.TeamID.String, OrgID: orgID})
+				if err == nil {
+					write("team-context", team.Context)
+				}
+			}
+			write("project-context", p.Context)
+		}
+	}
+
+	// Agent context.
+	write("agent-context", agent.Context)
+
+	// Skill instructions.
+	skills, err := q.ListAgentSkillsWithActions(ctx, sqlc.ListAgentSkillsWithActionsParams{
+		AgentID: agent.ID,
+		OrgID:   sql.NullString{String: orgID, Valid: orgID != ""},
+	})
+	if err != nil {
+		return "", fmt.Errorf("assemble chat: list agent skills: %w", err)
+	}
+	for _, s := range skills {
+		write("skill-"+s.Name, s.Instructions)
+	}
+
+	// Chat transcript. The history read is scoped through the parent session
+	// (chat_messages JOIN chat_sessions on org_id), so a cross-org chatID
+	// yields an empty transcript.
+	if chatID != "" {
+		msgs, err := q.ListChatMessages(ctx, sqlc.ListChatMessagesParams{ChatID: chatID, OrgID: orgID})
+		if err != nil {
+			return "", fmt.Errorf("assemble chat: list history: %w", err)
+		}
+		var tb strings.Builder
+		for _, m := range msgs {
+			fmt.Fprintf(&tb, "%s: %s\n", m.Role, m.Content)
+		}
+		write("chat", tb.String())
+	}
+
+	// Trigger line (the user's latest instruction).
+	if instruction != "" {
+		write("trigger", instruction)
+	}
+
+	return b.String(), nil
+}
+
 // taskSnapshot renders the labelled task context block: the task fields, its
 // labels, comments, relations, and attachment names (SPEC §10).
 func taskSnapshot(ctx context.Context, q *sqlc.Queries, taskID, projectID, orgID string) (string, error) {

@@ -2,9 +2,11 @@ package agentrt
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/client"
@@ -183,6 +185,159 @@ func runToolLoop(ctx context.Context, eng *Engine, run sqlc.Run, agent sqlc.Agen
 		if approvalPending {
 			return &loopOutcome{approvalPending: true, promptTokens: promptTokens, completionTokens: completionTokens}, nil
 		}
+		messages = append(messages, results...)
+	}
+}
+
+// chatStreamLoop drives the streaming chat tool loop (WU-308) for a run with a
+// chat_session_id. It is a variant of runToolLoop that:
+//
+//   - calls ChatCompletionStream instead of ChatCompletion;
+//   - forwards each streamed content delta to the engine's DeltaSink so the
+//     server can push it to the initiating user as a chat-delta SSE event;
+//   - after each assistant turn writes the assistant's message to chat_messages,
+//     carrying the run_id + action card fields (action_name/action_input) when
+//     the turn performed tool calls;
+//   - mirrors runToolLoop for tool execution, approval, step-cap and tokens.
+//
+// The assistant message is written once per turn (streamed turns that perform
+// tool calls write a card-bearing message; the final text-only turn writes the
+// reply). userID is the run's initiating user, used only to target deltas.
+func chatStreamLoop(ctx context.Context, eng *Engine, run sqlc.Run, agent sqlc.Agent, prompt string, chatID, userID string) (*loopOutcome, error) {
+	q := eng.q
+	messages := []client.Message{
+		{Role: "system", Content: systemPrompt(agent)},
+		{Role: "user", Content: prompt},
+	}
+	eff, err := EffectivePerms(ctx, q, agent)
+	if err != nil {
+		return nil, fmt.Errorf("chat run: resolve effective perms: %w", err)
+	}
+	tools, err := toolsForAgent(ctx, q, agent, eff)
+	if err != nil {
+		return nil, err
+	}
+
+	steps := 0
+	var promptTokens, completionTokens int64
+	cl, err := eng.clientFor(ctx, agent)
+	if err != nil {
+		return nil, err
+	}
+	for {
+		if steps >= MaxStepsPerRun {
+			return &loopOutcome{stepCapped: true, promptTokens: promptTokens, completionTokens: completionTokens}, nil
+		}
+		steps++
+
+		req := client.CompletionRequest{
+			Model:    cl.Model(),
+			Messages: messages,
+			Tools:    tools,
+		}
+
+		// Stream the assistant turn. Content deltas are forwarded to the
+		// DeltaSink and accumulated; tool_calls are accumulated for dispatch.
+		var sb strings.Builder
+		var toolCalls []client.ToolCall
+		var usage client.Usage
+		res, err := cl.ChatCompletionStream(ctx, req, func(d client.StreamDelta) error {
+			if d.Type == "" {
+				return nil
+			}
+			if d.Delta.Content != "" {
+				sb.WriteString(d.Delta.Content)
+				if eng.delta != nil {
+					eng.delta(chatID, run.ID, userID, d.Delta.Content)
+				}
+			}
+			if d.Delta.ToolCalls != nil {
+				toolCalls = append(toolCalls, d.Delta.ToolCalls...)
+			}
+			if d.Usage != nil {
+				usage = *d.Usage
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		promptTokens += int64(usage.PromptTokens)
+		completionTokens += int64(usage.CompletionTokens)
+		if res != nil {
+			promptTokens += int64(res.Usage.PromptTokens)
+			completionTokens += int64(res.Usage.CompletionTokens)
+		}
+		_ = eng.recordStep(ctx, run, steps, "model", req, res, int(promptTokens+completionTokens))
+
+		content := sb.String()
+		messages = append(messages, client.Message{Role: "assistant", Content: content})
+
+		if len(toolCalls) == 0 {
+			// Final reply: write the assistant message (no cards).
+			msgID := newID()
+			if err := q.CreateChatMessage(ctx, sqlc.CreateChatMessageParams{
+				ID:          msgID,
+				ChatID:      chatID,
+				Role:        "assistant",
+				Content:     content,
+				RunID:       sql.NullString{String: run.ID, Valid: true},
+				ActionName:  "",
+				ActionInput: "",
+				ID_2:        chatID,
+				OrgID:       run.OrgID,
+			}); err != nil {
+				return nil, fmt.Errorf("chat run: write assistant message: %w", err)
+			}
+			return &loopOutcome{promptTokens: promptTokens, completionTokens: completionTokens}, nil
+		}
+
+		// Tool calls: execute each and feed results back.
+		var results []client.Message
+		approvalPending := false
+		for _, tc := range toolCalls {
+			name := tc.Function.Name
+			args := json.RawMessage(tc.Function.Arguments)
+			res, err := eng.dispatchTool(ctx, run, agent, name, args)
+			if err != nil {
+				if errors.Is(err, action.ErrApprovalPending{}) {
+					approvalPending = true
+					break
+				}
+				results = append(results, client.Message{
+					Role:    "tool",
+					Content: fmt.Sprintf(`{"tool":"%s","error":%q}`, name, err.Error()),
+				})
+				continue
+			}
+			results = append(results, client.Message{
+				Role:    "tool",
+				Content: res.Content,
+			})
+		}
+		if approvalPending {
+			return &loopOutcome{approvalPending: true, promptTokens: promptTokens, completionTokens: completionTokens}, nil
+		}
+
+		// Write the assistant turn as a card-bearing message (one card per
+		// tool call). run_id links the card to the run; action_name/input let
+		// the UI render e.g. "Created BC-142" linked to the task.
+		cardInput, _ := json.Marshal(toolCalls)
+		msgID := newID()
+		if err := q.CreateChatMessage(ctx, sqlc.CreateChatMessageParams{
+			ID:          msgID,
+			ChatID:      chatID,
+			Role:        "assistant",
+			Content:     content,
+			RunID:       sql.NullString{String: run.ID, Valid: true},
+			ActionName:  toolCalls[0].Function.Name,
+			ActionInput: string(cardInput),
+			ID_2:        chatID,
+			OrgID:       run.OrgID,
+		}); err != nil {
+			return nil, fmt.Errorf("chat run: write card message: %w", err)
+		}
+
 		messages = append(messages, results...)
 	}
 }

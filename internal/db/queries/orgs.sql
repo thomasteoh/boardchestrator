@@ -33,6 +33,18 @@ SELECT id, org_id, name, slug, context, visibility, created_at
 FROM teams
 WHERE id = ? AND org_id = ?;
 
+-- name: ListTeamsByOrg :many
+SELECT id, org_id, name, slug, context, visibility, created_at
+FROM teams
+WHERE org_id = ?
+ORDER BY name ASC;
+
+-- name: ListProjectsByOrg :many
+SELECT id, org_id, team_id, name, key, context, visibility, archived, next_task_num, created_at
+FROM projects
+WHERE org_id = ?
+ORDER BY name ASC;
+
 -- name: CreateProject :one
 INSERT INTO projects (id, org_id, team_id, name, key, context, visibility)
 VALUES (?, ?, ?, ?, ?, ?, ?)

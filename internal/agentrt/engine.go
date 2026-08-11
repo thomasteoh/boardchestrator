@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/thomasteoh/boardchestrator/internal/action"
@@ -26,16 +27,24 @@ type Engine struct {
 	disp   *action.Dispatcher
 	secret []byte
 	now    func() time.Time
+	delta  func(chatID, runID, userID, delta string) // chat streaming sink (WU-308); nil for batch
 }
 
 // Config wires the engine. Client is required; secret is the tenant key used
 // to decrypt provider credentials. Events carries tool-call side effects to
-// the bus (nil ⇒ noop).
+// the bus (nil ⇒ noop). DeltaSink, when set, receives streamed assistant
+// content deltas for chat runs (WU-308): the server wires it to the SSE hub so
+// deltas reach the initiating user as chat-delta events. It is nil for batch
+// (non-chat) runs and for tests that don't exercise streaming.
 type Config struct {
 	DB        *sql.DB
 	Client    client.ProviderClient
 	Secret    string
 	EventSink action.EventSink
+	// DeltaSink is called with (chatID, runID, userID, delta) for each
+	// streamed content chunk of a chat run. userID may be "" when the run's
+	// initiator cannot be mapped to a user id (e.g. an API-key actor).
+	DeltaSink func(chatID, runID, userID, delta string)
 }
 
 // New builds a run engine over db. The dispatcher mirrors the server's but
@@ -57,6 +66,7 @@ func New(cfg Config) *Engine {
 		disp:   disp,
 		secret: tenant.PadKey(cfg.Secret),
 		now:    time.Now,
+		delta:  cfg.DeltaSink,
 	}
 }
 
@@ -208,7 +218,13 @@ func (e *Engine) Handler(store *job.JobStore) job.JobHandler {
 			return fmt.Errorf("run job: find agent: %w", err)
 		}
 
-		out, err := e.executeRun(ctx, run, agent, rj.Instruction)
+		var out *loopOutcome
+		if run.ChatSessionID.Valid && run.ChatSessionID.String != "" {
+			// Chat run (WU-308): stream deltas + write assistant messages.
+			out, err = e.executeChatRun(ctx, run, agent, rj.Instruction)
+		} else {
+			out, err = e.executeRun(ctx, run, agent, rj.Instruction)
+		}
 		if err != nil {
 			return e.failAndRetry(ctx, store, j, run, agent, err)
 		}
@@ -299,6 +315,52 @@ func (e *Engine) executeRun(ctx context.Context, run sqlc.Run, agent sqlc.Agent,
 		return nil, err
 	}
 	out, err := runToolLoop(ctx, e, run, agent, prompt, nil)
+	if err != nil {
+		return nil, err
+	}
+	if out.approvalPending {
+		_, _ = e.q.SetRunAwaitingApproval(ctx, sqlc.SetRunAwaitingApprovalParams{ID: run.ID, OrgID: run.OrgID})
+		return out, nil
+	}
+	return out, nil
+}
+
+// executeChatRun runs the streaming chat lifecycle for a run with a
+// chat_session_id (WU-308): assemble chat context, then chatStreamLoop which
+// streams deltas to the DeltaSink and writes assistant messages + cards.
+func (e *Engine) executeChatRun(ctx context.Context, run sqlc.Run, agent sqlc.Agent, instruction string) (*loopOutcome, error) {
+	started, err := e.q.StartRun(ctx, sqlc.StartRunParams{ID: run.ID, OrgID: run.OrgID})
+	if err != nil {
+		return nil, fmt.Errorf("chat run: start: %w", err)
+	}
+	run = started
+
+	// The chat session carries the project scope + the initiating user. Read it
+	// so deltas route to the right user and context is scoped correctly.
+	chatID := run.ChatSessionID.String
+	sess, err := e.q.FindChatSessionByID(ctx, sqlc.FindChatSessionByIDParams{ID: chatID, OrgID: run.OrgID})
+	if err != nil {
+		return nil, fmt.Errorf("chat run: find session: %w", err)
+	}
+	projectID := ""
+	if sess.ProjectID.Valid {
+		projectID = sess.ProjectID.String
+	}
+
+	userID := ""
+	if run.InitiatedBy.Valid {
+		// InitiatedBy is "user:<id>" or "agent:<id>" etc.; strip the type
+		// prefix to get the user id for SSE targeting.
+		if _, after, ok := strings.Cut(run.InitiatedBy.String, ":"); ok {
+			userID = after
+		}
+	}
+
+	prompt, err := assembleChatContext(ctx, e.q, agent, run.OrgID, projectID, chatID, instruction)
+	if err != nil {
+		return nil, err
+	}
+	out, err := chatStreamLoop(ctx, e, run, agent, prompt, chatID, userID)
 	if err != nil {
 		return nil, err
 	}

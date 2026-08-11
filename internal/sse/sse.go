@@ -316,6 +316,34 @@ func (h *Hub) ClientCount() int {
 	return len(h.subs)
 }
 
+// SendToUser delivers a named event with raw data payload to every live client
+// for userID (WU-308: chat deltas target the initiating user only, not the
+// whole org). It frames the message, records it for replay, and non-blocking
+// delivers to matching clients. userID "" delivers to nobody (no anonymous
+// audience).
+func (h *Hub) SendToUser(userID, name string, data []byte) {
+	if userID == "" {
+		return
+	}
+	id := h.seq.Add(1)
+	msg := sseMessage{id: id, name: name, data: data}
+	h.record(msg)
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for c := range h.subs {
+		if c.userID != userID {
+			continue
+		}
+		select {
+		case c.ch <- msg:
+		default:
+			// Client buffer full: drop. It will refetch on reconnect; the
+			// ring buffer covers brief gaps.
+		}
+	}
+}
+
 // parseLastEventID reads the reconnect position from the Last-Event-ID header or
 // the last_event_id query param (EventSource sends the header; the query param
 // is a fallback for manual reconnects).

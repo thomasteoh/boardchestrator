@@ -471,4 +471,178 @@ document.addEventListener("alpine:init", function () {
       }
     };
   });
+
+  /* Chat sidebar (WU-308).
+   *
+   * Config comes from data-* attributes on the root element:
+   *   data-agent, data-scope-kind, data-scope-org, data-scope-team, data-scope-project.
+   *
+   * Streaming: chat-delta SSE events (targeted to this user by the server)
+   * append assistant content to the transcript. send() dispatches chat.send;
+   * the server chatLoop enqueues a chat run and the engine streams deltas back.
+   *
+   * Action cards: assistant messages with action_name render a card with
+   * Propose (dry-run preview) and Approve (apply) controls. Propose/Approve
+   * re-dispatch the card's inner action via the web action endpoint.
+   */
+  window.Alpine.data("chat", function () {
+    return {
+      chatID: "",
+      agent: "",
+      scopeKind: "project",
+      scopeOrg: "",
+      scopeTeam: "",
+      scopeProject: "",
+      text: "",
+      sending: false,
+      streaming: false,
+
+      init: function () {
+        var el = this.$el;
+        this.agent = el.dataset.agent || "";
+        this.scopeKind = el.dataset.scopeKind || "project";
+        this.scopeOrg = el.dataset.scopeOrg || "";
+        this.scopeTeam = el.dataset.scopeTeam || "";
+        this.scopeProject = el.dataset.scopeProject || "";
+
+        // Streamed assistant deltas append to the transcript.
+        var self = this;
+        bc.sse.on("chat-delta", function (e) {
+          var d;
+          try { d = JSON.parse(e.data); } catch (ex) { return; }
+          if (d.chat_id !== self.chatID) return;
+          self.streaming = true;
+          var box = document.getElementById("chat-transcript");
+          if (box) {
+            var pending = document.getElementById("chat-pending");
+            if (!pending) {
+              pending = document.createElement("div");
+              pending.id = "chat-pending";
+              pending.className = "bc-chat-msg bc-chat-msg-assistant";
+              box.appendChild(pending);
+            }
+            pending.textContent += d.delta || "";
+            box.scrollTop = box.scrollHeight;
+          }
+        });
+      },
+
+      // Load sessions for the currently selected scope.
+      loadSessions: function () {
+        // chat.session.list scopes through the action; the page handler already
+        // rendered the default scope's sessions. Full re-render on scope change
+        // is handled by the server partial (future WU); for now no-op beyond
+        // the selection state.
+      },
+
+      newSession: function () {
+        var self = this;
+        this.sending = true;
+        htmx.ajax("POST", "/api/action/chat.session.create", {
+          target: "#chat-transcript",
+          swap: "outerHTML",
+          headers: { "X-CSRF-Token": bc.csrfToken() },
+          vals: JSON.stringify({
+            org_id: this.scopeOrg,
+            project_id: this.scopeProject,
+            team_id: this.scopeTeam,
+            agent_id: this.agent,
+            name: ""
+          }),
+          callback: function () { self.sending = false; }
+        });
+      },
+
+      openSession: function (id) {
+        this.chatID = id;
+        var box = document.getElementById("chat-transcript");
+        if (box) {
+          htmx.ajax("GET", "/app/chat/" + encodeURIComponent(id) + "/history", {
+            target: "#chat-transcript",
+            swap: "innerHTML"
+          });
+        }
+      },
+
+      send: function () {
+        if (this.sending || !this.chatID || this.text.trim() === "") return;
+        var text = this.expandSlash(this.text.trim());
+        var self = this;
+        this.sending = true;
+        this.text = "";
+        htmx.ajax("POST", "/api/action/chat.send", {
+          target: "#chat-transcript",
+          swap: "outerHTML",
+          headers: { "X-CSRF-Token": bc.csrfToken() },
+          vals: JSON.stringify({ chat_id: this.chatID, text: text }),
+          callback: function () { self.sending = false; }
+        });
+      },
+
+      onKey: function (ev) {
+        if (ev.key === "Enter" && !ev.shiftKey) {
+          ev.preventDefault();
+          this.send();
+        }
+      },
+
+      // Slash-command expansion: /assign, /label, /decompose map to the
+      // underlying board actions the agent runs on approval.
+      expandSlash: function (t) {
+        var m = t.match(/^\/(assign|label|decompose)\s+(.*)$/);
+        if (!m) return t;
+        var cmd = m[1];
+        var rest = m[2];
+        if (cmd === "assign") {
+          return "Assign " + rest + " to the responsible person and tell me who.";
+        }
+        if (cmd === "label") {
+          return "Apply label " + rest + " to the matching tasks and confirm.";
+        }
+        if (cmd === "decompose") {
+          return "Decompose " + rest + " into subtasks and propose the breakdown.";
+        }
+        return t;
+      },
+
+      // Propose: dry-run the card's inner action for a preview (WU-308).
+      propose: function (ev) {
+        var card = ev.target.closest(".bc-action-card");
+        if (!card) return;
+        var actionName = card.dataset.action;
+        var input = card.dataset.input;
+        var self = this;
+        htmx.ajax("POST", "/api/action/" + actionName, {
+          target: card,
+          swap: "outerHTML",
+          headers: {
+            "X-CSRF-Token": bc.csrfToken(),
+            "X-Dry-Run": "true",
+            "X-Org-Id": card.dataset.org,
+            "X-Project-Id": card.dataset.project
+          },
+          vals: input
+        });
+      },
+
+      // Approve: apply the card's inner action for real (WU-308).
+      approve: function (ev) {
+        var card = ev.target.closest(".bc-action-card");
+        if (!card) return;
+        var actionName = card.dataset.action;
+        var input = card.dataset.input;
+        var self = this;
+        htmx.ajax("POST", "/api/action/" + actionName, {
+          target: card,
+          swap: "outerHTML",
+          headers: {
+            "X-CSRF-Token": bc.csrfToken(),
+            "X-Org-Id": card.dataset.org,
+            "X-Project-Id": card.dataset.project
+          },
+          vals: input
+        });
+      }
+    };
+  });
 });

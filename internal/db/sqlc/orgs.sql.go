@@ -529,6 +529,47 @@ func (q *Queries) ListOrgs(ctx context.Context) ([]Org, error) {
 	return items, nil
 }
 
+const listProjectsByOrg = `-- name: ListProjectsByOrg :many
+SELECT id, org_id, team_id, name, key, context, visibility, archived, next_task_num, created_at
+FROM projects
+WHERE org_id = ?
+ORDER BY name ASC
+`
+
+func (q *Queries) ListProjectsByOrg(ctx context.Context, orgID string) ([]Project, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectsByOrg, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Project
+	for rows.Next() {
+		var i Project
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.TeamID,
+			&i.Name,
+			&i.Key,
+			&i.Context,
+			&i.Visibility,
+			&i.Archived,
+			&i.NextTaskNum,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRolesByOrg2 = `-- name: ListRolesByOrg2 :many
 SELECT id, org_id, name, is_system, grants_json, created_at
 FROM roles
@@ -551,6 +592,44 @@ func (q *Queries) ListRolesByOrg2(ctx context.Context, orgID string) ([]Role, er
 			&i.Name,
 			&i.IsSystem,
 			&i.GrantsJson,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTeamsByOrg = `-- name: ListTeamsByOrg :many
+SELECT id, org_id, name, slug, context, visibility, created_at
+FROM teams
+WHERE org_id = ?
+ORDER BY name ASC
+`
+
+func (q *Queries) ListTeamsByOrg(ctx context.Context, orgID string) ([]Team, error) {
+	rows, err := q.db.QueryContext(ctx, listTeamsByOrg, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Team
+	for rows.Next() {
+		var i Team
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Name,
+			&i.Slug,
+			&i.Context,
+			&i.Visibility,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

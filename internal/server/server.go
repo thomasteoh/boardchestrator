@@ -90,6 +90,9 @@ type Server struct {
 	// triggerUnsub is the mention/column subscription that enqueues agent runs
 	// (WU-307). Its unsubscribe func is kept to stop on Shutdown.
 	triggerUnsub func()
+	// chatUnsub is the chat.sent subscription that enqueues chat runs (WU-308).
+	// Kept to stop on Shutdown.
+	chatUnsub func()
 	// trigq is the read query handle the trigger loop uses to re-read tasks,
 	// comments, and columns from the DB (source of truth for mention/column
 	// detection). Set in Start once the DB is wired.
@@ -388,6 +391,7 @@ func (s *Server) Start(ctx context.Context) error {
 			DB:        s.db,
 			Secret:    s.cfg.SecretKey,
 			EventSink: s.EventSink(),
+			DeltaSink: s.chatDeltaSink(),
 		})
 		store := job.NewJobStore(s.db)
 		s.trigq = sqlc.New(s.db)
@@ -415,6 +419,14 @@ func (s *Server) Start(ctx context.Context) error {
 			"task.move":      {},
 		}}, 32)
 		go s.triggerLoop(ctx, store, triggerSub)
+
+		// Chat runs (WU-308): when chat.send writes a user message and emits
+		// chat.sent, enqueue a chat run job for the session's agent. The engine
+		// Handler detects the run's chat_session_id and streams deltas back to
+		// the initiating user.
+		var chatSub *event.Subscription
+		chatSub, s.chatUnsub = s.bus.Subscribe(event.Filter{Names: map[string]struct{}{"chat.sent": {}}}, 16)
+		go s.chatLoop(ctx, store, chatSub)
 	}
 
 	// Create the action dispatcher with DB-backed stores, scope resolver,
@@ -506,6 +518,10 @@ func (s *Server) Shutdown() {
 	// Stop the mention/column trigger subscriber (WU-307).
 	if s.triggerUnsub != nil {
 		s.triggerUnsub()
+	}
+	// Stop the chat run subscriber (WU-308).
+	if s.chatUnsub != nil {
+		s.chatUnsub()
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -681,5 +697,68 @@ func (s *Server) triggerOnColumn(ctx context.Context, store *job.JobStore, ev ev
 		slog.Warn("trigger: enqueue column", "agent", col.TriggerAgentID.String, "error", err)
 	} else if created {
 		slog.Debug("trigger: column enqueued", "agent", col.TriggerAgentID.String, "task", payload.ID)
+	}
+}
+
+// chatLoop drains chat.sent events and enqueues chat run jobs (WU-308). It
+// re-reads the chat session from the DB (source of truth for the agent + scope)
+// rather than trusting the event payload. The run is enqueued with the session's
+// agent and the user's latest message as the instruction; the engine Handler
+// detects the run's chat_session_id and streams deltas back to the initiator.
+func (s *Server) chatLoop(ctx context.Context, store *job.JobStore, sub *event.Subscription) {
+	for {
+		select {
+		case <-ctx.Done():
+			sub.Close()
+			return
+		case ev, ok := <-sub.C:
+			if !ok {
+				return
+			}
+			var payload struct {
+				ChatID string `json:"chat_id"`
+				Text   string `json:"text"`
+			}
+			if err := json.Unmarshal(ev.Payload, &payload); err != nil {
+				slog.Warn("chat: bad payload", "error", err)
+				continue
+			}
+			if payload.ChatID == "" {
+				continue
+			}
+
+			q := sqlc.New(s.db)
+			sess, err := q.FindChatSessionByID(ctx, sqlc.FindChatSessionByIDParams{ID: payload.ChatID, OrgID: ev.Org})
+			if err != nil {
+				slog.Warn("chat: session lookup", "chat_id", payload.ChatID, "error", err)
+				continue
+			}
+			if _, created, err := s.eng.EnqueueRun(ctx, store, ev.Org, sess.AgentID, "chat", "", payload.ChatID, sess.CreatedBy, payload.Text); err != nil {
+				slog.Warn("chat: enqueue run", "chat_id", payload.ChatID, "error", err)
+			} else if created {
+				slog.Debug("chat: run enqueued", "chat_id", payload.ChatID, "agent", sess.AgentID)
+			}
+		}
+	}
+}
+
+// chatDeltaSink returns the engine's chat-streaming sink (WU-308): it frames
+// each assistant content delta as a chat-delta SSE event and targets it to the
+// run's initiating user via SendToUser (not broadcast to the whole org). The
+// payload mirrors sseData so app.js can dispatch on the chat-delta event name.
+func (s *Server) chatDeltaSink() func(chatID, runID, userID, delta string) {
+	return func(chatID, runID, userID, delta string) {
+		if s.hub == nil {
+			return
+		}
+		payload, err := json.Marshal(struct {
+			ChatID string `json:"chat_id"`
+			RunID  string `json:"run_id"`
+			Delta  string `json:"delta"`
+		}{ChatID: chatID, RunID: runID, Delta: delta})
+		if err != nil {
+			return
+		}
+		s.hub.SendToUser(userID, sse.EventChatDelta, payload)
 	}
 }

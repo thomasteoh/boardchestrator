@@ -1,0 +1,147 @@
+package views
+
+// ChatAgent is an agent option for the chat agent picker (WU-308).
+type ChatAgent struct {
+	ID   string
+	Name string
+	Model string
+}
+
+// ChatScope is the selected chat scope for the sidebar selector (WU-308):
+// project (default), team, or org, depending on the user's grants.
+type ChatScope struct {
+	Kind      string // "project" | "team" | "org"
+	OrgID     string
+	TeamID    string // set when Kind == "team"
+	ProjectID string // set when Kind == "project"
+	Label     string
+}
+
+// ChatSessionRow is a chat session for the sidebar list (WU-308).
+type ChatSessionRow struct {
+	ID        string
+	Name      string
+	UpdatedAt string
+}
+
+// ChatMessageRow is a transcript message. An assistant message that performed
+// tool actions carries action_name/action_input so the UI renders an action
+// card (e.g. "Created BC-142") linked to run_id.
+type ChatMessageRow struct {
+	ID          string
+	Role        string
+	Content     string
+	RunID       string
+	ActionName  string
+	ActionInput string
+	OrgID       string // for the run-detail card link
+	ProjectID   string // scope for propose/approve re-dispatch
+}
+
+// ChatPage is the /chat page: scope selector, agent picker, session list,
+// transcript, message input, and inline propose→approve action cards.
+templ ChatPage(s Shell, scopes []ChatScope, agents []ChatAgent, sessions []ChatSessionRow, active ChatScope, activeAgent string) {
+	@Base(s) {
+		<div class="bc-chat" x-data="chat" data-agent={ activeAgent } data-scope-kind={ active.Kind } data-scope-org={ active.OrgID } data-scope-team={ active.TeamID } data-scope-project={ active.ProjectID }>
+			<aside class="bc-chat-sidebar" aria-label="Chat controls">
+				<!-- Scope selector: project (default) / team / org -->
+				<div class="bc-chat-field">
+					<label for="chat-scope">Scope</label>
+					<select id="chat-scope" name="scope" x-model="scope" x-on:change="loadSessions">
+						for _, sc := range scopes {
+							<option
+						value={ sc.Kind }
+						data-org={ sc.OrgID }
+						data-team={ sc.TeamID }
+						data-project={ sc.ProjectID }
+						selected={ sc.Kind == active.Kind && sc.OrgID == active.OrgID }
+					>{ sc.Label }</option>
+						}
+					</select>
+				</div>
+
+				<!-- Agent picker (@agent in chat) -->
+				<div class="bc-chat-field">
+					<label for="chat-agent">Agent</label>
+					<select id="chat-agent" name="agent" x-model="agent">
+						for _, a := range agents {
+							<option value={ a.ID } selected={ a.ID == activeAgent }>{ a.Name }</option>
+						}
+					</select>
+				</div>
+
+				<!-- New session button -->
+				<button class="bc-btn-primary" type="button" x-on:click="newSession">New chat</button>
+
+				<!-- Session list -->
+				<div class="bc-chat-sessions">
+					for _, sess := range sessions {
+						<button
+							class="bc-chat-session"
+							type="button"
+							x-on:click="openSession('{ sess.ID }')"
+						>
+							{ sess.Name }<br/>
+							<small>{ sess.UpdatedAt }</small>
+						</button>
+					}
+				</div>
+			</aside>
+
+			<section class="bc-chat-main">
+				<div class="bc-chat-transcript" id="chat-transcript">
+					{ children... }
+				</div>
+
+				<!-- Message input with slash-command expansion -->
+				<form class="bc-chat-composer" x-on:submit.prevent="send">
+					<textarea
+						class="bc-chat-input"
+						name="text"
+						x-model="text"
+						x-on:keydown="onKey"
+						placeholder="Message the agent… (/assign /label /decompose)"
+						rows="3"
+					></textarea>
+					<button class="bc-btn-primary" type="submit" x-bind:disabled="sending || text.trim() === ''">Send</button>
+				</form>
+			</section>
+		</div>
+	}
+}
+
+// ChatMessagesPartial renders the transcript fragment for a session (WU-308),
+// including action cards for assistant messages that performed tool calls. It
+// is swapped by the chat-delta SSE handler and on history load.
+templ ChatMessagesPartial(msgs []ChatMessageRow) {
+	for _, m := range msgs {
+		if m.Role == "assistant" && m.ActionName != "" {
+			@ChatActionCard(m)
+		} else {
+			<div class="bc-chat-msg bc-chat-msg-{ m.Role }" id="msg-{ m.ID }">
+				{ m.Content }
+			</div>
+		}
+	}
+}
+
+// ChatActionCard renders an action card for an assistant message that performed
+// a tool call (WU-308: "Created BC-142" linked to the run). The card carries
+// the action name, a human summary (title case action), and a link to the run
+// detail view. High-impact actions show inline propose→approve controls (the
+// propose/approve flow is driven by app.js chat component via htmx).
+templ ChatActionCard(m ChatMessageRow) {
+	<div class="bc-action-card" id="card-{ m.ID }">
+		<div class="bc-action-card-head">
+			<span class="bc-action-name">{ m.ActionName }</span>
+			if m.RunID != "" {
+				<a class="bc-action-run" href="/app/org/{ m.OrgID }/run/{ m.RunID }">run { m.RunID }</a>
+			}
+		</div>
+		<div class="bc-action-card-body">{ m.Content }</div>
+		<div class="bc-action-card-actions" data-action={ m.ActionName } data-input={ m.ActionInput } data-org={ m.OrgID } data-project={ m.ProjectID }>
+			<button class="bc-btn" type="button" x-on:click="propose">Propose</button>
+			<button class="bc-btn bc-btn-primary" type="button" x-on:click="approve">Approve</button>
+		</div>
+	</div>
+}

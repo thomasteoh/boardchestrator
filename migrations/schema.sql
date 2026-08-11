@@ -562,3 +562,31 @@ CREATE TABLE IF NOT EXISTS approvals (
 
 CREATE INDEX IF NOT EXISTS idx_approvals_org ON approvals(org_id, status, requested_at);
 CREATE INDEX IF NOT EXISTS idx_approvals_run ON approvals(run_id, status);
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id         TEXT PRIMARY KEY,
+    org_id     TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+    team_id    TEXT REFERENCES teams(id) ON DELETE CASCADE,
+    agent_id   TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_org ON chat_sessions(org_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_project ON chat_sessions(project_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id            TEXT PRIMARY KEY,
+    chat_id       TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    role          TEXT NOT NULL,
+    content       TEXT NOT NULL DEFAULT '',
+    run_id        TEXT REFERENCES runs(id) ON DELETE SET NULL,
+    action_name   TEXT NOT NULL DEFAULT '',
+    action_input  TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON chat_messages(chat_id, created_at);
