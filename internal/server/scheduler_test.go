@@ -129,7 +129,7 @@ func TestSchedulerOverlapSkip(t *testing.T) {
 	if _, err := q.CreateRun(ctx, sqlc.CreateRunParams{
 		ID: "run-active", OrgID: "org1", AgentID: "agt1", Trigger: "schedule",
 		TaskID: sql.NullString{}, ChatSessionID: sql.NullString{},
-		ProjectID:  sql.NullString{String: projID, Valid: true},
+		ProjectID:   sql.NullString{String: projID, Valid: true},
 		InitiatedBy: sql.NullString{}, Status: "queued",
 	}); err != nil {
 		t.Fatalf("seed active run: %v", err)
