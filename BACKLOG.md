@@ -314,10 +314,11 @@ Deps: 109, 006.
 AC: RPC dispatch tests (auth, scope, unknown action, validation error shape); idempotent replay; 429 with headers.
 Notes: `handleRPCv1` in `internal/web/rpc_v1.go` reads the actor from `auth.APIKeyActorFrom` (bearer middleware already in the server chain), maps dispatch sentinels to RFC 7807 problem+json with stable codes (`unauthorized`, `unknown_action`, `invalid_input`, `scope_error`, `forbidden`, `approval_pending`, `internal`, `rate_limited`), honors `Idempotency-Key` + `X-Org-Id`/`X-Project-Id`/`X-Team-Id` scope headers, and applies an in-memory per-key token bucket (burst 60 / 1 per sec, tunable via `SetRateLimit`) with `X-RateLimit-Limit`/`X-RateLimit-Remaining`/`Retry-After` headers.
 
-### WU-402 · Resource routes + OpenAPI — `ready`
+### WU-402 · Resource routes + OpenAPI — `done 2026-08-11 WU-402: resource routes + OpenAPI`
 Deps: 401.
 Resource-style GET aliases (projects, tasks incl. by `KEY-n`, comments, sprints, labels, search) with cursor pagination + ETag/If-Match on task update; OpenAPI 3.1 generated from registry (+aliases), served + embedded docs viewer.
 AC: pagination round-trip; stale If-Match → 412; OpenAPI validates against schema; docs page renders.
+Notes: `internal/web/resources_v1.go` adds `/api/v1` GET aliases (projects, task-by-`KEY-n`, comments, sprints, labels, search) + PUT task update under bearer auth; cursor pagination uses a base64 **offset** cursor (name-ordered slice, round-trip safe); task GET/UPDATE guarded by strong ETag (`etagFor(id,updated_at)`), stale `If-Match` → 412 problem+json `conflict`; `internal/web/openapi_v1.go` serves a hand-built OpenAPI 3.1 doc at `/api/v1/openapi.json` (paths for RPC + resources, BearerAuth security scheme, Problem schema) + embedded docs viewer page at `/app/docs`.
 
 ### WU-403 · MCP server — `ready`
 Deps: 401.
