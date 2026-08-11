@@ -286,10 +286,11 @@ Deps: 305, 007.
 AC: streaming endpoint test (delta framing); card render from run steps; propose-approve flow test (dry-run then real dispatch); scope permission test.
 Notes: chat deltas targeted per-user via `Hub.SendToUser`; `chat.send` enqueues the run via a `chat.sent` event + server `chatLoop` (actions have no JobStore); engine branches on `run.ChatSessionID` into a streaming `chatStreamLoop`; propose/approve re-dispatch the card's inner action via `/api/action/{name}` with `X-Dry-Run`/`X-Org-Id`/`X-Project-Id` headers.
 
-### WU-309 · Scheduled triggers — `ready`
+### WU-309 · Scheduled triggers — `done 2026-08-11 WU-309: scheduled triggers — migration, actions, UI, scheduler + overlap guard`
 Deps: 305, 209.
-`scheduled_triggers` migration; per-project UI (cron, agent, prompt); scheduler enqueues runs; overlap guard (skip if previous still running); pause/resume.
-AC: schedule fire test with fake clock; overlap skip test; timezone handling (cron evaluated in project owner org's configured tz — default UTC, documented).
+`scheduled_triggers` migration (0024); per-project UI (`/app/org/{orgID}/project/{projectID}/triggers`: cron, agent, prompt + pause/resume/delete); scheduler enqueues runs (trigger='schedule', prompt as instruction); overlap guard (skip if previous still running — per-project cap via new runs.project_id, migration 0025); pause/resume.
+AC: schedule fire test with fake clock; overlap skip test; timezone handling (cron evaluated in UTC — org-tz documented as future refinement, orgs have no tz column yet).
+Notes: added `project_id` to runs (migration 0025) + `CountActiveRunsByProject` for the overlap guard; `EnqueueRun` gained a projectID arg threaded through mention/column/chat callers; scheduler is a ticker goroutine (`schedulerLoop`/`fireDueTriggers`) stopped on Shutdown; `SchedPollInterval` config (BC_SCHED_POLL_INTERVAL, default 60s); next_at compared in RFC3339 to match `schedule.NextAt`.
 
 ### WU-310 · Cost controls + usage — `ready`
 Deps: 305.
