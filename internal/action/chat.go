@@ -121,11 +121,6 @@ func handleChatHistory(ctx context.Context, ac ActionCtx, in json.RawMessage) (a
 	return msgs, nil
 }
 
-// chatSessionListInput is the input to chat.session.list.
-type chatSessionListInput struct {
-	Limit int64 `json:"limit,omitempty"`
-}
-
 // handleChatSessionList lists sessions for the current scope (project default;
 // team/org for permitted users — the caller sets ac.Proj/ac.Team accordingly).
 func handleChatSessionList(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
