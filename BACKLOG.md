@@ -298,10 +298,11 @@ Token/cost aggregation from run_steps (pricing table per provider model, editabl
 AC: cap threshold + hard stop tests; rate limit claim test; dashboard aggregation golden.
 Notes: `model_pricing` (0026) is platform-global (no org_id) — exempted from check-scope tenant list; orgs gained `monthly_cap_usd` + `cap_alert_pct`; per-agent `runs_per_hour`/`token_budget` enforced in `EnqueueRun`; threshold alert fires once per org (in-memory `capAlerted` map) and records an `org_cap_alerts` row + publishes `org.cap.threshold`; `pricing.*`/`org.cap.set`/`usage.read` actions + `/app/org/{orgID}/usage` dashboard (by agent/project).
 
-### WU-311 · Phase 3 hardening — `ready`
+### WU-311 · Phase 3 hardening — `done 2026-08-11 WU-311: hardening — kill-switch, transcript redaction, injection canary + fuzz tests`
 Deps: all 3xx.
 Prompt-injection defences documented + tested: task/comment content wrapped in clearly delimited data blocks in context, system prompt instructs against instruction-following from data; tool-arg validation fuzz; run transcript redaction of provider keys; kill-switch (org owner can disable all agents instantly).
 AC: injection canary test (malicious comment attempts `member.invite`; assert gate/deny path); kill-switch test; fuzz corpora committed.
+Notes: `agent.kill-all` (ScopeOrg, perm `agent.kill`) deactivates every org agent via `DeactivateAllAgentsByOrg`; org creation now seeds a system `Owner` role (org.* + agent.* + agent.kill) and auto-memberships the creator as owner. Transcript redaction masks the live decrypted provider key out of run_steps request/response JSON (`redactSecrets`). Injection canary asserts task/comment content stays inside `[task]...[/task]` DATA blocks + systemPrompt injection guard; fuzz corpus validates malformed tool args rejected by schema.
 
 ---
 
