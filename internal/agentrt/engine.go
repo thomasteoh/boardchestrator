@@ -317,7 +317,7 @@ func (e *Engine) EnqueueRun(ctx context.Context, store *job.JobStore, orgID, age
 		if err != nil {
 			return "", false, fmt.Errorf("enqueue run: count agent window: %w", err)
 		}
-		if int64(n) >= agent.RunsPerHour {
+		if n >= agent.RunsPerHour {
 			return "", false, nil // agent over its hourly run cap — skip
 		}
 	}
