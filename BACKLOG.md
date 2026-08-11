@@ -280,10 +280,11 @@ Deps: 305, 204.
 Mention parser recognises active org agents in saved description/comments → enqueue run (trigger=mention, task context, the mentioning text as instruction); column `trigger_agent_id/prompt` settings UI; `task.move` into trigger column enqueues (trigger=column, prompt template with task interpolation); agent thread rendering on task (distinct styling, collapsible steps); loop guard: an agent's own actions never trigger mentions/column runs of itself; per-task concurrent-run cap 1 (queue serialises).
 AC: mention→run created (not for inactive/unknown names, not self-trigger); column trigger fires once per entry; template interpolation golden; agent thread renders transcript.
 
-### WU-308 · Chat sidebar — `ready`
+### WU-308 · Chat sidebar — `done 2026-08-11 WU-308: chat sidebar — sessions, messages, streaming, propose-approve`
 Deps: 305, 007.
 `chat_sessions/messages` migrations; desktop sidebar + mobile full-screen drawer; scope selector (project default; team/org for permitted); streaming via SSE (`chat-delta`); agent picker (@agent in chat); action cards ("Created BC-142" linked); propose→approve inline for high-impact (diff/preview via dry-run, apply on confirm); history per user/scope; slash commands `/assign /label /decompose` expanding to prompts.
 AC: streaming endpoint test (delta framing); card render from run steps; propose-approve flow test (dry-run then real dispatch); scope permission test.
+Notes: chat deltas targeted per-user via `Hub.SendToUser`; `chat.send` enqueues the run via a `chat.sent` event + server `chatLoop` (actions have no JobStore); engine branches on `run.ChatSessionID` into a streaming `chatStreamLoop`; propose/approve re-dispatch the card's inner action via `/api/action/{name}` with `X-Dry-Run`/`X-Org-Id`/`X-Project-Id` headers.
 
 ### WU-309 · Scheduled triggers — `ready`
 Deps: 305, 209.
