@@ -646,6 +646,7 @@ func Routes(r chi.Router) {
 	r.Get("/app/org/{orgID}/usage", handleUsage)
 	r.Post("/api/action/apikey.create", handleAction)
 	r.Post("/api/action/apikey.revoke", handleAction)
+	r.Post("/api/v1/actions/{name}", handleRPCv1(rateLimiter))
 	// User settings actions (WU-108)
 	r.Post("/api/action/user.theme.update", handleAction)
 	r.Post("/api/action/user.timezone.update", handleAction)
