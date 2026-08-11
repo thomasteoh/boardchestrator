@@ -34,17 +34,17 @@ func TestToolArgValidationFuzz(t *testing.T) {
 		ok  bool // valid input should execute
 		bad bool // malformed input must be rejected
 	}{
-		{`{"name":"a","amount":1}`, true, false},            // valid
-		{``, false, true},                                   // empty
-		{`{`, false, true},                                  // truncated
-		{`[]`, false, true},                                 // wrong top-level type
-		{`"str"`, false, true},                              // scalar
-		{`{"name":"a","amount":"x"}`, false, true},          // wrong kind
-		{`{"name":42,"amount":1}`, false, true},             // wrong kind
-		{`{"name":"a"}`, false, true},                       // missing required amount
-		{`{"amount":1}`, false, true},                       // missing required name
-		{`{"name":"a","amount":1,"bogus":2}`, false, true},  // unknown field
-		{`null`, false, true},                               // null body
+		{`{"name":"a","amount":1}`, true, false},             // valid
+		{``, false, true},                                    // empty
+		{`{`, false, true},                                   // truncated
+		{`[]`, false, true},                                  // wrong top-level type
+		{`"str"`, false, true},                               // scalar
+		{`{"name":"a","amount":"x"}`, false, true},           // wrong kind
+		{`{"name":42,"amount":1}`, false, true},              // wrong kind
+		{`{"name":"a"}`, false, true},                        // missing required amount
+		{`{"amount":1}`, false, true},                        // missing required name
+		{`{"name":"a","amount":1,"bogus":2}`, false, true},   // unknown field
+		{`null`, false, true},                                // null body
 		{`{"name":"a","amount":1,"note":null}`, false, true}, // null optional
 	}
 	for i, c := range corpus {

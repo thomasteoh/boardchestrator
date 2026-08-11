@@ -17,9 +17,9 @@ func handleAgentKillAll(ctx context.Context, ac ActionCtx, in json.RawMessage) (
 		return nil, fmt.Errorf("agent.kill-all: %w", err)
 	}
 	return map[string]any{
-		"org_id":    ac.Org,
-		"disabled":  true,
-		"message":   "all agents disabled",
+		"org_id":   ac.Org,
+		"disabled": true,
+		"message":  "all agents disabled",
 	}, nil
 }
 
