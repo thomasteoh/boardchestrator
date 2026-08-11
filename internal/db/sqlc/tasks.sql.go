@@ -557,6 +557,57 @@ func (q *Queries) FindTaskByID(ctx context.Context, arg FindTaskByIDParams) (Fin
 	return i, err
 }
 
+const findTaskByKey = `-- name: FindTaskByKey :one
+SELECT id, project_id, title, description, key, key_num, points, priority, status, due_at, sort_order, archived, created_at, updated_at
+FROM tasks
+WHERE project_id = ? AND key = ? AND key_num = ?
+`
+
+type FindTaskByKeyParams struct {
+	ProjectID string
+	Key       string
+	KeyNum    int64
+}
+
+type FindTaskByKeyRow struct {
+	ID          string
+	ProjectID   string
+	Title       string
+	Description string
+	Key         string
+	KeyNum      int64
+	Points      int64
+	Priority    int64
+	Status      string
+	DueAt       string
+	SortOrder   float64
+	Archived    int64
+	CreatedAt   string
+	UpdatedAt   string
+}
+
+func (q *Queries) FindTaskByKey(ctx context.Context, arg FindTaskByKeyParams) (FindTaskByKeyRow, error) {
+	row := q.db.QueryRowContext(ctx, findTaskByKey, arg.ProjectID, arg.Key, arg.KeyNum)
+	var i FindTaskByKeyRow
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Title,
+		&i.Description,
+		&i.Key,
+		&i.KeyNum,
+		&i.Points,
+		&i.Priority,
+		&i.Status,
+		&i.DueAt,
+		&i.SortOrder,
+		&i.Archived,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getTaskAssignees = `-- name: GetTaskAssignees :many
 SELECT ta.task_id, ta.project_id, ta.user_id, u.name, u.email
 FROM task_assignees ta

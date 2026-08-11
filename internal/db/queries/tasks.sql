@@ -13,6 +13,11 @@ SELECT id, project_id, title, description, key, points, priority, status, due_at
 FROM tasks
 WHERE id = ? AND project_id = ?;
 
+-- name: FindTaskByKey :one
+SELECT id, project_id, title, description, key, key_num, points, priority, status, due_at, sort_order, archived, created_at, updated_at
+FROM tasks
+WHERE project_id = ? AND key = ? AND key_num = ?;
+
 -- name: UpdateTaskSortOrder :exec
 UPDATE tasks SET sort_order = ?, updated_at = ?
 WHERE id = ? AND project_id = ?;
