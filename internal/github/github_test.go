@@ -14,6 +14,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/db/dbtest"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
+	"github.com/thomasteoh/boardchestrator/internal/tenant"
 )
 
 var ctx = context.Background()
@@ -210,5 +211,41 @@ func TestLinkList(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no pr link for task1: %+v", links)
+	}
+}
+
+// TestTokenForUser covers the Phase-5 retrieval helper: round-trip decrypt of
+// a stored connection token, and not-connected when no row exists.
+func TestTokenForUser(t *testing.T) {
+	db := dbtest.New(t)
+	key := tenant.PadKey("test-secret-key")
+
+	if _, err := db.Exec(`INSERT INTO users (id, email, name) VALUES ('u9','x@y.z','X')`); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	// Not connected.
+	tok, ok, err := TokenForUser(ctx, db, key, "u9")
+	if err != nil {
+		t.Fatalf("no-conn: %v", err)
+	}
+	if ok || tok != "" {
+		t.Fatalf("expected not connected, got ok=%v tok=%q", ok, tok)
+	}
+
+	// Connect with an encrypted PAT, then round-trip.
+	enc, err := tenant.Encrypt(key, "ghp_roundtrip-secret")
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO github_connections (user_id, provider, token_enc, login) VALUES ('u9','pat',?,'octocat')`, enc); err != nil {
+		t.Fatalf("insert conn: %v", err)
+	}
+	tok, ok, err = TokenForUser(ctx, db, key, "u9")
+	if err != nil {
+		t.Fatalf("round-trip: %v", err)
+	}
+	if !ok || tok != "ghp_roundtrip-secret" {
+		t.Fatalf("round-trip: ok=%v tok=%q", ok, tok)
 	}
 }

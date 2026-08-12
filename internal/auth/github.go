@@ -35,6 +35,9 @@ type GitHubUser struct {
 	Avatar   string `json:"avatar_url"`
 	Primary  bool   `json:"primary"` // from /emails endpoint
 	Verified bool   `json:"verified"`
+	// Token is the OAuth access token captured during Exchange. It is not
+	// populated from the /user JSON; set explicitly after the token exchange.
+	Token string `json:"-"`
 }
 
 // AuthURL returns the GitHub OAuth URL and a state nonce.
@@ -102,6 +105,9 @@ func (p *GitHubProvider) Exchange(ctx context.Context, code, state string) (*Git
 	if user.Name == "" {
 		user.Name = user.Login
 	}
+
+	// Capture the OAuth access token for later GitHub features (WU-406).
+	user.Token = tokResp.AccessToken
 
 	return user, nil
 }

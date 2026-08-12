@@ -64,6 +64,32 @@ func (q *Queries) FindIdentityByProviderSubject(ctx context.Context, arg FindIde
 	return i, err
 }
 
+const findIdentityByUserAndProvider = `-- name: FindIdentityByUserAndProvider :one
+SELECT id, user_id, provider, subject, email, token_enc
+FROM identities
+WHERE user_id = ?
+  AND provider = ?
+`
+
+type FindIdentityByUserAndProviderParams struct {
+	UserID   string
+	Provider string
+}
+
+func (q *Queries) FindIdentityByUserAndProvider(ctx context.Context, arg FindIdentityByUserAndProviderParams) (Identity, error) {
+	row := q.db.QueryRowContext(ctx, findIdentityByUserAndProvider, arg.UserID, arg.Provider)
+	var i Identity
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.Subject,
+		&i.Email,
+		&i.TokenEnc,
+	)
+	return i, err
+}
+
 const findUserByEmail = `-- name: FindUserByEmail :one
 SELECT id, email, name, avatar_url, theme, timezone, created_at, deleted_at
 FROM users
@@ -159,6 +185,24 @@ WHERE id = 1
 
 func (q *Queries) SetBootstrapDone(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, setBootstrapDone)
+	return err
+}
+
+const setIdentityToken = `-- name: SetIdentityToken :exec
+UPDATE identities
+SET token_enc = ?
+WHERE user_id = ?
+  AND provider = ?
+`
+
+type SetIdentityTokenParams struct {
+	TokenEnc []byte
+	UserID   string
+	Provider string
+}
+
+func (q *Queries) SetIdentityToken(ctx context.Context, arg SetIdentityTokenParams) error {
+	_, err := q.db.ExecContext(ctx, setIdentityToken, arg.TokenEnc, arg.UserID, arg.Provider)
 	return err
 }
 

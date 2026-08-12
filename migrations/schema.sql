@@ -699,3 +699,12 @@ CREATE TABLE IF NOT EXISTS github_links (
 CREATE INDEX IF NOT EXISTS idx_github_links_project ON github_links(project_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_github_links_ref ON github_links(project_id, kind, key, key_num, ref);
 CREATE INDEX IF NOT EXISTS idx_github_links_task ON github_links(task_id);
+
+CREATE TABLE IF NOT EXISTS github_connections (
+    user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    provider   TEXT NOT NULL DEFAULT 'oauth',
+    token_enc  TEXT NOT NULL DEFAULT '',
+    login      TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now'))
+);

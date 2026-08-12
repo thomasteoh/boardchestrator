@@ -18,6 +18,18 @@ FROM identities
 WHERE provider = ?
   AND subject = ?;
 
+-- name: FindIdentityByUserAndProvider :one
+SELECT id, user_id, provider, subject, email, token_enc
+FROM identities
+WHERE user_id = ?
+  AND provider = ?;
+
+-- name: SetIdentityToken :exec
+UPDATE identities
+SET token_enc = ?
+WHERE user_id = ?
+  AND provider = ?;
+
 -- name: GetUser :one
 SELECT id, email, name, avatar_url, theme, timezone, created_at, deleted_at
 FROM users

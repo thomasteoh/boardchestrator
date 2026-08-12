@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
+	"github.com/thomasteoh/boardchestrator/internal/tenant"
 )
 
 // OAuthHandler provides the HTTP handlers for Google OIDC login.
@@ -23,6 +24,9 @@ type OAuthHandler struct {
 	SessionCfg     SessionConfig
 	AdminEmails    []string
 	BootstrapToken string
+	// SecretKey is the AES-256 key used to encrypt OAuth tokens at rest
+	// (WU-406: GitHub token reuse for wiki edits). Pad via tenant.PadKey.
+	SecretKey []byte
 
 	// stateMap stores pending OAuth state nonces (keyed by state, value is
 	// the redirect path). A real deployment would use encrypted cookies or
@@ -191,6 +195,20 @@ func (h *OAuthHandler) HandleGitHubCallback(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// WU-406: encrypt the OAuth access token at rest so the github.connect
+	// action can reuse it (and Phase-5 wiki edits can commit as this user).
+	if len(h.SecretKey) == 32 && user.Token != "" {
+		enc, err := tenant.Encrypt(h.SecretKey, user.Token)
+		if err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if err := h.Identity.SetIdentityToken(ctx, userID, "github", enc); err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
 	raw, _, err := h.Store.Create(ctx, userID, r.RemoteAddr, r.UserAgent())
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -247,6 +265,15 @@ func (s *DBIdentityStore) LinkIdentity(ctx context.Context, userID, provider, su
 		Provider: provider,
 		Subject:  subject,
 		Email:    email,
+	})
+}
+
+// SetIdentityToken stores an encrypted OAuth token against the user's identity.
+func (s *DBIdentityStore) SetIdentityToken(ctx context.Context, userID, provider, tokenEnc string) error {
+	return s.q.SetIdentityToken(ctx, sqlc.SetIdentityTokenParams{
+		TokenEnc: []byte(tokenEnc),
+		UserID:   userID,
+		Provider: provider,
 	})
 }
 

@@ -145,6 +145,15 @@ type CustomFieldDef struct {
 	CreatedAt  string
 }
 
+type GithubConnection struct {
+	UserID    string
+	Provider  string
+	TokenEnc  string
+	Login     string
+	CreatedAt string
+	UpdatedAt string
+}
+
 type GithubLink struct {
 	ID        string
 	ProjectID string

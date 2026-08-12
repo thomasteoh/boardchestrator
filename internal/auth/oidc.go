@@ -124,6 +124,9 @@ type IdentityStore interface {
 	FindUserByEmail(ctx context.Context, email string) (string, error)
 	CreateUser(ctx context.Context, email, name, avatarURL string) (string, error)
 	LinkIdentity(ctx context.Context, userID, provider, subject, email string) error
+	// SetIdentityToken stores an encrypted OAuth token against the user's
+	// identity for the given provider (WU-406 GitHub token reuse).
+	SetIdentityToken(ctx context.Context, userID, provider, tokenEnc string) error
 }
 
 // BootstrapChecker gates first-user-as-admin setup.

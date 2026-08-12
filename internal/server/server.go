@@ -197,6 +197,7 @@ func (s *Server) setupRoutes() {
 			Secret:   s.cfg.SessionSecret,
 			Insecure: true,
 		})
+		ah.SecretKey = tenant.PadKey(s.cfg.SecretKey)
 		ah.SetBootstrapConfig(s.cfg.AdminEmails, s.cfg.BootstrapToken)
 		s.mux.Get("/auth/google", ah.HandleGoogleLogin)
 		s.mux.Get("/auth/google/callback", ah.HandleGoogleCallback)
