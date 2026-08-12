@@ -338,9 +338,10 @@ Deps: 201, 102.
 AC: signature reject test; extraction table tests (branch, commit msg, body, multiple keys); merge→transition dispatch test; link render.
 Notes: `migrations/0028_github` + `project_github`/`github_links` tables; `internal/github` package — `Receiver.Handle` verifies `X-Hub-Signature-256` (HMAC-SHA256 with per-repo webhook_secret) before parsing, extracts `KEY-n` refs from branch/commit/PR bodies via regex, upserts `github_links` (unique on project+kind+key+key_num+ref) resolving each to a task by (project_id, key, key_num), and on PR opened/merged dispatches `task.move` to the configured transition status via the dispatcher under a new `service` actor type (`ActorService`, trusted in the perm checker). Route mounted at `/hooks/github` without API-key auth (GitHub signs payloads). Config actions `github.config.upsert/delete` (project-scoped). AC tests: signature reject (wrong secret 401, missing 401, unknown repo 404), extraction table, merge→transition dispatch, link-list render data.
 
-### WU-406 · User GitHub connection — `ready`
+### WU-406 · User GitHub connection — `done 2026-08-12`
 Deps: 102, 108.
 Settings: connect GitHub (reuse SSO identity token if present, else PAT entry, encrypted); token used by wiki edits (Phase 5) and shown-as-connected state; disconnect.
+Notes: `migrations/0029_github_connections` — `github_connections` (user_id PK, provider oauth|pat, token_enc AES-GCM, login, created/updated). GitHub OAuth callback now captures the access token and stores it encrypted on the user's github identity (`identities.token_enc` via `SetIdentityToken`; OAuthHandler gained SecretKey from `tenant.PadKey(BC_SECRET_KEY)`). Actions `github.connect` (source oauth reuses identity token via `FindIdentityByUserAndProvider`; source pat encrypts with `ac.SecretKey`), `github.disconnect` (wipes row), `github.status` (connected/provider/login, never token). `internal/github.TokenForUser` decrypts the connection token for Phase-5 wiki commits. AC tests: PAT store/retrieve encrypted round-trip, disconnect wipes, status connected, oauth reuse, TokenForUser not-connected + round-trip.
 AC: PAT store/retrieve round-trip encrypted; disconnect wipes token.
 
 ### WU-407 · Phase 4 hardening — `ready`
