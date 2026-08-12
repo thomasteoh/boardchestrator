@@ -14,6 +14,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
+	"github.com/thomasteoh/boardchestrator/internal/mcp"
 	"github.com/thomasteoh/boardchestrator/internal/search"
 	"github.com/thomasteoh/boardchestrator/internal/storage"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
@@ -241,6 +242,17 @@ func handleInviteAccept(w http.ResponseWriter, r *http.Request) {
 	if err := views.InviteAcceptPage(s, token).Render(r.Context(), w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
+}
+
+// handleMCP serves the WU-403 MCP endpoint. The dispatcher is read lazily from
+// the package var (set by SetDispatcher after Routes registration) so the route
+// can be mounted before startup wiring completes.
+func handleMCP(w http.ResponseWriter, r *http.Request) {
+	if disp == nil {
+		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
+		return
+	}
+	mcp.New(disp.DB(), disp).Handle(w, r)
 }
 
 // handleTaskDetail renders the kanban task detail view including the agent
@@ -656,6 +668,9 @@ func Routes(r chi.Router) {
 	r.Get("/api/v1/orgs/{orgID}/labels", handleResourceLabels)
 	r.Get("/api/v1/orgs/{orgID}/search", handleResourceSearch)
 	r.Get("/app/docs", handleDocsPage)
+	// MCP server (WU-403): Streamable HTTP JSON-RPC at /mcp, behind the API-key
+	// auth middleware (mounted earlier in the chain).
+	r.Post("/mcp", handleMCP)
 	// User settings actions (WU-108)
 	r.Post("/api/action/user.theme.update", handleAction)
 	r.Post("/api/action/user.timezone.update", handleAction)
