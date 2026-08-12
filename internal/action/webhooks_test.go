@@ -12,16 +12,24 @@ import (
 // TestWebhookManagementCRUD covers WU-404 AC: webhook.create/update/delete/list
 // round-trip through the dispatcher against a real DB.
 func TestWebhookManagementCRUD(t *testing.T) {
-	d := New(dbtest.New(t))
+	// Other tests call reset(), wiping the init-registered registry. Re-register
+	// the webhook actions here (guards against the unknown-action failure).
+	reset()
+	t.Cleanup(reset)
+	Register(Definition{Name: "webhook.create", Impact: ImpactHigh, Permission: "webhook.create", Scope: ScopeOrg, Input: FuncSchema(func(raw json.RawMessage) error { return nil }), Handle: handleWebhookCreate})
+	Register(Definition{Name: "webhook.update", Impact: ImpactLow, Permission: "webhook.update", Scope: ScopeOrg, Input: FuncSchema(func(raw json.RawMessage) error { return nil }), Handle: handleWebhookUpdate})
+	Register(Definition{Name: "webhook.delete", Impact: ImpactHigh, Permission: "webhook.delete", Scope: ScopeOrg, Input: FuncSchema(func(raw json.RawMessage) error { return nil }), Handle: handleWebhookDelete})
+	Register(Definition{Name: "webhook.list", Impact: ImpactRead, Permission: "webhook.list", Scope: ScopeOrg, Input: FuncSchema(func(raw json.RawMessage) error { return nil }), Handle: handleWebhookList})
+
+	db := dbtest.New(t)
+	d := New(db)
 	ctx := context.Background()
 
-	orgOut, err := d.Dispatch(ctx, userActor(), "org.create",
-		json.RawMessage(`{"name":"Acme","slug":"acme","visibility":"private"}`),
-		Opts{Org: ""})
-	if err != nil {
-		t.Fatalf("org.create: %v", err)
+	// Seed an org directly (org.create is only test-registered).
+	if _, err := db.Exec(`INSERT INTO orgs (id, name, slug, visibility, context, monthly_cap_usd, cap_alert_pct) VALUES ('org1', 'Acme', 'acme', 'private', '', 0, 80)`); err != nil {
+		t.Fatalf("seed org: %v", err)
 	}
-	orgID := extractID(t, mustJSON(t, orgOut))
+	orgID := "org1"
 
 	// Create a webhook.
 	createOut, err := d.Dispatch(ctx, userActor(), "webhook.create",

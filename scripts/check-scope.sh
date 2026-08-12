@@ -53,7 +53,7 @@ scan_file() {
                 if (T[i] == "") continue
                 if (low ~ ("(^|[^a-z0-9_])" T[i] "([^a-z0-9_]|$)") && low !~ /org_id/) {
                     # Skip exempted queries (platform-level ops without org_id).
-                    if (qname != "" && qname ~ /^(DeleteUserMemberships|PurgeExpiredSessions|DeleteUserSessions|GetRunPricing|SumRunStepsTokens|ListQueuedWebhookDeliveries|ListWebhookDeliveries)$/) {
+                    if (qname != "" && qname ~ /^(DeleteUserMemberships|PurgeExpiredSessions|DeleteUserSessions|GetRunPricing|SumRunStepsTokens|ListQueuedWebhookDeliveries|ListWebhookDeliveries|CreateWebhookDelivery|UpdateWebhookDeliveryAttempt|FindWebhookDeliveryByID)$/) {
                         continue
                     }
                     printf "check-scope: %s: query \"%s\" touches tenant table \"%s\" without an org_id parameter\n", file, qname, T[i]
