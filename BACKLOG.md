@@ -344,10 +344,11 @@ Settings: connect GitHub (reuse SSO identity token if present, else PAT entry, e
 Notes: `migrations/0029_github_connections` — `github_connections` (user_id PK, provider oauth|pat, token_enc AES-GCM, login, created/updated). GitHub OAuth callback now captures the access token and stores it encrypted on the user's github identity (`identities.token_enc` via `SetIdentityToken`; OAuthHandler gained SecretKey from `tenant.PadKey(BC_SECRET_KEY)`). Actions `github.connect` (source oauth reuses identity token via `FindIdentityByUserAndProvider`; source pat encrypts with `ac.SecretKey`), `github.disconnect` (wipes row), `github.status` (connected/provider/login, never token). `internal/github.TokenForUser` decrypts the connection token for Phase-5 wiki commits. AC tests: PAT store/retrieve encrypted round-trip, disconnect wipes, status connected, oauth reuse, TokenForUser not-connected + round-trip.
 AC: PAT store/retrieve round-trip encrypted; disconnect wipes token.
 
-### WU-407 · Phase 4 hardening — `ready`
+### WU-407 · Phase 4 hardening — `done 2026-08-12`
 Deps: all 4xx.
 API fuzz (action inputs from schemas); rate-limit soak; OpenAPI↔registry drift test (CI compares); MCP conformance re-run; audit coverage check (all ImpactHigh via API audited).
 AC: drift test in `make check`; fuzz corpora committed.
+Notes: `internal/web/drift_test.go` walks the chi router via `chi.Walk` and checks every `/api/action/*` route resolves to a registered action, OpenAPI action paths only reference registered actions, and the v1 RPC generic path exists — runs in `make check`. Caught + removed a dead `task.reorder` route (no such action; reorder is `task.move`/`board.column.reorder`). `internal/action/api_fuzz_test.go` fuzzes every registered ObjectSchema action against the committed corpus `internal/action/fuzz_corpus.json` (always-invalid shapes) plus per-schema malformed inputs (missing required, wrong types); valid schema-built inputs accepted. `internal/web/rate_soak_test.go` — deterministic token-bucket soak (50 reqs/burst 5 → 5/45, per-key isolation, refill recovery) + API-level soak through real auth+handler (burst 3 → 3/7). `internal/action/audit_coverage_test.go` proves ImpactHigh is audited and ImpactLow is not, and every registered ImpactHigh action carries a permission. Fixed `tokenBucket` fresh-key accounting (was granting an extra token).
 
 ---
 
