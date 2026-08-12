@@ -36,6 +36,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/storage"
 	"github.com/thomasteoh/boardchestrator/internal/tenant"
 	"github.com/thomasteoh/boardchestrator/internal/web"
+	"github.com/thomasteoh/boardchestrator/internal/webhook"
 )
 
 // timeFormat is the canonical UTC timestamp layout used across the codebase
@@ -101,6 +102,12 @@ type Server struct {
 	// schedStop cancels the scheduled-trigger poller goroutine (WU-309).
 	// Kept to stop on Shutdown.
 	schedStop context.CancelFunc
+	// webhookDeliver delivers outbound webhooks (WU-404). Created in Start when
+	// the DB + job store are wired; its RunJob handles webhook.deliver jobs.
+	webhookDeliver *webhook.Deliverer
+	// webhookUnsub is the bus subscription that fans events into webhook
+	// deliveries. Kept to stop on Shutdown.
+	webhookUnsub func()
 	// trigq is the read query handle the trigger loop uses to re-read tasks,
 	// comments, and columns from the DB (source of truth for mention/column
 	// detection). Set in Start once the DB is wired.
@@ -404,9 +411,19 @@ func (s *Server) Start(ctx context.Context) error {
 		})
 		store := job.NewJobStore(s.db)
 		s.trigq = sqlc.New(s.db)
+		// Outbound webhook delivery (WU-404): owns the webhook.deliver job kind.
+		s.webhookDeliver = webhook.New(s.db, store)
+		// The pool handler routes webhook.deliver jobs to the Deliverer; all
+		// other kinds fall through to the agent engine.
+		engHandler := s.eng.Handler(store)
 		s.pool = job.NewPool(ctx, job.PoolConfig{
-			Store:        store,
-			Handler:      s.eng.Handler(store),
+			Store: store,
+			Handler: func(ctx context.Context, j sqlc.Job) error {
+				if j.Kind == "webhook.deliver" {
+					return s.webhookDeliver.RunJob(ctx, j)
+				}
+				return engHandler(ctx, j)
+			},
 			MaxWorkers:   s.cfg.AgentWorkers,
 			PollInterval: 5 * time.Second,
 			ClaimTimeout: 30 * time.Second,
@@ -443,6 +460,28 @@ func (s *Server) Start(ctx context.Context) error {
 		var schedCtx context.Context
 		schedCtx, s.schedStop = context.WithCancel(ctx)
 		go s.schedulerLoop(schedCtx, store)
+
+		// Outbound webhooks (WU-404): subscribe to all events; the deliverer
+		// matches each event against the org's enabled webhooks + their event
+		// filter and enqueues signed deliveries.
+		var whSub *event.Subscription
+		whSub, s.webhookUnsub = s.bus.Subscribe(event.Filter{}, 64)
+		go func() {
+			defer whSub.Close()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case ev, ok := <-whSub.C:
+					if !ok {
+						return
+					}
+					if err := s.webhookDeliver.HandleEvent(ctx, ev); err != nil {
+						slog.Error("webhook: deliver event", "err", err)
+					}
+				}
+			}
+		}()
 	}
 
 	// Create the action dispatcher with DB-backed stores, scope resolver,
@@ -542,6 +581,10 @@ func (s *Server) Shutdown() {
 	// Stop the scheduled-trigger poller (WU-309).
 	if s.schedStop != nil {
 		s.schedStop()
+	}
+	// Stop the outbound webhook subscriber (WU-404).
+	if s.webhookUnsub != nil {
+		s.webhookUnsub()
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

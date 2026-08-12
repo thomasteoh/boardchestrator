@@ -634,3 +634,36 @@ CREATE TABLE IF NOT EXISTS scheduled_triggers (
 CREATE INDEX IF NOT EXISTS idx_sched_triggers_org ON scheduled_triggers(org_id);
 CREATE INDEX IF NOT EXISTS idx_sched_triggers_project ON scheduled_triggers(project_id);
 CREATE INDEX IF NOT EXISTS idx_sched_triggers_due ON scheduled_triggers(enabled, next_at);
+
+CREATE TABLE IF NOT EXISTS webhooks (
+    id           TEXT PRIMARY KEY,
+    org_id       TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    team_id      TEXT REFERENCES teams(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    url          TEXT NOT NULL,
+    secret       TEXT NOT NULL DEFAULT '',
+    event_filter TEXT NOT NULL DEFAULT '[]',
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
+    updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhooks_org ON webhooks(org_id);
+CREATE INDEX IF NOT EXISTS idx_webhooks_team ON webhooks(team_id);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    id           TEXT PRIMARY KEY,
+    webhook_id   TEXT NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+    event_name   TEXT NOT NULL,
+    event_json   TEXT NOT NULL DEFAULT '{}',
+    status       TEXT NOT NULL DEFAULT 'queued',
+    attempts     INT NOT NULL DEFAULT 0,
+    max_attempts INT NOT NULL DEFAULT 5,
+    response_code INT,
+    error        TEXT,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
+    updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook ON webhook_deliveries(webhook_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries(status, created_at);

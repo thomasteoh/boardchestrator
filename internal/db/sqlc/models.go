@@ -512,3 +512,30 @@ type User struct {
 	CreatedAt string
 	DeletedAt sql.NullString
 }
+
+type Webhook struct {
+	ID          string
+	OrgID       string
+	TeamID      sql.NullString
+	Name        string
+	Url         string
+	Secret      string
+	EventFilter string
+	Enabled     int64
+	CreatedAt   string
+	UpdatedAt   string
+}
+
+type WebhookDelivery struct {
+	ID           string
+	WebhookID    string
+	EventName    string
+	EventJson    string
+	Status       string
+	Attempts     int64
+	MaxAttempts  int64
+	ResponseCode sql.NullInt64
+	Error        sql.NullString
+	CreatedAt    string
+	UpdatedAt    string
+}
