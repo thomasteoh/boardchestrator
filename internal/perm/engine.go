@@ -235,6 +235,11 @@ func NewCheckerAdapter(d *sql.DB) *CheckerAdapter {
 
 // Allow implements action.PermissionChecker.
 func (a *CheckerAdapter) Allow(ctx context.Context, ac action.ActionCtx, def action.Definition) (bool, error) {
+	// Trusted system integration principals (GitHub webhook bridge, WU-405)
+	// bypass grant checks — they run configured transitions only.
+	if ac.Actor.Type == action.ActorService {
+		return true, nil
+	}
 	// Agent actors resolve via role-grants ∩ attached-skills intersection
 	// (SPEC §6); user/apikey actors via the standard membership walk.
 	if ac.Actor.Type == action.ActorAgent {

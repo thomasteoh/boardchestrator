@@ -78,6 +78,11 @@ SELECT id, org_id, team_id, name, key, context, visibility, archived, next_task_
 FROM projects
 WHERE org_id = ? AND key = ?;
 
+-- name: GetProjectOrg :one
+SELECT org_id
+FROM projects
+WHERE id = ?;
+
 -- name: FindRoleByID2 :one
 SELECT id, org_id, name, is_system, grants_json, created_at
 FROM roles

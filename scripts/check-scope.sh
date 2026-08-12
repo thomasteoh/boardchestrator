@@ -33,7 +33,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-TENANT_TABLES="org_secrets,teams,projects,roles,memberships,invites,labels,custom_field_defs,sprints,attachments,task_templates,provider_orgs,agents,agent_skills,skills,runs,run_steps,approvals,chat_sessions,chat_messages,scheduled_triggers,org_cap_alerts,webhooks,webhook_deliveries"  # comma-separated
+TENANT_TABLES="org_secrets,teams,projects,roles,memberships,invites,labels,custom_field_defs,sprints,attachments,task_templates,provider_orgs,agents,agent_skills,skills,runs,run_steps,approvals,chat_sessions,chat_messages,scheduled_triggers,org_cap_alerts,webhooks,webhook_deliveries,project_github,github_links"  # comma-separated
 # orgs is the root tenant (no org_id column) — exempted.
 # model_pricing is platform-global (no org_id) — exempted, like orgs.
 QUERIES_DIR="internal/db/queries"
@@ -53,7 +53,7 @@ scan_file() {
                 if (T[i] == "") continue
                 if (low ~ ("(^|[^a-z0-9_])" T[i] "([^a-z0-9_]|$)") && low !~ /org_id/) {
                     # Skip exempted queries (platform-level ops without org_id).
-                    if (qname != "" && qname ~ /^(DeleteUserMemberships|PurgeExpiredSessions|DeleteUserSessions|GetRunPricing|SumRunStepsTokens|ListQueuedWebhookDeliveries|ListWebhookDeliveries|CreateWebhookDelivery|UpdateWebhookDeliveryAttempt|FindWebhookDeliveryByID)$/) {
+                    if (qname != "" && qname ~ /^(DeleteUserMemberships|PurgeExpiredSessions|DeleteUserSessions|GetRunPricing|SumRunStepsTokens|ListQueuedWebhookDeliveries|ListWebhookDeliveries|CreateWebhookDelivery|UpdateWebhookDeliveryAttempt|FindWebhookDeliveryByID|UpsertProjectGithub|FindProjectGithubByRepo|FindProjectGithubByProject|DeleteProjectGithub|CreateGithubLink|UpsertGithubLink|ListGithubLinksByProject|ListGithubLinksByTask)$/) {
                         continue
                     }
                     printf "check-scope: %s: query \"%s\" touches tenant table \"%s\" without an org_id parameter\n", file, qname, T[i]

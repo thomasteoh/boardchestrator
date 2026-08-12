@@ -14,6 +14,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
+	"github.com/thomasteoh/boardchestrator/internal/github"
 	"github.com/thomasteoh/boardchestrator/internal/mcp"
 	"github.com/thomasteoh/boardchestrator/internal/search"
 	"github.com/thomasteoh/boardchestrator/internal/storage"
@@ -253,6 +254,17 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mcp.New(disp.DB(), disp).Handle(w, r)
+}
+
+// handleGithubHook is the inbound GitHub webhook receiver (WU-405). It is
+// mounted without API-key/session auth — GitHub signs payloads with the
+// per-repo webhook secret, verified inside the receiver.
+func handleGithubHook(w http.ResponseWriter, r *http.Request) {
+	if disp == nil {
+		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
+		return
+	}
+	github.New(disp.DB(), disp).Handle(w, r)
 }
 
 // handleTaskDetail renders the kanban task detail view including the agent
@@ -671,6 +683,8 @@ func Routes(r chi.Router) {
 	// MCP server (WU-403): Streamable HTTP JSON-RPC at /mcp, behind the API-key
 	// auth middleware (mounted earlier in the chain).
 	r.Post("/mcp", handleMCP)
+	// Inbound GitHub webhooks (WU-405): signature-verified, no API-key auth.
+	r.Post("/hooks/github", handleGithubHook)
 	// User settings actions (WU-108)
 	r.Post("/api/action/user.theme.update", handleAction)
 	r.Post("/api/action/user.timezone.update", handleAction)

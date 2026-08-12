@@ -145,6 +145,20 @@ type CustomFieldDef struct {
 	CreatedAt  string
 }
 
+type GithubLink struct {
+	ID        string
+	ProjectID string
+	Kind      string
+	Key       string
+	KeyNum    int64
+	Ref       string
+	State     string
+	TaskID    sql.NullString
+	Url       string
+	CreatedAt string
+	UpdatedAt string
+}
+
 type IdempotencyKey struct {
 	Key        string
 	Actor      string
@@ -277,6 +291,17 @@ type Project struct {
 	Archived    int64
 	NextTaskNum int64
 	CreatedAt   string
+}
+
+type ProjectGithub struct {
+	ID            string
+	ProjectID     string
+	Repo          string
+	Transitions   string
+	WebhookSecret string
+	Enabled       int64
+	CreatedAt     string
+	UpdatedAt     string
 }
 
 type Provider struct {

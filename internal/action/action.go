@@ -97,12 +97,16 @@ const (
 	ActorAgent ActorType = "agent"
 	// ActorAPIKey is an API key acting on behalf of its owning user.
 	ActorAPIKey ActorType = "apikey"
+	// ActorService is a trusted system integration principal (e.g. the GitHub
+	// webhook bridge, WU-405). It dispatches configured transitions on behalf
+	// of the product, not a user, and bypasses grant checks.
+	ActorService ActorType = "service"
 )
 
 // Valid reports whether t is a known actor type.
 func (t ActorType) Valid() bool {
 	switch t {
-	case ActorUser, ActorAgent, ActorAPIKey:
+	case ActorUser, ActorAgent, ActorAPIKey, ActorService:
 		return true
 	default:
 		return false

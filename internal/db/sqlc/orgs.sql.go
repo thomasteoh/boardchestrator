@@ -503,6 +503,19 @@ func (q *Queries) FindTeamByID(ctx context.Context, arg FindTeamByIDParams) (Tea
 	return i, err
 }
 
+const getProjectOrg = `-- name: GetProjectOrg :one
+SELECT org_id
+FROM projects
+WHERE id = ?
+`
+
+func (q *Queries) GetProjectOrg(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getProjectOrg, id)
+	var org_id string
+	err := row.Scan(&org_id)
+	return org_id, err
+}
+
 const listOrgs = `-- name: ListOrgs :many
 SELECT id, name, slug, context, visibility, monthly_cap_usd, cap_alert_pct, created_at
 FROM orgs
