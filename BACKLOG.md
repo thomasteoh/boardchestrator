@@ -332,10 +332,11 @@ Webhook CRUD (org/team) with event filter; HMAC-SHA256 signature header; deliver
 AC: signature verification golden; retry/DLQ tests; SSRF pinning test (DNS rebind simulation); filter test.
 Notes: `migrations/0027_webhooks` + `webhooks`/`webhook_deliveries` tables; `internal/webhook` package (subscribes to event bus, matches org webhooks by event filter, POSTs signed JSON envelope, retries with fixed 30s backoff + dead-letter on exhaustion via the JobStore); SSRF guard = resolve-then-connect — hostname is resolved and non-public (loopback/private/link-local) addresses rejected; HMAC-SHA256 signature in `X-Boardchestrator-Signature: sha256=<hex>`; management actions `webhook.create/update/delete/list` (org-scoped); delivery worker wired into server pool handler (routes `webhook.deliver` job kind to the Deliverer; other kinds fall through to the agent engine). AC tests: signature golden, retry+DLQ, DNS-rebind SSRF pinning, event-filter, CRUD round-trip.
 
-### WU-405 · GitHub links + inbound webhooks — `ready`
+### WU-405 · GitHub links + inbound webhooks — `done 2026-08-12`
 Deps: 201, 102.
 `project_github` config (repo, transitions map, webhook secret); inbound `/hooks/github` (signature verify); `KEY-n` extraction from branch/commit/PR body → `github_links`; PR opened/merged → configured transitions via dispatch (actor: github integration service actor); task page shows linked PRs/commits with state.
 AC: signature reject test; extraction table tests (branch, commit msg, body, multiple keys); merge→transition dispatch test; link render.
+Notes: `migrations/0028_github` + `project_github`/`github_links` tables; `internal/github` package — `Receiver.Handle` verifies `X-Hub-Signature-256` (HMAC-SHA256 with per-repo webhook_secret) before parsing, extracts `KEY-n` refs from branch/commit/PR bodies via regex, upserts `github_links` (unique on project+kind+key+key_num+ref) resolving each to a task by (project_id, key, key_num), and on PR opened/merged dispatches `task.move` to the configured transition status via the dispatcher under a new `service` actor type (`ActorService`, trusted in the perm checker). Route mounted at `/hooks/github` without API-key auth (GitHub signs payloads). Config actions `github.config.upsert/delete` (project-scoped). AC tests: signature reject (wrong secret 401, missing 401, unknown repo 404), extraction table, merge→transition dispatch, link-list render data.
 
 ### WU-406 · User GitHub connection — `ready`
 Deps: 102, 108.
