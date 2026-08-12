@@ -320,10 +320,11 @@ Resource-style GET aliases (projects, tasks incl. by `KEY-n`, comments, sprints,
 AC: pagination round-trip; stale If-Match → 412; OpenAPI validates against schema; docs page renders.
 Notes: `internal/web/resources_v1.go` adds `/api/v1` GET aliases (projects, task-by-`KEY-n`, comments, sprints, labels, search) + PUT task update under bearer auth; cursor pagination uses a base64 **offset** cursor (name-ordered slice, round-trip safe); task GET/UPDATE guarded by strong ETag (`etagFor(id,updated_at)`), stale `If-Match` → 412 problem+json `conflict`; `internal/web/openapi_v1.go` serves a hand-built OpenAPI 3.1 doc at `/api/v1/openapi.json` (paths for RPC + resources, BearerAuth security scheme, Problem schema) + embedded docs viewer page at `/app/docs`.
 
-### WU-403 · MCP server — `ready`
+### WU-403 · MCP server — `done 2026-08-11 WU-403: MCP server`
 Deps: 401.
 Streamable HTTP `/mcp` per SPEC §12 (record SDK-vs-in-repo decision here); tools filtered per key (omission not denial); resources (`bc://…`) incl. assembled context; prompts (`decompose_task`, `summarise_sprint`, `triage_backlog`); approval_pending result for gated calls.
 AC: MCP client-sim tests: initialize, tools/list scoped, tool call happy + approval_pending, resources read, prompts get; unauthorized tool absent from list.
+Notes: **decision — in-repo minimal JSON-RPC** (no `modelcontextprotocol/go-sdk`): the surface we need (initialize, tools/list, tools/call, resources/list+read, prompts/list+get) is small and the repo owns auth + dispatch seams; the SDK adds a heavy dep for little gain. `internal/mcp/server.go` implements Streamable HTTP (non-streaming, single JSON-RPC response) at `/mcp` behind API-key auth; per-key tool filtering reads the key's `scope_json` permission list (omission not denial — absent from tools/list, and a call to a non-granted tool errors); `tools/call` dispatches via the action dispatcher (dots→underscores names); **high-impact calls by a key return `{"status":"approval_pending","approval_id":…}` without executing** (no run exists for a key, so the approval is not persisted — run-bound persistence is a follow-up); resources `bc://project/{key}` + `bc://task/{key}-{n}` resolved from the DB (wiki + assembled-context land with the wiki package WU-501); prompts `decompose_task`/`summarise_sprint`/`triage_backlog`. Mounted at `/mcp` in web.go behind APIKeyAuthMiddleware.
 
 ### WU-404 · Outbound webhooks — `ready`
 Deps: 007, 104.
