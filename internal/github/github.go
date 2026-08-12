@@ -105,7 +105,7 @@ func (r *Receiver) Handle(w http.ResponseWriter, req *http.Request) {
 
 	r.process(req.Context(), q, cfg, event, payload)
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"ok":true}`))
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 // verifySignature compares X-Hub-Signature-256 to an HMAC-SHA256 of the body.
@@ -177,10 +177,13 @@ func (r *Receiver) upsertFromText(ctx context.Context, q *sqlc.Queries, cfg sqlc
 		if terr == nil {
 			taskID = sql.NullString{String: task.ID, Valid: true}
 		}
-		q.UpsertGithubLink(ctx, sqlc.UpsertGithubLinkParams{
+		if _, uerr := q.UpsertGithubLink(ctx, sqlc.UpsertGithubLinkParams{
 			ID: newID(), ProjectID: cfg.ProjectID, Kind: kind, Key: key, KeyNum: int64(num),
 			Ref: ref, State: state, TaskID: taskID, Url: url,
-		})
+		}); uerr != nil {
+			// A failed link write is non-fatal; keep delivering other links.
+			continue
+		}
 	}
 }
 
