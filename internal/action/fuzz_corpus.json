@@ -1,0 +1,8 @@
+[
+  { "name": "truncated",    "payload": "{" },
+  { "name": "array",        "payload": "[]" },
+  { "name": "scalar",       "payload": "\"str\"" },
+  { "name": "number",       "payload": "42" },
+  { "name": "wrong-types",  "payload": "{\"a\":1,\"b\":\"x\",\"c\":[]}" },
+  { "name": "deep-nested",  "payload": "{\"a\":{\"b\":{\"c\":[1,2,3]}}}" }
+]

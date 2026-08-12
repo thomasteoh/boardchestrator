@@ -95,7 +95,8 @@ func (b *tokenBucket) allow(key string) (ok bool, remaining float64, retryAfter 
 	now := b.now()
 	st, ok := b.tokens[key]
 	if !ok {
-		b.tokens[key] = bucketState{tokens: float64(b.capacity), last: now}
+		// Fresh key: grant the full burst, consuming one token.
+		b.tokens[key] = bucketState{tokens: float64(b.capacity - 1), last: now}
 		return true, float64(b.capacity - 1), 0
 	}
 	// Refill elapsed tokens.

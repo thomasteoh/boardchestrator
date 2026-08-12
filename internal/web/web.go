@@ -740,7 +740,6 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/board.column.reorder", handleAction)
 	// Task move (drag-and-drop / move-to-menu)
 	r.Post("/api/action/task.move", handleAction)
-	r.Post("/api/action/task.reorder", handleAction)
 	// Saved filters + bulk ops
 	r.Post("/api/action/saved_filter.create", handleAction)
 	r.Post("/api/action/saved_filter.update", handleAction)
