@@ -57,7 +57,7 @@ func (s *Store) syncCheckout(ctx context.Context, cfg Config) (string, error) {
 		if err := s.clone(ctx, cfg.Repo, cfg.Ref, worktree, true); err != nil {
 			return "", fmt.Errorf("wiki: clone %s: %w", cfg.Repo, err)
 		}
-		if err := os.WriteFile(stamp, []byte(cfg.Ref), 0o644); err != nil {
+		if err := os.WriteFile(stamp, []byte(cfg.Ref), 0o600); err != nil {
 			return "", fmt.Errorf("wiki: stamp: %w", err)
 		}
 		return worktree, nil
@@ -69,7 +69,7 @@ func (s *Store) syncCheckout(ctx context.Context, cfg Config) (string, error) {
 		if err := s.clone(ctx, cfg.Repo, cfg.Ref, worktree, true); err != nil {
 			return "", fmt.Errorf("wiki: refresh %s: %w", cfg.Repo, err)
 		}
-		if err := os.WriteFile(stamp, []byte(cfg.Ref), 0o644); err != nil {
+		if err := os.WriteFile(stamp, []byte(cfg.Ref), 0o600); err != nil {
 			return "", fmt.Errorf("wiki: re-stamp: %w", err)
 		}
 	}
