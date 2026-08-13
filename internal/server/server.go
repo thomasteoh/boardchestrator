@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path/filepath"
 	"os"
 	"os/signal"
 	"regexp"
@@ -37,6 +38,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/tenant"
 	"github.com/thomasteoh/boardchestrator/internal/web"
 	"github.com/thomasteoh/boardchestrator/internal/webhook"
+	"github.com/thomasteoh/boardchestrator/internal/wiki"
 )
 
 // timeFormat is the canonical UTC timestamp layout used across the codebase
@@ -501,6 +503,11 @@ func (s *Server) Start(ctx context.Context) error {
 		})
 		action.SetStorageStore(store)
 		web.SetFileStore(store)
+
+		// Wire the wiki backend (WU-501): clone cache under DataDir/wiki.
+		wstore := wiki.NewStore(s.db, filepath.Join(s.cfg.DataDir, "wiki"))
+		action.SetWikiStore(wstore)
+		web.SetWikiStore(wstore)
 
 		// Start the search indexer — subscribes to the event bus.
 		ix := search.NewIndexer(s.db)

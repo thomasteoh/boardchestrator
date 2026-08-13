@@ -7,3 +7,10 @@ sql:
       go:
         package: "sqlc"
         out: "internal/db/sqlc"
+  - engine: "sqlite"
+    schema: "internal/db/schema/wiki/schema.sql"
+    queries: "internal/db/queries/wiki"
+    gen:
+      go:
+        package: "wikidb"
+        out: "internal/db/sqlc/wiki"

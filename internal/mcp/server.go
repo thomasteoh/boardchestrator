@@ -13,6 +13,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
+	"github.com/thomasteoh/boardchestrator/internal/wiki"
 )
 
 // randBytes returns n cryptographically random bytes.
@@ -47,12 +48,19 @@ type Dispatcher interface {
 type Server struct {
 	db         *sql.DB
 	dispatcher Dispatcher
+	wikiStore  *wiki.Store
 }
 
 // New builds an MCP server over db (per-key scope + resource lookups) and the
 // action dispatcher (tool calls).
 func New(db *sql.DB, dispatcher Dispatcher) *Server {
 	return &Server{db: db, dispatcher: dispatcher}
+}
+
+// WithWikiStore sets the wiki backend for the bc://wiki resource (WU-501).
+func (s *Server) WithWikiStore(st *wiki.Store) *Server {
+	s.wikiStore = st
+	return s
 }
 
 // Handle is the /mcp HTTP entry point. Auth is expected to have run first
@@ -282,6 +290,21 @@ func (s *Server) resolveResource(ctx context.Context, orgID, uri string) string 
 		b, _ := json.Marshal(map[string]any{
 			"id": task.ID, "key": task.Key, "title": task.Title,
 			"status": task.Status, "points": task.Points,
+		})
+		return string(b)
+	case strings.HasPrefix(uri, "bc://wiki/"):
+		// WU-501: render a wiki page. bc://wiki/{page-path} → rendered HTML.
+		if s.wikiStore == nil {
+			return ""
+		}
+		pagePath := strings.TrimPrefix(uri, "bc://wiki/")
+		page, err := s.wikiStore.ReadPage(ctx, orgID, pagePath)
+		if err != nil {
+			return ""
+		}
+		b, _ := json.Marshal(map[string]any{
+			"path": page.Path, "name": page.Name,
+			"markdown": page.Markdown, "html": page.HTML,
 		})
 		return string(b)
 	default:

@@ -18,6 +18,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/mcp"
 	"github.com/thomasteoh/boardchestrator/internal/search"
 	"github.com/thomasteoh/boardchestrator/internal/storage"
+	"github.com/thomasteoh/boardchestrator/internal/wiki"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
 )
 
@@ -253,7 +254,11 @@ func handleMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
 		return
 	}
-	mcp.New(disp.DB(), disp).Handle(w, r)
+	srv := mcp.New(disp.DB(), disp)
+	if wikiStore != nil {
+		srv.WithWikiStore(wikiStore)
+	}
+	srv.Handle(w, r)
 }
 
 // handleGithubHook is the inbound GitHub webhook receiver (WU-405). It is
@@ -480,6 +485,13 @@ var fileStore storage.Store
 
 // SetFileStore sets the attachment storage backend for the download handler.
 func SetFileStore(s storage.Store) { fileStore = s }
+
+// wikiStore is the wiki backend, set by SetWikiStore at startup (WU-501). It
+// backs the MCP bc://wiki resource and the wiki web UI.
+var wikiStore *wiki.Store
+
+// SetWikiStore sets the wiki backend for the MCP wiki resource.
+func SetWikiStore(s *wiki.Store) { wikiStore = s }
 
 // handleAttachmentDownload streams an attachment file with security headers.
 func handleAttachmentDownload(w http.ResponseWriter, r *http.Request) {
@@ -747,6 +759,11 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/task.bulk_assign", handleAction)
 	r.Post("/api/action/task.bulk_label", handleAction)
 	r.Post("/api/action/task.bulk_move", handleAction)
+	// Wiki (WU-501): config + read/tree
+	r.Post("/api/action/wiki.config.repo", handleAction)
+	r.Post("/api/action/wiki.config.ref", handleAction)
+	r.Post("/api/action/wiki.read", handleAction)
+	r.Post("/api/action/wiki.tree", handleAction)
 	// Partial-refresh routes (SSE-driven, WU-212)
 	r.Get("/app/project/{projectID}/board/partial", handleBoardPartial)
 	r.Get("/api/project/{projectID}/task/{taskID}/comments-partial", handleCommentsPartial)

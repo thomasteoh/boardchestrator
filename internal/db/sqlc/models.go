@@ -573,3 +573,12 @@ type WebhookDelivery struct {
 	CreatedAt    string
 	UpdatedAt    string
 }
+
+type WikiConfig struct {
+	OrgID     string
+	Repo      string
+	Ref       string
+	Path      string
+	CreatedAt string
+	UpdatedAt string
+}
