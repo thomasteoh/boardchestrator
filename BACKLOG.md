@@ -359,7 +359,7 @@ Deps: 104.
 `wiki_configs` (org owner sets repo; team admin sets ref/path — enforced by distinct permissions); go-git shallow checkout cache + refresh policy; page tree nav; goldmark render with mermaid client-side + sanitised SVG; relative link/image resolution confined to path; `KEY-n` autolinks to tasks.
 AC: checkout/refresh tests against local fixture repo; traversal attempt blocked; render goldens (md, mermaid block, svg sanitised); autolink test.
 
-### WU-502 · Wiki edit + history — `ready`
+### WU-502 · Wiki edit + history — `done (03deba3, 2026-08-14)`
 Deps: 501, 406.
 UI editor with live preview; commit as the user's linked GitHub token (WU-406); users without a linked token get read-only wiki + "connect GitHub in settings" prompt (Q2); commit message editable; non-FF retry-once then conflict UI; history view (log per file) + read-only revision render; create/rename/delete page.
 AC: commit-as-user test (fixture remote); unlinked user sees read-only + prompt, edit endpoint rejects; conflict path test; history render.
