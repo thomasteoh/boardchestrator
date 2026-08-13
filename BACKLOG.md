@@ -354,7 +354,7 @@ Notes: `internal/web/drift_test.go` walks the chi router via `chi.Walk` and chec
 
 ## Phase 5 — Wiki, Reporting, Storage (branch `build/phase-5`)
 
-### WU-501 · Wiki read + render — `ready`
+### WU-501 · Wiki read + render — `done` (99486e9, 2026-08-13)
 Deps: 104.
 `wiki_configs` (org owner sets repo; team admin sets ref/path — enforced by distinct permissions); go-git shallow checkout cache + refresh policy; page tree nav; goldmark render with mermaid client-side + sanitised SVG; relative link/image resolution confined to path; `KEY-n` autolinks to tasks.
 AC: checkout/refresh tests against local fixture repo; traversal attempt blocked; render goldens (md, mermaid block, svg sanitised); autolink test.
