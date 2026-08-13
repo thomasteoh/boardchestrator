@@ -53,6 +53,7 @@ type Store struct {
 	checkoutTTL time.Duration
 	clone       cloneFunc
 	now         func() time.Time
+	token       tokenFn // WU-502: resolves a user's GitHub token for commit-as-user
 }
 
 // cloneFunc is the clone/refresh primitive, injected for tests (local fixture
@@ -79,6 +80,10 @@ type Option func(*Store)
 
 // WithCloneFunc overrides the clone primitive (tests).
 func WithCloneFunc(f cloneFunc) Option { return func(s *Store) { s.clone = f } }
+
+// WithTokenFn overrides the GitHub-token resolver (server wires it to the
+// github store; tests inject a fake).
+func WithTokenFn(f tokenFn) Option { return func(s *Store) { s.token = f } }
 
 // WithCheckoutTTL overrides the refresh TTL.
 func WithCheckoutTTL(d time.Duration) Option { return func(s *Store) { s.checkoutTTL = d } }

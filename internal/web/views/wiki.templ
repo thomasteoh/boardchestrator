@@ -1,0 +1,156 @@
+package views
+
+import (
+	"strings"
+
+	"github.com/thomasteoh/boardchestrator/internal/wiki"
+)
+
+// wikiPageTitle derives a display name from a repo path (docs/onboarding.md → onboarding).
+func wikiPageTitle(path string) string {
+	base := path
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	base = strings.TrimSuffix(base, ".md")
+	base = strings.ReplaceAll(base, "-", " ")
+	base = strings.ReplaceAll(base, "_", " ")
+	return base
+}
+
+// wikiTree is the ordered list of wiki pages for the nav sidebar.
+type wikiTree struct {
+	Pages []wiki.Page
+}
+
+// WikiPage renders the read view: rendered HTML + page-tree nav. When
+// canEdit is true an "Edit" action is shown; unlinked users see a hint.
+templ WikiPage(s Shell, orgID, path string, page wiki.Page, tree []wiki.Page, canEdit bool) {
+	@Base(s) {
+		<div class="bc-wiki" data-org={ orgID }>
+			<aside class="bc-wiki-nav">
+				<h3>Wiki</h3>
+				if tree == nil {
+					<p class="bc-muted">No pages yet.</p>
+				} else {
+					<ul>
+						for _, p := range tree {
+							<li>
+								<a href={ templ.URL("/app/org/" + orgID + "/wiki/" + p.Path) }>
+									{ wikiPageTitle(p.Path) }
+								</a>
+							</li>
+						}
+					</ul>
+				}
+			</aside>
+			<section class="bc-wiki-body">
+				<div class="bc-wiki-tools">
+					<h1>{ wikiPageTitle(path) }</h1>
+					if canEdit {
+						<a class="bc-btn" href={ templ.URL("/app/org/" + orgID + "/wiki/" + path + "/edit") }>Edit</a>
+					} else {
+						<span class="bc-muted">Read-only — link GitHub in settings to edit</span>
+					}
+					<a class="bc-btn bc-btn-ghost" href={ templ.URL("/app/org/" + orgID + "/wiki/" + path + "/history") }>History</a>
+				</div>
+				<div class="bc-wiki-content">
+					if page.HTML != "" {
+						<!-- rendered markdown is pre-sanitized by the wiki store -->
+						@templ.Raw(page.HTML)
+					} else {
+						<p class="bc-muted">Empty page.</p>
+					}
+				</div>
+			</section>
+		</div>
+	}
+}
+
+// WikiEditPage renders the markdown editor with a live preview pane.
+templ WikiEditPage(s Shell, orgID, path, markdown string) {
+	@Base(s) {
+		<div class="bc-wiki bc-wiki-edit" data-org={ orgID }>
+			<section class="bc-wiki-edit-main">
+				<h1>Edit { wikiPageTitle(path) }</h1>
+				<form
+					hx-post="/api/action/wiki.edit"
+					hx-headers={ hxHeaders(s.CSRF) }
+					hx-target="#wiki-save-msg"
+					hx-swap="innerHTML"
+					class="bc-wiki-editor"
+				>
+					<input type="hidden" name="org_id" value={ orgID }/>
+					<input type="hidden" name="path" value={ path }/>
+					<textarea name="markdown" class="bc-wiki-textarea">{ markdown }</textarea>
+					<div class="bc-wiki-commit-row">
+						<input type="text" name="message" placeholder="Commit message (optional)"/>
+						<button type="submit" class="bc-btn">Save & commit</button>
+					</div>
+					<div id="wiki-save-msg"></div>
+				</form>
+			</section>
+			<section class="bc-wiki-preview" id="wiki-preview">
+				<h2>Preview</h2>
+			</section>
+		</div>
+	}
+}
+
+// WikiHistoryPage renders the commit log for one page.
+templ WikiHistoryPage(s Shell, orgID, path string, commits []wiki.Commit) {
+	@Base(s) {
+		<div class="bc-wiki">
+			<section class="bc-wiki-body">
+				<div class="bc-wiki-tools">
+					<h1>History — { wikiPageTitle(path) }</h1>
+					<a class="bc-btn bc-btn-ghost" href={ templ.URL("/app/org/" + orgID + "/wiki/" + path) }>Back to page</a>
+				</div>
+				<table class="bc-table">
+					<thead>
+						<tr><th>Commit</th><th>Author</th><th>When</th><th>Message</th></tr>
+					</thead>
+					<tbody>
+						if len(commits) == 0 {
+							<tr><td colspan="4" class="bc-muted">No history yet.</td></tr>
+						}
+						for _, c := range commits {
+							<tr>
+								<td><code>{ c.Hash[:8] }</code></td>
+								<td>{ c.Author }</td>
+								<td>{ c.When }</td>
+								<td>{ c.Message }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</section>
+		</div>
+	}
+}
+
+// WikiError renders the read page with an error banner (e.g. no wiki
+// configured, or unlinked user). It surfaces a connect-GitHub prompt.
+templ WikiError(s Shell, orgID, msg string, tree []wiki.Page, canEdit bool) {
+	@Base(s) {
+		<div class="bc-wiki" data-org={ orgID }>
+			<aside class="bc-wiki-nav">
+				<h3>Wiki</h3>
+				if tree == nil {
+					<p class="bc-muted">No pages yet.</p>
+				} else {
+					<ul>
+						for _, p := range tree {
+							<li><a href={ templ.URL("/app/org/" + orgID + "/wiki/" + p.Path) }>{ wikiPageTitle(p.Path) }</a></li>
+						}
+					</ul>
+				}
+			</aside>
+			<section class="bc-wiki-body">
+				<div class="bc-wiki-banner">
+					{ msg }
+				</div>
+			</section>
+		</div>
+	}
+}

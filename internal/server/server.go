@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -505,7 +506,29 @@ func (s *Server) Start(ctx context.Context) error {
 		web.SetFileStore(store)
 
 		// Wire the wiki backend (WU-501): clone cache under DataDir/wiki.
-		wstore := wiki.NewStore(s.db, filepath.Join(s.cfg.DataDir, "wiki"))
+		// WU-502: commit-as-user resolves the actor's linked GitHub token.
+		secretKey := tenant.PadKey(s.cfg.SecretKey)
+		wstore := wiki.NewStore(s.db, filepath.Join(s.cfg.DataDir, "wiki"), wiki.WithTokenFn(func(ctx context.Context, userID string) (token, login, name, email string, ok bool, err error) {
+			conn, err := sqlc.New(s.db).FindGithubConnection(ctx, userID)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return "", "", "", "", false, nil
+				}
+				return "", "", "", "", false, fmt.Errorf("github: find connection: %w", err)
+			}
+			if conn.TokenEnc == "" {
+				return "", "", "", "", false, nil
+			}
+			plain, err := tenant.Decrypt(secretKey, conn.TokenEnc)
+			if err != nil {
+				return "", "", "", "", false, fmt.Errorf("github: decrypt token: %w", err)
+			}
+			login = conn.Login
+			if u, err := sqlc.New(s.db).GetUser(ctx, userID); err == nil {
+				name, email = u.Name, u.Email
+			}
+			return plain, login, name, email, true, nil
+		}))
 		action.SetWikiStore(wstore)
 		web.SetWikiStore(wstore)
 

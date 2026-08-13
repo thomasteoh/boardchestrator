@@ -17,16 +17,16 @@ import (
 	wikidb "github.com/thomasteoh/boardchestrator/internal/db/sqlc/wiki"
 )
 
-// plainClone is the default cloneFunc: a shallow (depth-1) clone at `ref`.
-// Used by production; tests inject a local fixture clone via WithCloneFunc.
+// plainClone is the default cloneFunc: a full clone at `ref`. WU-502 needs
+// full history (history view, read_revision) and local commit/push, so the
+// checkout is not depth-limited. It wipes the target worktree first so
+// re-clone (refresh / conflict) works. Tests inject a fixture clone instead.
 func plainClone(ctx context.Context, url, ref, worktree string, shallow bool) error {
-	depth := 0
-	if shallow {
-		depth = 1
+	if err := os.RemoveAll(worktree); err != nil {
+		return fmt.Errorf("wiki: wipe checkout: %w", err)
 	}
 	_, err := gogit.PlainCloneContext(ctx, worktree, false, &gogit.CloneOptions{
 		URL:           url,
-		Depth:         depth,
 		ReferenceName: plumbing.ReferenceName("refs/heads/" + ref),
 		SingleBranch:  true,
 	})
