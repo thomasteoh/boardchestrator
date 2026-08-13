@@ -33,7 +33,7 @@ func copyDir(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(target, b, 0o644)
+		return os.WriteFile(target, b, 0o600)
 	})
 }
 
@@ -72,10 +72,10 @@ func TestStoreReadPage(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(fixture, "docs", "guides"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(fixture, "docs", "index.md"), []byte("# Home\n\nSee ABC-1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(fixture, "docs", "index.md"), []byte("# Home\n\nSee ABC-1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(fixture, "docs", "guides", "onboarding.md"), []byte("## Onboarding\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(fixture, "docs", "guides", "onboarding.md"), []byte("## Onboarding\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -108,7 +108,7 @@ func TestStorePageTree(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(fixture, filepath.Dir(f)), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(fixture, f), []byte("x\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(fixture, f), []byte("x\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -150,7 +150,7 @@ func TestStorePathConfined(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A secret file outside docs.
-	if err := os.WriteFile(filepath.Join(fixture, "secret.md"), []byte("top secret\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(fixture, "secret.md"), []byte("top secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	seedOrg(t, db, orgID)
@@ -171,7 +171,7 @@ func TestStoreRefreshPolicy(t *testing.T) {
 	q := wikidb.New(db)
 	orgID := "org-4"
 	fixture := t.TempDir()
-	if err := os.WriteFile(filepath.Join(fixture, "page.md"), []byte("v1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(fixture, "page.md"), []byte("v1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	seedOrg(t, db, orgID)
@@ -180,7 +180,7 @@ func TestStoreRefreshPolicy(t *testing.T) {
 	st := NewStore(db, t.TempDir(), WithCloneFunc(fixtureClone), WithNow(func() time.Time { return now }))
 
 	// First read clones. Then bump the fixture content to v2.
-	if err := os.WriteFile(filepath.Join(fixture, "page.md"), []byte("v2\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(fixture, "page.md"), []byte("v2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// Advance past TTL → refresh on next read picks up v2.

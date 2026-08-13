@@ -24,7 +24,7 @@ func wikiFixtureStore(t *testing.T, db *sql.DB, files map[string]string) *wiki.S
 		if err := os.MkdirAll(filepath.Join(fixture, filepath.Dir(p)), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(fixture, p), []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(fixture, p), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -42,7 +42,7 @@ func wikiFixtureStore(t *testing.T, db *sql.DB, files map[string]string) *wiki.S
 			if err != nil {
 				return err
 			}
-			return os.WriteFile(tgt, b, 0o644)
+			return os.WriteFile(tgt, b, 0o600)
 		})
 	}
 	return wiki.NewStore(db, t.TempDir(),

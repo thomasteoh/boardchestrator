@@ -12,9 +12,6 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-// keyRe matches a project key + numeric suffix: KEY-n (e.g. ABC-123).
-var keyRe = regexp.MustCompile(`([A-Z][A-Z0-9_]*)-([0-9]+)`)
-
 // mermaidRe matches a fenced code block tagged `mermaid` as rendered by
 // goldmark: <pre><code class="language-mermaid">…</code></pre>.
 var mermaidRe = regexp.MustCompile(`(?s)<pre><code[^>]*class="language-mermaid">(.*?)</code></pre>`)

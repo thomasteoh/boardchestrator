@@ -27,7 +27,6 @@ func AutolinkTasks(in []byte, baseURL string) []byte {
 	for i < len(src) {
 		lt := strings.IndexByte(src[i:], '<')
 		if lt < 0 {
-			i = len(src)
 			break
 		}
 		lt += i
