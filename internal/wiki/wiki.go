@@ -17,9 +17,9 @@ import (
 // Config is an org's wiki configuration.
 type Config struct {
 	OrgID     string `json:"org_id"`
-	Repo      string `json:"repo"` // git URL (https), set by org owner
-	Ref       string `json:"ref"`  // branch/tag/commit, set by team admin
-	Path      string `json:"path"` // subdirectory within the repo, set by team admin
+	Repo      string `json:"repo"`                 // git URL (https), set by org owner
+	Ref       string `json:"ref"`                  // branch/tag/commit, set by team admin
+	Path      string `json:"path"`                 // subdirectory within the repo, set by team admin
 	CreatedAt string `json:"created_at,omitempty"` // preserved on update
 }
 
@@ -48,11 +48,11 @@ func loadConfig(ctx context.Context, q *wikidb.Queries, orgID string) (Config, e
 // Store clones + serves org wikis. checkoutTTL controls the refresh policy:
 // a checkout older than the TTL (or on a different ref) is refreshed.
 type Store struct {
-	db        *sql.DB
-	baseDir   string // cache root for clones
+	db          *sql.DB
+	baseDir     string // cache root for clones
 	checkoutTTL time.Duration
-	clone     cloneFunc
-	now       func() time.Time
+	clone       cloneFunc
+	now         func() time.Time
 }
 
 // cloneFunc is the clone/refresh primitive, injected for tests (local fixture
@@ -62,11 +62,11 @@ type cloneFunc func(ctx context.Context, url, ref, worktree string, shallow bool
 // NewStore builds a wiki Store rooted at baseDir.
 func NewStore(db *sql.DB, baseDir string, opts ...Option) *Store {
 	s := &Store{
-		db:         db,
-		baseDir:    baseDir,
+		db:          db,
+		baseDir:     baseDir,
 		checkoutTTL: 5 * time.Minute,
-		clone:      plainClone,
-		now:        time.Now,
+		clone:       plainClone,
+		now:         time.Now,
 	}
 	for _, o := range opts {
 		o(s)

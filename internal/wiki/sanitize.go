@@ -24,9 +24,9 @@ var safeTags = map[string]bool{
 	"svg": true, "path": true, "g": true, "text": true, "tspan": true,
 	"circle": true, "rect": true, "line": true, "polyline": true,
 	"polygon": true, "ellipse": true, "use": true, "defs": true,
- "title": true, "desc": true, "marker": true, "animate": true,
- "animateTransform": true, "clipPath": true, "mask": true,
- }
+	"title": true, "desc": true, "marker": true, "animate": true,
+	"animateTransform": true, "clipPath": true, "mask": true,
+}
 
 // SanitizeHTML strips XSS vectors while allowing safe SVG/inline markup:
 //   - removes event-handler, style, srcdoc, formaction, autofocus attrs

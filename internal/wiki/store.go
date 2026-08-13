@@ -25,10 +25,10 @@ func plainClone(ctx context.Context, url, ref, worktree string, shallow bool) er
 		depth = 1
 	}
 	_, err := gogit.PlainCloneContext(ctx, worktree, false, &gogit.CloneOptions{
-		URL:          url,
-		Depth:        depth,
+		URL:           url,
+		Depth:         depth,
 		ReferenceName: plumbing.ReferenceName("refs/heads/" + ref),
-		SingleBranch: true,
+		SingleBranch:  true,
 	})
 	return err
 }

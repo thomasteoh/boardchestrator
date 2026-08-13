@@ -45,8 +45,8 @@ func Render(md []byte, opts RenderOptions) ([]byte, error) {
 	}
 	out := buf.Bytes()
 
-	out = mermaidBlock(out)     // fenced mermaid → <div class="mermaid">
-	out = SanitizeHTML(out)    // strip XSS vectors, keep safe SVG
+	out = mermaidBlock(out)                    // fenced mermaid → <div class="mermaid">
+	out = SanitizeHTML(out)                    // strip XSS vectors, keep safe SVG
 	out = AutolinkTasks(out, opts.TaskBaseURL) // KEY-n → task links
 
 	return out, nil

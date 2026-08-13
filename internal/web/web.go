@@ -18,8 +18,8 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/mcp"
 	"github.com/thomasteoh/boardchestrator/internal/search"
 	"github.com/thomasteoh/boardchestrator/internal/storage"
-	"github.com/thomasteoh/boardchestrator/internal/wiki"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
+	"github.com/thomasteoh/boardchestrator/internal/wiki"
 )
 
 // disp is the action dispatcher, set by SetDispatcher at startup.
