@@ -371,15 +371,6 @@ CREATE TABLE comments_fts (
     project_id TEXT
 );
 
--- FTS5 stub for the wiki search index (WU-503, migration 0031). Standalone
--- FTS5 table maintained by the wiki indexer; org-scoped visibility.
-CREATE TABLE wiki_fts (
-    org_id TEXT,
-    path TEXT,
-    name TEXT,
-    content TEXT
-);
-
 -- 0014: task templates + recurring rules
 
 CREATE TABLE IF NOT EXISTS task_templates (
