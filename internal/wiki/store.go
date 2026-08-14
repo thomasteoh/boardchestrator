@@ -98,7 +98,7 @@ func (s *Store) indexCheckout(ctx context.Context, cfg Config, worktree string) 
 	if err != nil {
 		return fmt.Errorf("wiki: index begin: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `DELETE FROM wiki_fts WHERE org_id = ?`, cfg.OrgID); err != nil {
 		return fmt.Errorf("wiki: index clear: %w", err)
 	}
