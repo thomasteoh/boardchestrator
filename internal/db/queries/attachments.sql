@@ -21,3 +21,9 @@ SELECT id, org_id, task_id, uploader_id, filename, mime, size, storage_key, crea
 FROM attachments
 WHERE task_id = ?
 ORDER BY created_at;
+
+-- name: ListAttachmentsByOrg :many
+SELECT id, org_id, task_id, uploader_id, filename, mime, size, storage_key, created_at
+FROM attachments
+WHERE org_id = ?
+ORDER BY created_at;

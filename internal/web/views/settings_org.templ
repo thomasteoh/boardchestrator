@@ -1,7 +1,9 @@
 package views
 
 // OrgSettingsPage renders the organisation settings form.
-templ OrgSettingsPage(s Shell, orgID, name, context, visibility string, breadcrumbs []Breadcrumb) {
+// storageJSON is the current S3 config JSON (or "") and storageBackend is
+// "local" or "s3" (WU-506).
+templ OrgSettingsPage(s Shell, orgID, name, context, visibility, storageBackend, storageJSON string, breadcrumbs []Breadcrumb) {
 	@Base(s) {
 		@Breadcrumbs(breadcrumbs)
 		<h2>Org Settings</h2>
@@ -20,6 +22,17 @@ templ OrgSettingsPage(s Shell, orgID, name, context, visibility string, breadcru
 				</select>
 			</label>
 			<button type="submit" class="bc-btn bc-btn-primary">Save</button>
+		</form>
+		<h3>Storage backend</h3>
+		<p>Current backend: <strong>{ storageBackend }</strong> (local by default; configure S3 per org).</p>
+		<form hx-post={ templ.URL("/api/action/org.storage.configure") } hx-headers={ hxHeaders(s.CSRF) } hx-target="body" hx-swap="innerHTML" class="bc-form">
+			<input type="hidden" name="org_id" value={ orgID }/>
+			<label>S3 config (JSON)
+				<textarea name="storage_config" class="bc-input bc-textarea">{ storageJSON }</textarea>
+			</label>
+			<div class="bc-hint">Fields: endpoint, bucket, access_key_id, secret_access_key, path_style, prefix</div>
+			<button type="submit" class="bc-btn bc-btn-primary">Configure</button>
+			<span class="bc-hint">Leave the textarea empty and Configure to fall back to local storage.</span>
 		</form>
 		<nav class="bc-tab-nav">
 			<a href={ templ.URL("/app/org/"+orgID+"/people") } class="bc-tab-link">People</a>

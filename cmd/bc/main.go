@@ -26,8 +26,14 @@ func main() {
 		serve(cfg)
 	case len(cmd) > 1 && cmd[1] == "backup":
 		backup(context.Background(), cfg)
+	case len(cmd) > 2 && cmd[1] == "storage" && cmd[2] == "migrate":
+		if len(cmd) < 4 {
+			slog.Error("storage migrate requires an org id: bc storage migrate <org-id>")
+			os.Exit(1)
+		}
+		storageMigrate(context.Background(), cfg, cmd[3])
 	default:
-		slog.Error("unknown command, use: serve | backup")
+		slog.Error("unknown command, use: serve | backup | storage migrate <org-id>")
 		os.Exit(1)
 	}
 }

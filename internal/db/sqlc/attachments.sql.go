@@ -112,6 +112,46 @@ func (q *Queries) GetAttachmentByKey(ctx context.Context, storageKey string) (At
 	return i, err
 }
 
+const listAttachmentsByOrg = `-- name: ListAttachmentsByOrg :many
+SELECT id, org_id, task_id, uploader_id, filename, mime, size, storage_key, created_at
+FROM attachments
+WHERE org_id = ?
+ORDER BY created_at
+`
+
+func (q *Queries) ListAttachmentsByOrg(ctx context.Context, orgID string) ([]Attachment, error) {
+	rows, err := q.db.QueryContext(ctx, listAttachmentsByOrg, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Attachment
+	for rows.Next() {
+		var i Attachment
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.TaskID,
+			&i.UploaderID,
+			&i.Filename,
+			&i.Mime,
+			&i.Size,
+			&i.StorageKey,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAttachmentsByTask = `-- name: ListAttachmentsByTask :many
 SELECT id, org_id, task_id, uploader_id, filename, mime, size, storage_key, created_at
 FROM attachments

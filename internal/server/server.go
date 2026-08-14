@@ -511,16 +511,37 @@ func (s *Server) Start(ctx context.Context) error {
 			action.WithSecretKey(tenant.PadKey(s.cfg.SecretKey)),
 		)
 		web.SetDispatcher(s.disp)
-		// Wire the attachment storage backend.
-		store := storage.NewLocalStore(storage.Config{
+		// Wire the attachment storage backend: per-org S3 (from org_secrets)
+		// with a local fallback (WU-506). The local store backs every org that
+		// has not configured an S3 backend.
+		secretKey := tenant.PadKey(s.cfg.SecretKey)
+		localStore := storage.NewLocalStore(storage.Config{
 			DataDir: s.cfg.DataDir,
 		})
-		action.SetStorageStore(store)
-		web.SetFileStore(store)
+		resolver := storage.NewResolver(localStore, func(ctx context.Context, orgID string) (storage.S3Config, error) {
+			secret, err := sqlc.New(s.db).FindOrgSecretByKey(ctx, sqlc.FindOrgSecretByKeyParams{OrgID: orgID, Key: "s3_config"})
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return storage.S3Config{}, nil
+				}
+				return storage.S3Config{}, fmt.Errorf("storage: find s3 config: %w", err)
+			}
+			plain, err := tenant.Decrypt(secretKey, secret.Ciphertext)
+			if err != nil {
+				return storage.S3Config{}, fmt.Errorf("storage: decrypt s3 config: %w", err)
+			}
+			cfg, err := storage.ParseS3Config([]byte(plain))
+			if err != nil {
+				return storage.S3Config{}, fmt.Errorf("storage: parse s3 config: %w", err)
+			}
+			return cfg, nil
+		}, 10<<20, nil)
+		action.SetStorageResolver(resolver)
+		web.SetStorageResolver(resolver)
 
 		// Wire the wiki backend (WU-501): clone cache under DataDir/wiki.
 		// WU-502: commit-as-user resolves the actor's linked GitHub token.
-		secretKey := tenant.PadKey(s.cfg.SecretKey)
+		secretKey = tenant.PadKey(s.cfg.SecretKey)
 		wstore := wiki.NewStore(s.db, filepath.Join(s.cfg.DataDir, "wiki"), wiki.WithTokenFn(func(ctx context.Context, userID string) (token, login, name, email string, ok bool, err error) {
 			conn, err := sqlc.New(s.db).FindGithubConnection(ctx, userID)
 			if err != nil {

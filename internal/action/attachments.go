@@ -58,8 +58,30 @@ func init() {
 // Set via SetStorageStore before dispatch.
 var attachmentStore storage.Store
 
+// attachmentResolver selects the per-org store (S3 or local). When set, it
+// takes precedence over attachmentStore (SPEC §9: per-org backend, local
+// fallback). Set via SetStorageResolver before dispatch.
+var attachmentResolver *storage.Resolver
+
 // SetStorageStore sets the attachment store for the action handlers.
 func SetStorageStore(s storage.Store) { attachmentStore = s }
+
+// SetStorageResolver sets the per-org attachment store resolver (WU-506).
+func SetStorageResolver(r *storage.Resolver) { attachmentResolver = r }
+
+// storeFor resolves the store for the action's org: the per-org resolver when
+// configured, otherwise the single global store.
+func storeFor(ctx context.Context, ac ActionCtx) (storage.Store, error) {
+	return storeForOrg(ctx, ac.Org)
+}
+
+// storeForOrg resolves the store for a specific org id.
+func storeForOrg(ctx context.Context, orgID string) (storage.Store, error) {
+	if attachmentResolver != nil {
+		return attachmentResolver.Resolve(ctx, orgID)
+	}
+	return attachmentStore, nil
+}
 
 func handleAttachmentUpload(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
 	var input attachmentUploadInput
@@ -67,12 +89,17 @@ func handleAttachmentUpload(ctx context.Context, ac ActionCtx, in json.RawMessag
 		return nil, fmt.Errorf("attachment.upload: %w", err)
 	}
 
-	if attachmentStore == nil {
+	if attachmentStore == nil && attachmentResolver == nil {
 		return nil, fmt.Errorf("attachment.upload: storage not configured")
 	}
 
+	store, err := storeFor(ctx, ac)
+	if err != nil {
+		return nil, fmt.Errorf("attachment.upload: %w", err)
+	}
+
 	// Delegate to the store — it handles size/type validation and processing.
-	id, storageKey, err := attachmentStore.Upload(ctx, input.Filename, input.Data, ac.Org, input.TaskID)
+	id, storageKey, err := store.Upload(ctx, input.Filename, input.Data, ac.Org, input.TaskID)
 	if err != nil {
 		return nil, fmt.Errorf("attachment.upload: %w", err)
 	}
@@ -108,7 +135,7 @@ func handleAttachmentDelete(ctx context.Context, ac ActionCtx, in json.RawMessag
 		return nil, fmt.Errorf("attachment.delete: %w", err)
 	}
 
-	if attachmentStore == nil {
+	if attachmentStore == nil && attachmentResolver == nil {
 		return nil, fmt.Errorf("attachment.delete: storage not configured")
 	}
 
@@ -121,8 +148,12 @@ func handleAttachmentDelete(ctx context.Context, ac ActionCtx, in json.RawMessag
 		return nil, fmt.Errorf("attachment.delete: forbidden — not the uploader")
 	}
 
-	// Delete from store.
-	if err := attachmentStore.Delete(ctx, att.StorageKey); err != nil {
+	// Resolve the store for the attachment's org, then delete from it.
+	store, err := storeForOrg(ctx, att.OrgID)
+	if err != nil {
+		return nil, fmt.Errorf("attachment.delete: %w", err)
+	}
+	if err := store.Delete(ctx, att.StorageKey); err != nil {
 		return nil, fmt.Errorf("attachment.delete: %w", err)
 	}
 

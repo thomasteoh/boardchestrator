@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -124,7 +126,34 @@ func handleOrgSettings(w http.ResponseWriter, r *http.Request) {
 	breadcrumbs := []views.Breadcrumb{
 		{Label: orgID, Href: "/app/org/" + orgID + "/settings"},
 	}
-	if err := views.OrgSettingsPage(s, orgID, orgID, "", "", breadcrumbs).Render(r.Context(), w); err != nil {
+
+	// Storage backend status (WU-506): dispatch org.storage.status with the
+	// session actor to read the current S3 config (secret masked) or local.
+	storageBackend, storageJSON := "local", ""
+	if disp != nil {
+		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
+		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
+			actor.ID = sess.UserID
+		}
+		if res, err := disp.Dispatch(r.Context(), actor, "org.storage.status",
+			json.RawMessage(`{}`), action.Opts{Org: orgID}); err == nil {
+			if m, ok := res.(map[string]any); ok {
+				if b, _ := m["backend"].(string); b != "" {
+					storageBackend = b
+				}
+				cfg, ok := m["storage"].(map[string]any)
+				if ok && cfg != nil {
+					// Re-encode the masked config for the textarea. The secret
+					// key is already masked by the action (••••).
+					if b, err := json.Marshal(cfg); err == nil {
+						storageJSON = string(b)
+					}
+				}
+			}
+		}
+	}
+
+	if err := views.OrgSettingsPage(s, orgID, orgID, "", "", storageBackend, storageJSON, breadcrumbs).Render(r.Context(), w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -498,8 +527,15 @@ func handleBacklogView(w http.ResponseWriter, r *http.Request) {
 // fileStore is the attachment storage backend, set by SetFileStore at startup.
 var fileStore storage.Store
 
+// storageResolver selects the per-org attachment store (S3 or local), set by
+// SetStorageResolver (WU-506). Takes precedence over fileStore.
+var storageResolver *storage.Resolver
+
 // SetFileStore sets the attachment storage backend for the download handler.
 func SetFileStore(s storage.Store) { fileStore = s }
+
+// SetStorageResolver sets the per-org attachment store resolver (WU-506).
+func SetStorageResolver(r *storage.Resolver) { storageResolver = r }
 
 // wikiStore is the wiki backend, set by SetWikiStore at startup (WU-501). It
 // backs the MCP bc://wiki resource and the wiki web UI.
@@ -514,12 +550,54 @@ func handleAttachmentDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
 		return
 	}
-	if fileStore == nil {
+	if storageResolver == nil && fileStore == nil {
 		http.Error(w, "file store not configured", http.StatusInternalServerError)
 		return
 	}
 
-	http.Error(w, "attachment download: direct DB query not wired — use action dispatch", http.StatusNotImplemented)
+	attID := chi.URLParam(r, "attachmentID")
+	att, err := sqlc.New(disp.DB()).GetAttachment(r.Context(), attID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "attachment not found", http.StatusNotFound)
+			return
+		}
+		slog.Error("attachment download", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Resolve the store for the attachment's org (per-org backend, local
+	// fallback), then open the object.
+	var st storage.Store
+	if storageResolver != nil {
+		st, err = storageResolver.Resolve(r.Context(), att.OrgID)
+		if err != nil {
+			slog.Error("attachment download resolve", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		st = fileStore
+	}
+
+	rc, err := st.Open(r.Context(), att.StorageKey)
+	if err != nil {
+		slog.Error("attachment download open", "error", err)
+		http.Error(w, "storage read error", http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
+
+	w.Header().Set("Content-Type", att.Mime)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", att.Filename))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Length", fmt.Sprint(att.Size))
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.Copy(w, rc); err != nil {
+		slog.Error("attachment download copy", "error", err)
+	}
 }
 
 // handleSearchPage renders the search page.
