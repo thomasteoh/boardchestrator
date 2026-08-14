@@ -829,6 +829,7 @@ func Routes(r chi.Router) {
 	// API key routes (WU-109)
 	r.Get("/app/org/{orgID}/apikeys", handleAPIKeys)
 	r.Get("/app/org/{orgID}/usage", handleUsage)
+	r.Get("/app/org/{orgID}/usage.csv/{kind}", handleUsageCSV)
 	r.Post("/api/action/apikey.create", handleAction)
 	r.Post("/api/action/apikey.revoke", handleAction)
 	r.Post("/api/v1/actions/{name}", handleRPCv1(rateLimiter))

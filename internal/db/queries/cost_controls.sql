@@ -95,6 +95,86 @@ WHERE r.org_id = ?
 GROUP BY r.project_id
 ORDER BY total_usd DESC;
 
+-- name: AgentUsageInWindow :many
+-- Per-agent usage for an arbitrary timeframe (WU-505): runs, tokens, cost, and
+-- action count (run_steps rows = model calls + tool executions). Runs without
+-- pricing count as $0.
+SELECT a.id AS agent_id,
+       a.name AS agent_name,
+       COUNT(DISTINCT r.id) AS runs,
+       CAST(COALESCE(SUM(r.prompt_tokens + r.completion_tokens), 0) AS INTEGER) AS tokens,
+       CAST(COALESCE(SUM(
+           (r.prompt_tokens / 1000000.0) * COALESCE(p.input_per_mtok, 0) +
+           (r.completion_tokens / 1000000.0) * COALESCE(p.output_per_mtok, 0)
+       ), 0) AS REAL) AS total_usd,
+       COUNT(s.id) AS actions
+FROM runs r
+JOIN agents a ON a.id = r.agent_id
+LEFT JOIN run_steps s ON s.run_id = r.id
+LEFT JOIN model_pricing p ON p.provider_id = a.provider_id AND p.model = a.model
+WHERE r.org_id = ?
+  AND r.status IN ('finished', 'cancelled')
+  AND r.finished_at >= ?
+  AND r.finished_at < ?
+GROUP BY a.id, a.name
+ORDER BY total_usd DESC;
+
+-- name: ProjectUsageInWindow :many
+-- Per-project usage for an arbitrary timeframe (WU-505): runs, tokens, cost,
+-- actions. project_id is NULL for org-scoped runs.
+SELECT COALESCE(r.project_id, '') AS project_id,
+       COUNT(DISTINCT r.id) AS runs,
+       CAST(COALESCE(SUM(r.prompt_tokens + r.completion_tokens), 0) AS INTEGER) AS tokens,
+       CAST(COALESCE(SUM(
+           (r.prompt_tokens / 1000000.0) * COALESCE(p.input_per_mtok, 0) +
+           (r.completion_tokens / 1000000.0) * COALESCE(p.output_per_mtok, 0)
+       ), 0) AS REAL) AS total_usd,
+       COUNT(s.id) AS actions
+FROM runs r
+JOIN agents a ON a.id = r.agent_id
+LEFT JOIN run_steps s ON s.run_id = r.id
+LEFT JOIN model_pricing p ON p.provider_id = a.provider_id AND p.model = a.model
+WHERE r.org_id = ?
+  AND r.status IN ('finished', 'cancelled')
+  AND r.finished_at >= ?
+  AND r.finished_at < ?
+GROUP BY r.project_id
+ORDER BY total_usd DESC;
+
+-- name: OrgUsageInWindow :one
+-- Org totals for an arbitrary timeframe (WU-505): spend, tokens, runs, actions.
+SELECT CAST(COALESCE(SUM(
+    (r.prompt_tokens / 1000000.0) * COALESCE(p.input_per_mtok, 0) +
+    (r.completion_tokens / 1000000.0) * COALESCE(p.output_per_mtok, 0)
+), 0) AS REAL) AS total_usd,
+       CAST(COALESCE(SUM(r.prompt_tokens + r.completion_tokens), 0) AS INTEGER) AS total_tokens,
+       COUNT(DISTINCT r.id) AS runs,
+       COUNT(s.id) AS actions
+FROM runs r
+JOIN agents a ON a.id = r.agent_id
+LEFT JOIN run_steps s ON s.run_id = r.id
+LEFT JOIN model_pricing p ON p.provider_id = a.provider_id AND p.model = a.model
+WHERE r.org_id = ?
+  AND r.status IN ('finished', 'cancelled')
+  AND r.finished_at >= ?
+  AND r.finished_at < ?;
+
+-- name: ListRunsInWindow :many
+-- Drill-down run list for an arbitrary timeframe, optionally filtered by agent
+-- or project (WU-505). Empty agent/project params mean no filter.
+SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, project_id,
+       initiated_by, status, error, prompt_tokens, completion_tokens,
+       created_at, started_at, finished_at
+FROM runs
+WHERE org_id = ?
+  AND status IN ('finished', 'cancelled')
+  AND finished_at >= ?
+  AND finished_at < ?
+  AND (? = '' OR agent_id = ?)
+  AND (? = '' OR project_id = ?)
+ORDER BY finished_at DESC
+LIMIT ?;
+
 -- name: CountRunsByAgentInWindow :one
 -- Runs started by an agent in the last hour (WU-310 runs/hour cap).
 SELECT COUNT(*) FROM runs

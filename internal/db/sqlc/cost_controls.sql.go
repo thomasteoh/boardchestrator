@@ -72,6 +72,76 @@ func (q *Queries) AgentUsageByMonth(ctx context.Context, arg AgentUsageByMonthPa
 	return items, nil
 }
 
+const agentUsageInWindow = `-- name: AgentUsageInWindow :many
+SELECT a.id AS agent_id,
+       a.name AS agent_name,
+       COUNT(DISTINCT r.id) AS runs,
+       CAST(COALESCE(SUM(r.prompt_tokens + r.completion_tokens), 0) AS INTEGER) AS tokens,
+       CAST(COALESCE(SUM(
+           (r.prompt_tokens / 1000000.0) * COALESCE(p.input_per_mtok, 0) +
+           (r.completion_tokens / 1000000.0) * COALESCE(p.output_per_mtok, 0)
+       ), 0) AS REAL) AS total_usd,
+       COUNT(s.id) AS actions
+FROM runs r
+JOIN agents a ON a.id = r.agent_id
+LEFT JOIN run_steps s ON s.run_id = r.id
+LEFT JOIN model_pricing p ON p.provider_id = a.provider_id AND p.model = a.model
+WHERE r.org_id = ?
+  AND r.status IN ('finished', 'cancelled')
+  AND r.finished_at >= ?
+  AND r.finished_at < ?
+GROUP BY a.id, a.name
+ORDER BY total_usd DESC
+`
+
+type AgentUsageInWindowParams struct {
+	OrgID        string
+	FinishedAt   sql.NullString
+	FinishedAt_2 sql.NullString
+}
+
+type AgentUsageInWindowRow struct {
+	AgentID   string
+	AgentName string
+	Runs      int64
+	Tokens    int64
+	TotalUsd  float64
+	Actions   int64
+}
+
+// Per-agent usage for an arbitrary timeframe (WU-505): runs, tokens, cost, and
+// action count (run_steps rows = model calls + tool executions). Runs without
+// pricing count as $0.
+func (q *Queries) AgentUsageInWindow(ctx context.Context, arg AgentUsageInWindowParams) ([]AgentUsageInWindowRow, error) {
+	rows, err := q.db.QueryContext(ctx, agentUsageInWindow, arg.OrgID, arg.FinishedAt, arg.FinishedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AgentUsageInWindowRow
+	for rows.Next() {
+		var i AgentUsageInWindowRow
+		if err := rows.Scan(
+			&i.AgentID,
+			&i.AgentName,
+			&i.Runs,
+			&i.Tokens,
+			&i.TotalUsd,
+			&i.Actions,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countRunsByAgentInWindow = `-- name: CountRunsByAgentInWindow :one
 SELECT COUNT(*) FROM runs
 WHERE agent_id = ? AND org_id = ?
@@ -261,6 +331,82 @@ func (q *Queries) ListOrgCapAlerts(ctx context.Context, orgID string) ([]OrgCapA
 	return items, nil
 }
 
+const listRunsInWindow = `-- name: ListRunsInWindow :many
+SELECT id, org_id, agent_id, trigger, task_id, chat_session_id, project_id,
+       initiated_by, status, error, prompt_tokens, completion_tokens,
+       created_at, started_at, finished_at
+FROM runs
+WHERE org_id = ?
+  AND status IN ('finished', 'cancelled')
+  AND finished_at >= ?
+  AND finished_at < ?
+  AND (? = '' OR agent_id = ?)
+  AND (? = '' OR project_id = ?)
+ORDER BY finished_at DESC
+LIMIT ?
+`
+
+type ListRunsInWindowParams struct {
+	OrgID        string
+	FinishedAt   sql.NullString
+	FinishedAt_2 sql.NullString
+	Column4      interface{}
+	AgentID      string
+	Column6      interface{}
+	ProjectID    sql.NullString
+	Limit        int64
+}
+
+// Drill-down run list for an arbitrary timeframe, optionally filtered by agent
+// or project (WU-505). Empty agent/project params mean no filter.
+func (q *Queries) ListRunsInWindow(ctx context.Context, arg ListRunsInWindowParams) ([]Run, error) {
+	rows, err := q.db.QueryContext(ctx, listRunsInWindow,
+		arg.OrgID,
+		arg.FinishedAt,
+		arg.FinishedAt_2,
+		arg.Column4,
+		arg.AgentID,
+		arg.Column6,
+		arg.ProjectID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Run
+	for rows.Next() {
+		var i Run
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.AgentID,
+			&i.Trigger,
+			&i.TaskID,
+			&i.ChatSessionID,
+			&i.ProjectID,
+			&i.InitiatedBy,
+			&i.Status,
+			&i.Error,
+			&i.PromptTokens,
+			&i.CompletionTokens,
+			&i.CreatedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const orgMonthlySpend = `-- name: OrgMonthlySpend :one
 SELECT CAST(COALESCE(SUM(
     (r.prompt_tokens / 1000000.0) * COALESCE(p.input_per_mtok, 0) +
@@ -312,6 +458,50 @@ func (q *Queries) OrgMonthlyTokens(ctx context.Context, arg OrgMonthlyTokensPara
 	return column_1, err
 }
 
+const orgUsageInWindow = `-- name: OrgUsageInWindow :one
+SELECT CAST(COALESCE(SUM(
+    (r.prompt_tokens / 1000000.0) * COALESCE(p.input_per_mtok, 0) +
+    (r.completion_tokens / 1000000.0) * COALESCE(p.output_per_mtok, 0)
+), 0) AS REAL) AS total_usd,
+       CAST(COALESCE(SUM(r.prompt_tokens + r.completion_tokens), 0) AS INTEGER) AS total_tokens,
+       COUNT(DISTINCT r.id) AS runs,
+       COUNT(s.id) AS actions
+FROM runs r
+JOIN agents a ON a.id = r.agent_id
+LEFT JOIN run_steps s ON s.run_id = r.id
+LEFT JOIN model_pricing p ON p.provider_id = a.provider_id AND p.model = a.model
+WHERE r.org_id = ?
+  AND r.status IN ('finished', 'cancelled')
+  AND r.finished_at >= ?
+  AND r.finished_at < ?
+`
+
+type OrgUsageInWindowParams struct {
+	OrgID        string
+	FinishedAt   sql.NullString
+	FinishedAt_2 sql.NullString
+}
+
+type OrgUsageInWindowRow struct {
+	TotalUsd    float64
+	TotalTokens int64
+	Runs        int64
+	Actions     int64
+}
+
+// Org totals for an arbitrary timeframe (WU-505): spend, tokens, runs, actions.
+func (q *Queries) OrgUsageInWindow(ctx context.Context, arg OrgUsageInWindowParams) (OrgUsageInWindowRow, error) {
+	row := q.db.QueryRowContext(ctx, orgUsageInWindow, arg.OrgID, arg.FinishedAt, arg.FinishedAt_2)
+	var i OrgUsageInWindowRow
+	err := row.Scan(
+		&i.TotalUsd,
+		&i.TotalTokens,
+		&i.Runs,
+		&i.Actions,
+	)
+	return i, err
+}
+
 const projectUsageByMonth = `-- name: ProjectUsageByMonth :many
 SELECT r.project_id AS project_id,
        COUNT(r.id) AS runs,
@@ -357,6 +547,72 @@ func (q *Queries) ProjectUsageByMonth(ctx context.Context, arg ProjectUsageByMon
 			&i.Runs,
 			&i.Tokens,
 			&i.TotalUsd,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const projectUsageInWindow = `-- name: ProjectUsageInWindow :many
+SELECT COALESCE(r.project_id, '') AS project_id,
+       COUNT(DISTINCT r.id) AS runs,
+       CAST(COALESCE(SUM(r.prompt_tokens + r.completion_tokens), 0) AS INTEGER) AS tokens,
+       CAST(COALESCE(SUM(
+           (r.prompt_tokens / 1000000.0) * COALESCE(p.input_per_mtok, 0) +
+           (r.completion_tokens / 1000000.0) * COALESCE(p.output_per_mtok, 0)
+       ), 0) AS REAL) AS total_usd,
+       COUNT(s.id) AS actions
+FROM runs r
+JOIN agents a ON a.id = r.agent_id
+LEFT JOIN run_steps s ON s.run_id = r.id
+LEFT JOIN model_pricing p ON p.provider_id = a.provider_id AND p.model = a.model
+WHERE r.org_id = ?
+  AND r.status IN ('finished', 'cancelled')
+  AND r.finished_at >= ?
+  AND r.finished_at < ?
+GROUP BY r.project_id
+ORDER BY total_usd DESC
+`
+
+type ProjectUsageInWindowParams struct {
+	OrgID        string
+	FinishedAt   sql.NullString
+	FinishedAt_2 sql.NullString
+}
+
+type ProjectUsageInWindowRow struct {
+	ProjectID string
+	Runs      int64
+	Tokens    int64
+	TotalUsd  float64
+	Actions   int64
+}
+
+// Per-project usage for an arbitrary timeframe (WU-505): runs, tokens, cost,
+// actions. project_id is NULL for org-scoped runs.
+func (q *Queries) ProjectUsageInWindow(ctx context.Context, arg ProjectUsageInWindowParams) ([]ProjectUsageInWindowRow, error) {
+	rows, err := q.db.QueryContext(ctx, projectUsageInWindow, arg.OrgID, arg.FinishedAt, arg.FinishedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ProjectUsageInWindowRow
+	for rows.Next() {
+		var i ProjectUsageInWindowRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.Runs,
+			&i.Tokens,
+			&i.TotalUsd,
+			&i.Actions,
 		); err != nil {
 			return nil, err
 		}

@@ -2,21 +2,37 @@ package views
 
 import "fmt"
 
-// UsageAgentRow is a per-agent usage aggregate for the month (WU-310).
+// UsageAgentRow is a per-agent usage aggregate for the month (WU-310/505).
 type UsageAgentRow struct {
 	AgentID   string
 	AgentName string
 	Runs      int64
 	Tokens    int64
+	Actions   int64
 	TotalUSD  float64
 }
 
-// UsageProjectRow is a per-project usage aggregate for the month (WU-310).
+// UsageProjectRow is a per-project usage aggregate for the month (WU-310/505).
 type UsageProjectRow struct {
 	ProjectID string
 	Runs      int64
 	Tokens    int64
+	Actions   int64
 	TotalUSD  float64
+}
+
+// UsageRunRow is one drill-down run (WU-505).
+type UsageRunRow struct {
+	ID         string
+	AgentID    string
+	Trigger    string
+	Status     string
+	TaskID     string
+	ProjectID  string
+	Tokens     int64
+	Cost       float64
+	CreatedAt  string
+	FinishedAt string
 }
 
 // UsageCapAlert is an org_cap_alerts row shown on the dashboard (WU-310).
@@ -27,25 +43,42 @@ type UsageCapAlert struct {
 	At       string
 }
 
-// UsagePage renders the org usage dashboard: monthly total + cap status, then
-// per-agent and per-project tables, then recent cap-threshold alerts (WU-310).
-templ UsagePage(s Shell, orgID string, totalUSD float64, totalTokens int64, capUSD float64, month string, agents []UsageAgentRow, projects []UsageProjectRow, alerts []UsageCapAlert) {
+// UsagePage renders the org usage dashboard for a timeframe: totals with
+// runs/actions, per-agent and per-project tables (with actions), a drill-down
+// run list, CSV export links, and recent cap-threshold alerts (WU-310/505).
+templ UsagePage(s Shell, orgID string, totalUSD float64, totalTokens int64, runs int64, actions int64, capUSD float64, from string, to string, agents []UsageAgentRow, projects []UsageProjectRow, runRows []UsageRunRow, alerts []UsageCapAlert) {
 	<div class="pane">
 		<h2>Usage</h2>
-		<p class="muted">Month: { month }</p>
+		<p class="muted">Window: { from } → { to }</p>
 		<div class="usage-total">
 			<span>Total spend</span>
 			<strong>$ { fmt.Sprintf("%.2f", totalUSD) }</strong>
 			<span class="muted">{ fmt.Sprintf("%d", totalTokens) } tokens</span>
+			<span class="muted">{ fmt.Sprintf("%d", runs) } runs · { fmt.Sprintf("%d", actions) } actions</span>
 			if capUSD > 0 {
 				<span class="muted">cap ${ fmt.Sprintf("%.2f", capUSD) }</span>
 			}
 		</div>
 
+		<div class="usage-controls">
+			<form class="usage-filter" method="get" action={ templ.URL("/app/org/"+orgID+"/usage") }>
+				<input type="datetime-local" name="from" value={ from } />
+				<input type="datetime-local" name="to" value={ to } />
+				<input type="text" name="agent" placeholder="agent id" />
+				<input type="text" name="project" placeholder="project id" />
+				<button type="submit">Filter</button>
+			</form>
+			<div class="usage-export">
+				<a href={ templ.URL("/app/org/"+orgID+"/usage.csv?kind=agents&from="+from+"&to="+to) }>CSV agents</a>
+				<a href={ templ.URL("/app/org/"+orgID+"/usage.csv?kind=projects&from="+from+"&to="+to) }>CSV projects</a>
+				<a href={ templ.URL("/app/org/"+orgID+"/usage.csv?kind=runs&from="+from+"&to="+to) }>CSV runs</a>
+			</div>
+		</div>
+
 		<h3>By agent</h3>
 		<table class="usage-table">
 			<thead>
-				<tr><th>Agent</th><th>Runs</th><th>Tokens</th><th>Cost</th></tr>
+				<tr><th>Agent</th><th>Runs</th><th>Tokens</th><th>Actions</th><th>Cost</th></tr>
 			</thead>
 			<tbody>
 				for _, a := range agents {
@@ -53,6 +86,7 @@ templ UsagePage(s Shell, orgID string, totalUSD float64, totalTokens int64, capU
 						<td>{ a.AgentName }</td>
 						<td>{ fmt.Sprintf("%d", a.Runs) }</td>
 						<td>{ fmt.Sprintf("%d", a.Tokens) }</td>
+						<td>{ fmt.Sprintf("%d", a.Actions) }</td>
 						<td>${ fmt.Sprintf("%.2f", a.TotalUSD) }</td>
 					</tr>
 				}
@@ -62,7 +96,7 @@ templ UsagePage(s Shell, orgID string, totalUSD float64, totalTokens int64, capU
 		<h3>By project</h3>
 		<table class="usage-table">
 			<thead>
-				<tr><th>Project</th><th>Runs</th><th>Tokens</th><th>Cost</th></tr>
+				<tr><th>Project</th><th>Runs</th><th>Tokens</th><th>Actions</th><th>Cost</th></tr>
 			</thead>
 			<tbody>
 				for _, p := range projects {
@@ -70,11 +104,36 @@ templ UsagePage(s Shell, orgID string, totalUSD float64, totalTokens int64, capU
 						<td>{ p.ProjectID }</td>
 						<td>{ fmt.Sprintf("%d", p.Runs) }</td>
 						<td>{ fmt.Sprintf("%d", p.Tokens) }</td>
+						<td>{ fmt.Sprintf("%d", p.Actions) }</td>
 						<td>${ fmt.Sprintf("%.2f", p.TotalUSD) }</td>
 					</tr>
 				}
 			</tbody>
 		</table>
+
+		if len(runRows) > 0 {
+			<h3>Runs (drill-down)</h3>
+			<table class="usage-table">
+				<thead>
+					<tr><th>ID</th><th>Agent</th><th>Trigger</th><th>Status</th><th>Task</th><th>Project</th><th>Tokens</th><th>Cost</th><th>Finished</th></tr>
+				</thead>
+				<tbody>
+					for _, r := range runRows {
+						<tr>
+							<td>{ r.ID }</td>
+							<td>{ r.AgentID }</td>
+							<td>{ r.Trigger }</td>
+							<td>{ r.Status }</td>
+							<td>{ r.TaskID }</td>
+							<td>{ r.ProjectID }</td>
+							<td>{ fmt.Sprintf("%d", r.Tokens) }</td>
+							<td>${ fmt.Sprintf("%.2f", r.Cost) }</td>
+							<td>{ r.FinishedAt }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
 
 		if len(alerts) > 0 {
 			<h3>Cap alerts</h3>

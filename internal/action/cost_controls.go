@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
@@ -92,48 +93,116 @@ func handleOrgCapSet(ctx context.Context, ac ActionCtx, in json.RawMessage) (any
 	return org, nil
 }
 
-// usageInput is the input to usage.read.
+// usageInput is the input to usage.read (WU-505): an arbitrary timeframe
+// (from/to RFC3339, default current UTC month) and optional agent/project
+// filters. csv=true returns RFC 4180 rows for the by-agent and by-project
+// aggregates.
 type usageInput struct {
-	Month string `json:"month,omitempty"` // RFC3339 start-of-month; defaults to current UTC month
+	From      string `json:"from,omitempty"`
+	To        string `json:"to,omitempty"`
+	AgentID   string `json:"agent_id,omitempty"`
+	ProjectID string `json:"project_id,omitempty"`
+	Limit     int64  `json:"limit,omitempty"` // drill-down run rows (default 100)
+	CSV       bool   `json:"csv,omitempty"`
 }
 
-// handleUsageRead returns the org's usage summary for a month (WU-310): total
-// spend + tokens + per-agent + per-project rows (dashboard aggregation).
+// handleUsageRead returns the org's usage summary for a timeframe (WU-310 +
+// WU-505): totals + per-agent + per-project rows (with action counts) and an
+// optional drill-down run list.
 func handleUsageRead(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
 	var input usageInput
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("usage.read: bad input: %w", err)
 	}
-	start := monthStart(input.Month)
-	org, err := ac.Tx.FindOrgByID(ctx, ac.Org)
-	if err != nil {
+	from, to := usageWindow(input.From, input.To)
+	if from == "" || to == "" {
+		return nil, fmt.Errorf("usage.read: bad timeframe")
+	}
+	if _, err := ac.Tx.FindOrgByID(ctx, ac.Org); err != nil {
 		return nil, fmt.Errorf("usage.read: find org: %w", err)
 	}
-	totalUSD, err := ac.Tx.OrgMonthlySpend(ctx, sqlc.OrgMonthlySpendParams{OrgID: ac.Org, FinishedAt: sql.NullString{String: start, Valid: true}})
+	fromN := sql.NullString{String: from, Valid: true}
+	toN := sql.NullString{String: to, Valid: true}
+
+	orgUsage, err := ac.Tx.OrgUsageInWindow(ctx, sqlc.OrgUsageInWindowParams{OrgID: ac.Org, FinishedAt: fromN, FinishedAt_2: toN})
 	if err != nil {
-		return nil, fmt.Errorf("usage.read: spend: %w", err)
+		return nil, fmt.Errorf("usage.read: totals: %w", err)
 	}
-	tokens, err := ac.Tx.OrgMonthlyTokens(ctx, sqlc.OrgMonthlyTokensParams{OrgID: ac.Org, FinishedAt: sql.NullString{String: start, Valid: true}})
-	if err != nil {
-		return nil, fmt.Errorf("usage.read: tokens: %w", err)
-	}
-	byAgent, err := ac.Tx.AgentUsageByMonth(ctx, sqlc.AgentUsageByMonthParams{OrgID: ac.Org, FinishedAt: sql.NullString{String: start, Valid: true}})
+	byAgent, err := ac.Tx.AgentUsageInWindow(ctx, sqlc.AgentUsageInWindowParams{OrgID: ac.Org, FinishedAt: fromN, FinishedAt_2: toN})
 	if err != nil {
 		return nil, fmt.Errorf("usage.read: by agent: %w", err)
 	}
-	byProject, err := ac.Tx.ProjectUsageByMonth(ctx, sqlc.ProjectUsageByMonthParams{OrgID: ac.Org, FinishedAt: sql.NullString{String: start, Valid: true}})
+	byProject, err := ac.Tx.ProjectUsageInWindow(ctx, sqlc.ProjectUsageInWindowParams{OrgID: ac.Org, FinishedAt: fromN, FinishedAt_2: toN})
 	if err != nil {
 		return nil, fmt.Errorf("usage.read: by project: %w", err)
 	}
-	return map[string]any{
-		"org_id":          ac.Org,
-		"month":           start,
-		"total_usd":       totalUSD,
-		"total_tokens":    tokens,
-		"monthly_cap_usd": org.MonthlyCapUsd,
-		"by_agent":        byAgent,
-		"by_project":      byProject,
-	}, nil
+
+	// Optional drill-down run list filtered by agent/project.
+	var runs []sqlc.Run
+	if input.AgentID != "" || input.ProjectID != "" || input.Limit > 0 {
+		limit := input.Limit
+		if limit == 0 {
+			limit = 100
+		}
+		agentF := input.AgentID
+		projF := input.ProjectID
+		runs, err = ac.Tx.ListRunsInWindow(ctx, sqlc.ListRunsInWindowParams{
+			OrgID: ac.Org, FinishedAt: fromN, FinishedAt_2: toN,
+			Column4: agentF, AgentID: agentF, Column6: projF,
+			ProjectID: sql.NullString{String: projF, Valid: projF != ""}, Limit: limit,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("usage.read: runs: %w", err)
+		}
+	}
+
+	if input.CSV {
+		return map[string]any{
+			"csv_agents":   csvUsageAgents(byAgent),
+			"csv_projects": csvUsageProjects(byProject),
+			"csv_runs":     csvUsageRuns(runs),
+		}, nil
+	}
+
+	resp := map[string]any{
+		"org_id":       ac.Org,
+		"from":         from,
+		"to":           to,
+		"total_usd":    orgUsage.TotalUsd,
+		"total_tokens": orgUsage.TotalTokens,
+		"runs":         orgUsage.Runs,
+		"actions":      orgUsage.Actions,
+		"by_agent":     byAgent,
+		"by_project":   byProject,
+	}
+	if len(runs) > 0 {
+		resp["runs_list"] = runs
+	}
+	return resp, nil
+}
+
+// usageWindow returns the inclusive [from, to) UTC window, defaulting to the
+// current UTC month when either bound is empty.
+func usageWindow(from, to string) (string, string) {
+	if from == "" && to == "" {
+		m := monthStart("")
+		return m, monthEnd(m)
+	}
+	// Both bounds must parse; fall back to month on failure.
+	f, ferr := time.Parse("2006-01-02T15:04:05.000Z", from)
+	t, terr := time.Parse("2006-01-02T15:04:05.000Z", to)
+	if ferr != nil || terr != nil || !t.After(f) {
+		m := monthStart("")
+		return m, monthEnd(m)
+	}
+	return f.UTC().Format("2006-01-02T15:04:05.000Z"), t.UTC().Format("2006-01-02T15:04:05.000Z")
+}
+
+// monthEnd returns the UTC start of the month following m.
+func monthEnd(m string) string {
+	t, _ := time.Parse("2006-01-02T15:04:05.000Z", m)
+	next := time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+	return next.Format("2006-01-02T15:04:05.000Z")
 }
 
 // monthStart returns the UTC start of the month for the given RFC3339 start
@@ -146,6 +215,50 @@ func monthStart(s string) string {
 		}
 	}
 	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02T15:04:05.000Z")
+}
+
+// csvQuote quotes a field per RFC 4180 when it contains a comma, quote, or
+// newline, doubling embedded quotes.
+func csvQuote(s string) string {
+	if strings.ContainsAny(s, ",\"\n") {
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	return s
+}
+
+// csvUsageAgents serializes per-agent usage rows as RFC 4180 CSV.
+func csvUsageAgents(rows []sqlc.AgentUsageInWindowRow) string {
+	var b strings.Builder
+	b.WriteString("agent_id,agent_name,runs,tokens,cost_usd,actions\n")
+	for _, r := range rows {
+		fmt.Fprintf(&b, "%s,%s,%d,%d,%.2f,%d\n",
+			csvQuote(r.AgentID), csvQuote(r.AgentName), r.Runs, r.Tokens, r.TotalUsd, r.Actions)
+	}
+	return b.String()
+}
+
+// csvUsageProjects serializes per-project usage rows as RFC 4180 CSV.
+func csvUsageProjects(rows []sqlc.ProjectUsageInWindowRow) string {
+	var b strings.Builder
+	b.WriteString("project_id,runs,tokens,cost_usd,actions\n")
+	for _, r := range rows {
+		fmt.Fprintf(&b, "%s,%d,%d,%.2f,%d\n",
+			csvQuote(r.ProjectID), r.Runs, r.Tokens, r.TotalUsd, r.Actions)
+	}
+	return b.String()
+}
+
+// csvUsageRuns serializes the drill-down run list as RFC 4180 CSV.
+func csvUsageRuns(rows []sqlc.Run) string {
+	var b strings.Builder
+	b.WriteString("id,agent_id,trigger,status,task_id,project_id,prompt_tokens,completion_tokens,created_at,finished_at\n")
+	for _, r := range rows {
+		fmt.Fprintf(&b, "%s,%s,%s,%s,%s,%s,%d,%d,%s,%s\n",
+			csvQuote(r.ID), csvQuote(r.AgentID), csvQuote(r.Trigger), csvQuote(r.Status),
+			csvQuote(r.TaskID.String), csvQuote(r.ProjectID.String),
+			r.PromptTokens, r.CompletionTokens, csvQuote(r.CreatedAt), csvQuote(r.FinishedAt.String))
+	}
+	return b.String()
 }
 
 func init() {
@@ -199,6 +312,12 @@ func init() {
 		Scope:      ScopeOrg,
 		Input: ObjectSchema{Fields: []Field{
 			{Name: "month", Kind: KindString, Required: false},
+			{Name: "from", Kind: KindString, Required: false},
+			{Name: "to", Kind: KindString, Required: false},
+			{Name: "agent_id", Kind: KindString, Required: false},
+			{Name: "project_id", Kind: KindString, Required: false},
+			{Name: "limit", Kind: KindNumber, Required: false},
+			{Name: "csv", Kind: KindBool, Required: false},
 		}},
 		Handle: handleUsageRead,
 	})
