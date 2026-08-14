@@ -369,7 +369,7 @@ Deps: 501, 208.
 Indexer walks checkout on refresh into FTS; wiki results in global search + palette; task descriptions/comments autolink `[[wiki page]]` syntax; wiki pages list tasks referencing them.
 AC: index-on-refresh test; permission scoping (project visibility) test; backlink query test.
 
-### WU-504 · Sprint & flow reports — `ready`
+### WU-504 · Sprint & flow reports — `done` (86ad416, 2026-08-14)
 Deps: 206.
 Burndown/burnup per sprint (daily snapshots via scheduler job); cycle/lead time from activity history; project distributions; charts server-rendered SVG (no JS dep); CSV export of reports + filtered task lists.
 AC: snapshot job idempotent; metric computation goldens from fixture history; CSV goldens; SVG renders (parse test).
