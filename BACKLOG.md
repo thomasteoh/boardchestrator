@@ -379,7 +379,7 @@ Deps: 310.
 Org dashboard: runs/tokens/cost/actions by agent, project, timeframe; drill-down to run list; CSV export.
 AC: aggregation goldens; permission test (org owner only by default).
 
-### WU-506 · S3 attachment backend — `ready`
+### WU-506 · S3 attachment backend — `done` (ad9adb8, 2026-08-15)
 Deps: 207.
 S3 store impl (AWS SDK v2, custom endpoint, path-style option); org settings UI for backend config (encrypted); migration helper `bc storage migrate` local→S3; served via streamed proxy (same headers as local).
 AC: tests against minio-compatible fake or SDK middleware stub; config round-trip; migrate helper moves + verifies checksums.
