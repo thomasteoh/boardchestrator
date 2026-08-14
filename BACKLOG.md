@@ -374,7 +374,7 @@ Deps: 206.
 Burndown/burnup per sprint (daily snapshots via scheduler job); cycle/lead time from activity history; project distributions; charts server-rendered SVG (no JS dep); CSV export of reports + filtered task lists.
 AC: snapshot job idempotent; metric computation goldens from fixture history; CSV goldens; SVG renders (parse test).
 
-### WU-505 · Agent usage dashboard — `ready`
+### WU-505 · Agent usage dashboard — `done` (acfdcaf, 2026-08-14)
 Deps: 310.
 Org dashboard: runs/tokens/cost/actions by agent, project, timeframe; drill-down to run list; CSV export.
 AC: aggregation goldens; permission test (org owner only by default).
