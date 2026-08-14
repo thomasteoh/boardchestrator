@@ -305,6 +305,20 @@ func handleTaskDetail(w http.ResponseWriter, r *http.Request) {
 		Status:      task.Status,
 		DueAt:       task.DueAt,
 	}
+	// WU-503: autolink [[wiki page]] refs in the rendered description (display
+	// only; the raw markdown stays for editing). Non-existent pages stay as-is.
+	if wikiStore != nil {
+		resolve := func(name string) (string, bool) {
+			p, err := wikiStore.ResolvePage(ctx, orgID, name)
+			if err != nil || p == "" {
+				return "", false
+			}
+			return p, true
+		}
+		view.DescriptionHTML = string(wiki.AutolinkWiki([]byte(view.Description), orgID, resolve))
+	} else {
+		view.DescriptionHTML = view.Description
+	}
 
 	// Agent thread: runs for this task, newest first, with their steps.
 	runs, err := q.FindRunByTaskAndOrg(ctx, sqlc.FindRunByTaskAndOrgParams{
@@ -530,6 +544,8 @@ func handleSearchPage(w http.ResponseWriter, r *http.Request) {
 				Key:       res.Key,
 				Body:      res.Body,
 				Status:    res.Status,
+				OrgID:     res.OrgID,
+				Path:      res.Path,
 			})
 		}
 	}

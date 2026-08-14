@@ -18,7 +18,7 @@ templ TaskDetailPage(s Shell, task TaskDetail, comments []CommentRow, activity [
 						class="bc-markdown"
 						x-data="markdownPreview('desc-view', 'desc-edit', '/api/action/task.update')"
 					>
-						{ task.Description }
+						@templ.Raw(task.DescriptionHTML)
 					</div>
 					<textarea
 						id="desc-edit"
@@ -79,7 +79,7 @@ templ TaskDetailPage(s Shell, task TaskDetail, comments []CommentRow, activity [
 									<span class="bc-comment-author">{ c.Author }</span>
 									<span class="bc-comment-date">{ c.CreatedAt }</span>
 								</div>
-								<div class="bc-comment-body bc-markdown">{ c.Body }</div>
+								<div class="bc-comment-body bc-markdown">@templ.Raw(c.BodyHTML)</div>
 								<div class="bc-comment-actions">
 									if c.CanEdit {
 										<button
@@ -236,6 +236,7 @@ type TaskDetail struct {
 	Key         string
 	Title       string
 	Description string
+	DescriptionHTML string // WU-503: [[wiki page]] autolinked for display
 	Points      int
 	Priority    int
 	PriorityLabel string
@@ -263,6 +264,7 @@ type CommentRow struct {
 	ID        string
 	Author    string
 	Body      string
+	BodyHTML  string // WU-503: [[wiki page]] autolinked for display
 	CreatedAt string
 	CanEdit   bool
 }
@@ -327,7 +329,7 @@ templ CommentsListPartial(comments []CommentRow) {
 					<span class="bc-comment-author">{ c.Author }</span>
 					<span class="bc-comment-date">{ c.CreatedAt }</span>
 				</div>
-				<div class="bc-comment-body bc-markdown">{ c.Body }</div>
+				<div class="bc-comment-body bc-markdown">@templ.Raw(c.BodyHTML)</div>
 			</div>
 		}
 	</div>

@@ -37,6 +37,7 @@ func setupDB(t *testing.T) *sql.DB {
 		"../../migrations/0011_sprint_tasks.up.sql",
 		"../../migrations/0012_attachments.up.sql",
 		"../../migrations/0013_search.up.sql",
+		"../../migrations/0031_wiki_fts.up.sql",
 	} {
 		raw, err := os.ReadFile(path)
 		if err != nil {

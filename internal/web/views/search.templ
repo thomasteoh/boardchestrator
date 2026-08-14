@@ -29,6 +29,14 @@ templ SearchPage(s Shell, query string, results []SearchResultRow) {
 								<strong>{ r.Key }</strong>: { r.Title }
 							</a>
 							<span class="bc-search-meta">task · { r.Status }</span>
+						} else if r.Type == "wiki" {
+							<a href={ templ.URL("/app/org/"+r.OrgID+"/wiki/"+r.Path) } class="bc-link">
+								<strong>{ r.Title }</strong>
+							</a>
+							<span class="bc-search-meta">wiki · { r.Path }</span>
+							if r.Body != "" {
+								<div class="bc-search-body">{ r.Body }</div>
+							}
 						} else {
 							<div class="bc-search-comment">
 								<span class="bc-search-body">{ r.Body }</span>
@@ -44,11 +52,14 @@ templ SearchPage(s Shell, query string, results []SearchResultRow) {
 
 // SearchResultRow is a single search result.
 type SearchResultRow struct {
-	Type      string // "task" or "comment"
+	Type      string // "task" or "comment" or "wiki"
 	ID        string
 	ProjectID string
 	Title     string
 	Key       string
 	Body      string
 	Status    string
+	// Wiki-only fields (WU-503).
+	OrgID string
+	Path  string
 }

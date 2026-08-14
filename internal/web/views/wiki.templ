@@ -25,7 +25,8 @@ type wikiTree struct {
 
 // WikiPage renders the read view: rendered HTML + page-tree nav. When
 // canEdit is true an "Edit" action is shown; unlinked users see a hint.
-templ WikiPage(s Shell, orgID, path string, page wiki.Page, tree []wiki.Page, canEdit bool) {
+// backlinks lists tasks referencing this page (WU-503).
+templ WikiPage(s Shell, orgID, path string, page wiki.Page, tree []wiki.Page, canEdit bool, backlinks []wiki.TaskLink) {
 	@Base(s) {
 		<div class="bc-wiki" data-org={ orgID }>
 			<aside class="bc-wiki-nav">
@@ -60,6 +61,23 @@ templ WikiPage(s Shell, orgID, path string, page wiki.Page, tree []wiki.Page, ca
 						@templ.Raw(page.HTML)
 					} else {
 						<p class="bc-muted">Empty page.</p>
+					}
+				</div>
+				<div class="bc-wiki-backlinks">
+					<h3>Referenced by</h3>
+					if len(backlinks) == 0 {
+						<p class="bc-muted">No tasks reference this page.</p>
+					} else {
+						<ul>
+							for _, b := range backlinks {
+								<li>
+									<a href={ templ.URL("/app/project/" + b.ProjectID + "/task/" + b.TaskID) } class="bc-link">
+										{ b.Key } — { b.Title }
+									</a>
+									<span class="bc-search-meta">· { b.Status }</span>
+								</li>
+							}
+						</ul>
 					}
 				</div>
 			</section>

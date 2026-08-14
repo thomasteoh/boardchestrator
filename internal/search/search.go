@@ -105,13 +105,16 @@ func (ix *Indexer) IndexEvent(ctx context.Context, evName string, evPayload json
 
 // QueryResult is a single search hit.
 type QueryResult struct {
-	Type      string `json:"type"` // "task" or "comment"
+	Type      string `json:"type"` // "task" or "comment" or "wiki"
 	ID        string `json:"id"`
-	ProjectID string `json:"project_id"`
+	ProjectID string `json:"project_id,omitempty"`
 	Title     string `json:"title,omitempty"`
 	Key       string `json:"key,omitempty"`
 	Body      string `json:"body,omitempty"`
 	Status    string `json:"status,omitempty"`
+	// Wiki-only fields (WU-503).
+	OrgID string `json:"org_id,omitempty"`
+	Path  string `json:"path,omitempty"`
 }
 
 // Query runs an FTS5 search across tasks and comments.
@@ -177,7 +180,97 @@ func Query(ctx context.Context, db *sql.DB, query string, userID string, limit i
 		return nil, err
 	}
 
+	// WU-503: also search wiki pages (org-scoped visibility).
+	wikiResults, err := QueryWiki(ctx, db, query, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, wikiResults...)
+
 	return results, nil
+}
+
+// QueryWiki runs an FTS5 search across the wiki_fts index (WU-503). Results
+// are scoped to orgs the user is a member of. Each hit is a wiki page
+// (Type "wiki", OrgID + Path set). Empty query or no access returns nil.
+func QueryWiki(ctx context.Context, db *sql.DB, query string, userID string, limit int) ([]QueryResult, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	ftsQuery := buildFTSQuery(query)
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT org_id, path, snippet(wiki_fts, 3, '[', ']', '…', 16) AS snip
+		FROM wiki_fts
+		WHERE wiki_fts MATCH ?
+		ORDER BY rank
+		LIMIT ?`, ftsQuery, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search wiki: %w", err)
+	}
+	defer rows.Close()
+
+	var results []QueryResult
+	for rows.Next() {
+		var r QueryResult
+		r.Type = "wiki"
+		var snip sql.NullString
+		if err := rows.Scan(&r.OrgID, &r.Path, &snip); err != nil {
+			return nil, fmt.Errorf("scan wiki: %w", err)
+		}
+		r.Title = pageTitle(r.Path)
+		if snip.Valid {
+			r.Body = snip.String
+		}
+		results = append(results, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if userID != "" {
+		results, err = filterWikiByMembership(ctx, db, results, userID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return results, nil
+}
+
+// filterWikiByMembership keeps wiki results whose org the user belongs to
+// (memberships with actor_type='user', resource_type='org'). A user with no
+// membership row in an org cannot see that org's wiki pages.
+func filterWikiByMembership(ctx context.Context, db *sql.DB, results []QueryResult, userID string) ([]QueryResult, error) {
+	filtered := make([]QueryResult, 0, len(results))
+	for _, r := range results {
+		var count int
+		err := db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM memberships m
+			WHERE m.org_id = ? AND m.actor_id = ? AND m.actor_type = 'user'
+			  AND m.resource_type = 'org'`, r.OrgID, userID,
+		).Scan(&count)
+		if err != nil {
+			continue
+		}
+		if count > 0 {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered, nil
+}
+
+// pageTitle derives a display name from a repo path (docs/onboarding.md → onboarding).
+func pageTitle(path string) string {
+	base := path
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	base = strings.TrimSuffix(base, ".md")
+	base = strings.ReplaceAll(base, "-", " ")
+	base = strings.ReplaceAll(base, "_", " ")
+	return base
 }
 
 // buildFTSQuery sanitises user input into a valid FTS5 query string with prefix matching.

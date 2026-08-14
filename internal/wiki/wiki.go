@@ -2,6 +2,7 @@
 // team uses as a shared knowledge base. WU-501 covers read + render — clone
 // cache, refresh policy, page tree, and markdown rendering with mermaid +
 // sanitized SVG + KEY-n autolinks. WU-502 adds editing/history on top.
+// WU-503 adds FTS search indexing (walk the checkout on refresh into wiki_fts).
 package wiki
 
 import (
@@ -48,12 +49,13 @@ func loadConfig(ctx context.Context, q *wikidb.Queries, orgID string) (Config, e
 // Store clones + serves org wikis. checkoutTTL controls the refresh policy:
 // a checkout older than the TTL (or on a different ref) is refreshed.
 type Store struct {
-	db          *sql.DB
-	baseDir     string // cache root for clones
-	checkoutTTL time.Duration
-	clone       cloneFunc
-	now         func() time.Time
-	token       tokenFn // WU-502: resolves a user's GitHub token for commit-as-user
+	db             *sql.DB
+	baseDir        string // cache root for clones
+	checkoutTTL    time.Duration
+	clone          cloneFunc
+	now            func() time.Time
+	token          tokenFn // WU-502: resolves a user's GitHub token for commit-as-user
+	indexOnRefresh bool    // WU-503: (re)index wiki_fts after clone/refresh
 }
 
 // cloneFunc is the clone/refresh primitive, injected for tests (local fixture
@@ -63,11 +65,12 @@ type cloneFunc func(ctx context.Context, url, ref, worktree string, shallow bool
 // NewStore builds a wiki Store rooted at baseDir.
 func NewStore(db *sql.DB, baseDir string, opts ...Option) *Store {
 	s := &Store{
-		db:          db,
-		baseDir:     baseDir,
-		checkoutTTL: 5 * time.Minute,
-		clone:       plainClone,
-		now:         time.Now,
+		db:             db,
+		baseDir:        baseDir,
+		checkoutTTL:    5 * time.Minute,
+		clone:          plainClone,
+		now:            time.Now,
+		indexOnRefresh: true,
 	}
 	for _, o := range opts {
 		o(s)
@@ -91,6 +94,10 @@ func WithCheckoutTTL(d time.Duration) Option { return func(s *Store) { s.checkou
 // WithNow overrides the clock (tests).
 func WithNow(f func() time.Time) Option { return func(s *Store) { s.now = f } }
 
+// WithIndexOnRefresh toggles wiki_fts (re)indexing after clone/refresh
+// (tests disable it to avoid needing the wiki_fts table).
+func WithIndexOnRefresh(on bool) Option { return func(s *Store) { s.indexOnRefresh = on } }
+
 // Page is one wiki page (markdown file under the configured path).
 type Page struct {
 	Path     string `json:"path"`     // repo-relative path, e.g. docs/guides/onboarding.md
@@ -99,8 +106,8 @@ type Page struct {
 	HTML     string `json:"html"`     // rendered + sanitized HTML
 }
 
-// Checkout returns the worktree path for the org's wiki, refreshing it if the
-// cache is stale or the ref changed. Returns "" + error when no wiki is set.
+// Checkout clones (or refreshes) the org's wiki and returns the worktree path.
+// A stale checkout is refreshed per the TTL.
 func (s *Store) Checkout(ctx context.Context, orgID string) (string, error) {
 	cfg, err := s.config(ctx, orgID)
 	if err != nil {
@@ -150,7 +157,7 @@ func (s *Store) SetConfig(ctx context.Context, orgID, repo, ref, path string) (C
 	return cfg, nil
 }
 
-// PageTree lists markdown pages under the wiki path (tree nav), newest-first.
+// PageTree lists the org's wiki pages, newest-first.
 func (s *Store) PageTree(ctx context.Context, orgID string) ([]Page, error) {
 	cfg, err := s.config(ctx, orgID)
 	if err != nil {

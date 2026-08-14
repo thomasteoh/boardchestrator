@@ -39,7 +39,12 @@ func handleWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 	// Whether the actor can edit (has a linked GitHub token + edit permission).
 	canEdit := actorCanEditWiki(r.Context(), orgID)
-	if err := views.WikiPage(s, orgID, path, page, tree, canEdit).Render(r.Context(), w); err != nil {
+	// WU-503: tasks referencing this page.
+	backlinks, err := wikiStore.Backlinks(r.Context(), orgID, path)
+	if err != nil {
+		backlinks = nil
+	}
+	if err := views.WikiPage(s, orgID, path, page, tree, canEdit, backlinks).Render(r.Context(), w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }

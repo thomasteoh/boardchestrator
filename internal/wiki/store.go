@@ -40,7 +40,8 @@ func (s *Store) config(ctx context.Context, orgID string) (Config, error) {
 
 // syncCheckout ensures the org's wiki checkout is present and fresh: clones if
 // the cache dir is missing, otherwise refreshes when stale (TTL) or on a
-// different ref. Returns the worktree path.
+// different ref. Returns the worktree path. On a fresh clone or refresh it
+// also (re)indexes the wiki into wiki_fts (WU-503) so search stays current.
 func (s *Store) syncCheckout(ctx context.Context, cfg Config) (string, error) {
 	key := cacheKey(cfg.Repo, cfg.Ref)
 	worktree := filepath.Join(s.baseDir, key)
@@ -60,6 +61,11 @@ func (s *Store) syncCheckout(ctx context.Context, cfg Config) (string, error) {
 		if err := os.WriteFile(stamp, []byte(cfg.Ref), 0o600); err != nil {
 			return "", fmt.Errorf("wiki: stamp: %w", err)
 		}
+		if s.indexOnRefresh {
+			if err := s.indexCheckout(ctx, cfg, worktree); err != nil {
+				return "", err
+			}
+		}
 		return worktree, nil
 	}
 
@@ -72,8 +78,46 @@ func (s *Store) syncCheckout(ctx context.Context, cfg Config) (string, error) {
 		if err := os.WriteFile(stamp, []byte(cfg.Ref), 0o600); err != nil {
 			return "", fmt.Errorf("wiki: re-stamp: %w", err)
 		}
+		if s.indexOnRefresh {
+			if err := s.indexCheckout(ctx, cfg, worktree); err != nil {
+				return "", err
+			}
+		}
 	}
 	return worktree, nil
+}
+
+// indexCheckout rebuilds wiki_fts for the given checkout. Errors are returned
+// so a failed index surfaces (the checkout itself is still usable).
+func (s *Store) indexCheckout(ctx context.Context, cfg Config, worktree string) error {
+	pages, err := listPages(cfg, worktree)
+	if err != nil {
+		return fmt.Errorf("wiki: index walk: %w", err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("wiki: index begin: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM wiki_fts WHERE org_id = ?`, cfg.OrgID); err != nil {
+		return fmt.Errorf("wiki: index clear: %w", err)
+	}
+	for _, p := range pages {
+		content, err := os.ReadFile(filepath.Join(worktree, p.Path))
+		if err != nil {
+			return fmt.Errorf("wiki: index read %s: %w", p.Path, err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO wiki_fts (org_id, path, name, content) VALUES (?, ?, ?, ?)`,
+			cfg.OrgID, p.Path, p.Name, string(content),
+		); err != nil {
+			return fmt.Errorf("wiki: index insert %s: %w", p.Path, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("wiki: index commit: %w", err)
+	}
+	return nil
 }
 
 // refreshNeeded reports whether a checkout is stale: the stamp ref differs or
