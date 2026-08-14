@@ -364,7 +364,7 @@ Deps: 501, 406.
 UI editor with live preview; commit as the user's linked GitHub token (WU-406); users without a linked token get read-only wiki + "connect GitHub in settings" prompt (Q2); commit message editable; non-FF retry-once then conflict UI; history view (log per file) + read-only revision render; create/rename/delete page.
 AC: commit-as-user test (fixture remote); unlinked user sees read-only + prompt, edit endpoint rejects; conflict path test; history render.
 
-### WU-503 · Wiki search + task↔wiki links — `ready`
+### WU-503 · Wiki search + task↔wiki links — `done (e0da435, 2026-08-14)`
 Deps: 501, 208.
 Indexer walks checkout on refresh into FTS; wiki results in global search + palette; task descriptions/comments autolink `[[wiki page]]` syntax; wiki pages list tasks referencing them.
 AC: index-on-refresh test; permission scoping (project visibility) test; backlink query test.
