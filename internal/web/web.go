@@ -639,11 +639,11 @@ func handleReports(w http.ResponseWriter, r *http.Request) {
 			burndown = bd
 		}
 	}
-	if flow, err := buildFlowData(ctx, db, projectID); err == nil {
-		flow = flow
+	if fd, err := buildFlowData(ctx, db, projectID); err == nil {
+		flow = fd
 	}
-	if dist, err := buildDistData(ctx, db, orgID); err == nil {
-		dist = dist
+	if dd, err := buildDistData(ctx, db, orgID); err == nil {
+		dist = dd
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := views.ReportPage(s, orgID, projectID, burndown, flow, dist).Render(ctx, w); err != nil {
