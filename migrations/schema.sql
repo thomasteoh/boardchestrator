@@ -167,8 +167,8 @@ ON CONFLICT DO NOTHING;
 
 INSERT INTO roles (id, org_id, name, is_system, grants_json) VALUES
     ('00000000000000000000000000000000', '00000000000000000000000000000000', 'Org Owner', 1, '["*"]'),
-    ('11111111111111111111111111111111', '00000000000000000000000000000000', 'Team Admin', 1, '["org.read","team.*","project.*","board.*","sprint.*","task.*","comment.*","wiki.*","report.view"]'),
-    ('22222222222222222222222222222222', '00000000000000000000000000000000', 'Member', 1, '["org.read","project.read","task.*","comment.*","sprint.read","board.read","wiki.read"]'),
+    ('11111111111111111111111111111111', '00000000000000000000000000000000', 'Team Admin', 1, '["org.read","team.*","project.*","board.*","sprint.*","task.*","comment.*","wiki.*","report.read"]'),
+    ('22222222222222222222222222222222', '00000000000000000000000000000000', 'Member', 1, '["org.read","project.read","task.*","comment.*","sprint.read","board.read","wiki.read","report.read"]'),
     ('33333333333333333333333333333333', '00000000000000000000000000000000', 'Viewer', 1, '["org.read","project.read","task.read","comment.read","sprint.read","board.read","wiki.read"]'),
     ('44444444444444444444444444444444', '00000000000000000000000000000000', 'Guest', 1, '["project.read","task.read","comment.read"]')
 ON CONFLICT DO NOTHING;
@@ -335,6 +335,22 @@ CREATE TABLE sprints (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX idx_sprints_project ON sprints(project_id);
+
+-- 0032: sprint snapshots for burndown/burnup reports (WU-504).
+CREATE TABLE sprint_snapshots (
+    id          TEXT NOT NULL PRIMARY KEY,
+    sprint_id   TEXT NOT NULL REFERENCES sprints(id) ON DELETE CASCADE,
+    project_id  TEXT NOT NULL,
+    org_id      TEXT NOT NULL REFERENCES orgs(id),
+    taken_on    TEXT NOT NULL,
+    total_points INTEGER NOT NULL DEFAULT 0,
+    done_points INTEGER NOT NULL DEFAULT 0,
+    open_count  INTEGER NOT NULL DEFAULT 0,
+    done_count  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE UNIQUE INDEX idx_sprint_snapshots_sprint_date ON sprint_snapshots(sprint_id, taken_on);
+CREATE INDEX idx_sprint_snapshots_project ON sprint_snapshots(project_id, taken_on);
 -- 0011: add sprint_id column to tasks table for sprint membership
 
 ALTER TABLE tasks ADD COLUMN sprint_id TEXT REFERENCES sprints(id);

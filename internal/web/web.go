@@ -16,6 +16,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/github"
 	"github.com/thomasteoh/boardchestrator/internal/mcp"
+	"github.com/thomasteoh/boardchestrator/internal/report"
 	"github.com/thomasteoh/boardchestrator/internal/search"
 	"github.com/thomasteoh/boardchestrator/internal/storage"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
@@ -621,6 +622,138 @@ func handleSprintList(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleReports renders the sprint & flow reports page for a project.
+func handleReports(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	projectID := chi.URLParam(r, "projectID")
+	s := shellData(r, "Reports", "/reports")
+	db := disp.DB()
+	ctx := r.Context()
+
+	burndown := (*views.BurndownData)(nil)
+	flow := (*views.FlowData)(nil)
+	dist := (*views.DistData)(nil)
+
+	if sprintID := r.URL.Query().Get("sprint"); sprintID != "" {
+		if bd, err := buildBurndownData(ctx, db, sprintID, projectID); err == nil {
+			burndown = bd
+		}
+	}
+	if flow, err := buildFlowData(ctx, db, projectID); err == nil {
+		flow = flow
+	}
+	if dist, err := buildDistData(ctx, db, orgID); err == nil {
+		dist = dist
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.ReportPage(s, orgID, projectID, burndown, flow, dist).Render(ctx, w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func buildBurndownData(ctx context.Context, db *sql.DB, sprintID, projectID string) (*views.BurndownData, error) {
+	q := sqlc.New(db)
+	sp, err := q.FindSprint(ctx, sqlc.FindSprintParams{ID: sprintID, ProjectID: projectID})
+	if err != nil {
+		return nil, err
+	}
+	snaps, err := q.ListSprintSnapshots(ctx, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	totals, err := q.SprintTaskTotals(ctx, sqlc.SprintTaskTotalsParams{
+		SprintID:  sql.NullString{String: sprintID, Valid: true},
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	b := report.BuildBurndown(sp.ID, sp.ProjectID, report.Day(sp.StartsOn), report.Day(sp.EndsOn),
+		report.Int64(totals.TotalPoints), snaps)
+	return &views.BurndownData{
+		SprintID:  sprintID,
+		ProjectID: projectID,
+		SVG:       report.SVGBurndown(b),
+		CSV:       report.CSVBurndown(b),
+		Total:     b.Total,
+		Done:      b.Done[len(b.Done)-1],
+		Open:      b.Remaining[len(b.Remaining)-1],
+	}, nil
+}
+
+func buildFlowData(ctx context.Context, db *sql.DB, projectID string) (*views.FlowData, error) {
+	rows, err := sqlc.New(db).ListProjectTaskActivity(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	m := report.FlowMetrics(rows, "done")
+	return &views.FlowData{
+		ProjectID:     projectID,
+		LeadAvgHours:  m.LeadAvgHours,
+		CycleAvgHours: m.CycleAvgHours,
+		DoneCount:     m.DoneCount,
+		CSV:           report.CSVFlow(m),
+	}, nil
+}
+
+func buildDistData(ctx context.Context, db *sql.DB, orgID string) (*views.DistData, error) {
+	rows, err := sqlc.New(db).ProjectDistributions(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	dists := report.BuildDistributions(rows)
+	dd := &views.DistData{OrgID: orgID, SVG: report.SVGDistributions(dists), CSV: report.CSVDistributions(dists)}
+	for _, d := range dists {
+		dd.Projects = append(dd.Projects, views.DistRow{
+			Project:   d.Project,
+			TaskCount: d.TaskCount,
+			TotalPts:  d.TotalPts,
+			DoneCount: d.DoneCount,
+		})
+	}
+	return dd, nil
+}
+
+// handleBurndownCSV exports the sprint burndown as CSV.
+func handleBurndownCSV(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	sprintID := r.URL.Query().Get("sprint")
+	bd, err := buildBurndownData(r.Context(), disp.DB(), sprintID, projectID)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="burndown.csv"`)
+	_, _ = w.Write([]byte(bd.CSV))
+}
+
+// handleFlowCSV exports the flow metrics as CSV.
+func handleFlowCSV(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	fd, err := buildFlowData(r.Context(), disp.DB(), projectID)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="flow.csv"`)
+	_, _ = w.Write([]byte(fd.CSV))
+}
+
+// handleDistributionsCSV exports the org project distributions as CSV.
+func handleDistributionsCSV(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	dd, err := buildDistData(r.Context(), disp.DB(), orgID)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="distributions.csv"`)
+	_, _ = w.Write([]byte(dd.CSV))
+}
+
 // serveEmbedded copies an embedded static file to the response, reporting a
 // 500 on read failure. Used for the small set of assets served at fixed root
 // paths (manifest, service worker) rather than the content-hashed /static tree.
@@ -797,6 +930,10 @@ func Routes(r chi.Router) {
 
 	// Sprint routes
 	r.Get("/app/org/{orgID}/project/{projectID}/sprints", handleSprintList)
+	r.Get("/app/org/{orgID}/project/{projectID}/reports", handleReports)
+	r.Get("/app/org/{orgID}/project/{projectID}/reports/burndown.csv", handleBurndownCSV)
+	r.Get("/app/org/{orgID}/project/{projectID}/reports/flow.csv", handleFlowCSV)
+	r.Get("/app/org/{orgID}/reports/distributions.csv", handleDistributionsCSV)
 	r.Post("/api/action/sprint.create", handleAction)
 	r.Post("/api/action/sprint.update", handleAction)
 	r.Post("/api/action/sprint.close", handleAction)

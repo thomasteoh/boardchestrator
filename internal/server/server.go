@@ -32,6 +32,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/event"
 	"github.com/thomasteoh/boardchestrator/internal/job"
 	"github.com/thomasteoh/boardchestrator/internal/perm"
+	"github.com/thomasteoh/boardchestrator/internal/report"
 	"github.com/thomasteoh/boardchestrator/internal/schedule"
 	"github.com/thomasteoh/boardchestrator/internal/search"
 	"github.com/thomasteoh/boardchestrator/internal/sse"
@@ -105,6 +106,9 @@ type Server struct {
 	// schedStop cancels the scheduled-trigger poller goroutine (WU-309).
 	// Kept to stop on Shutdown.
 	schedStop context.CancelFunc
+	// snapStop cancels the daily sprint-snapshot poller goroutine (WU-504).
+	// Kept to stop on Shutdown.
+	snapStop context.CancelFunc
 	// webhookDeliver delivers outbound webhooks (WU-404). Created in Start when
 	// the DB + job store are wired; its RunJob handles webhook.deliver jobs.
 	webhookDeliver *webhook.Deliverer
@@ -426,6 +430,9 @@ func (s *Server) Start(ctx context.Context) error {
 				if j.Kind == "webhook.deliver" {
 					return s.webhookDeliver.RunJob(ctx, j)
 				}
+				if j.Kind == "sprint.snapshot" {
+					return s.runSprintSnapshotJob(ctx, j)
+				}
 				return engHandler(ctx, j)
 			},
 			MaxWorkers:   s.cfg.AgentWorkers,
@@ -464,6 +471,12 @@ func (s *Server) Start(ctx context.Context) error {
 		var schedCtx context.Context
 		schedCtx, s.schedStop = context.WithCancel(ctx)
 		go s.schedulerLoop(schedCtx, store)
+
+		// Daily sprint snapshots (WU-504): poll active sprints and enqueue one
+		// sprint.snapshot job per sprint per day. Stopped on Shutdown.
+		var snapCtx context.Context
+		snapCtx, s.snapStop = context.WithCancel(ctx)
+		go s.snapshotLoop(snapCtx, store)
 
 		// Outbound webhooks (WU-404): subscribe to all events; the deliverer
 		// matches each event against the org's enabled webhooks + their event
@@ -612,6 +625,10 @@ func (s *Server) Shutdown() {
 	// Stop the scheduled-trigger poller (WU-309).
 	if s.schedStop != nil {
 		s.schedStop()
+	}
+	// Stop the daily sprint-snapshot poller (WU-504).
+	if s.snapStop != nil {
+		s.snapStop()
 	}
 	// Stop the outbound webhook subscriber (WU-404).
 	if s.webhookUnsub != nil {
@@ -971,6 +988,59 @@ func (s *Server) fireDueTriggers(ctx context.Context, store *job.JobStore, now t
 			OrgID:     t.OrgID,
 		}); err != nil {
 			slog.Warn("scheduler: advance next_at", "trigger", t.ID, "error", err)
+		}
+	}
+}
+
+// runSprintSnapshotJob handles a sprint.snapshot job: parse the sprint_id from
+// the payload and take a daily snapshot (WU-504). Idempotent per day.
+func (s *Server) runSprintSnapshotJob(ctx context.Context, j sqlc.Job) error {
+	var p struct {
+		SprintID string `json:"sprint_id"`
+	}
+	if err := json.Unmarshal([]byte(j.PayloadJson), &p); err != nil || p.SprintID == "" {
+		return fmt.Errorf("sprint.snapshot: bad payload: %q", j.PayloadJson)
+	}
+	return report.RunSprintSnapshot(ctx, s.db, p.SprintID)
+}
+
+// snapshotLoop enqueues one sprint.snapshot job per active sprint per day.
+// It mirrors schedulerLoop: poll, find active sprints, and enqueue a job
+// unless one is already queued/running for that sprint today (the snapshot
+// itself is idempotent, so a duplicate run is harmless).
+func (s *Server) snapshotLoop(ctx context.Context, store *job.JobStore) {
+	interval := time.Duration(s.cfg.SchedPollInterval) * time.Second
+	if interval <= 0 {
+		interval = 60 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	lastDay := ""
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			day := now.UTC().Format("2006-01-02")
+			if day == lastDay {
+				continue
+			}
+			lastDay = day
+			q := sqlc.New(s.db)
+			sprints, err := q.ListActiveSprints(ctx)
+			if err != nil {
+				slog.Warn("snapshot: list active sprints", "error", err)
+				continue
+			}
+			for _, sp := range sprints {
+				if ctx.Err() != nil {
+					return
+				}
+				payload, _ := json.Marshal(map[string]string{"sprint_id": sp.ID})
+				if err := store.Enqueue(ctx, "snap:"+sp.ID+":"+day, "sprint.snapshot", string(payload), now.UTC().Format(timeFormat), 3); err != nil {
+					slog.Warn("snapshot: enqueue", "sprint", sp.ID, "error", err)
+				}
+			}
 		}
 	}
 }

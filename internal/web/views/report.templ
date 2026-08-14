@@ -1,0 +1,81 @@
+package views
+
+import (
+	"fmt"
+)
+
+// BurndownData carries a sprint's burndown chart + CSV.
+type BurndownData struct {
+	SprintID  string
+	ProjectID string
+	SVG       string // server-rendered burndown chart (templ.Raw)
+	CSV       string // RFC 4180 export
+	Total     int64
+	Done      int64
+	Open      int64
+}
+
+// FlowData carries a project's flow metrics.
+type FlowData struct {
+	ProjectID    string
+	LeadAvgHours float64
+	CycleAvgHours float64
+	DoneCount    int64
+	CSV          string
+}
+
+// DistData carries an org's project distributions.
+type DistData struct {
+	OrgID string
+	SVG   string
+	CSV   string
+	Projects []DistRow
+}
+
+// DistRow is one project in the distribution report.
+type DistRow struct {
+	Project   string
+	TaskCount int64
+	TotalPts  int64
+	DoneCount int64
+}
+
+// ReportPage renders the sprint & flow reports page for an org/project.
+templ ReportPage(s Shell, orgID, projectID string, burndown *BurndownData, flow *FlowData, dist *DistData) {
+	@Base(s) {
+		<div class="bc-reports" id="reports-{ orgID }">
+			<h2>Reports</h2>
+			if burndown != nil {
+				<section class="bc-report-card">
+					<h3>Sprint burndown</h3>
+					<p>Sprint { burndown.SprintID } · total { fmt.Sprintf("%d", burndown.Total) } pts · done { fmt.Sprintf("%d", burndown.Done) } · open { fmt.Sprintf("%d", burndown.Open) }</p>
+					<div class="bc-chart-wrap">{ burndown.SVG }</div>
+					<a class="bc-btn" href={ templ.URL("/app/org/"+orgID+"/project/"+projectID+"/reports/burndown.csv?sprint="+burndown.SprintID) }>Download CSV</a>
+				</section>
+			}
+			if flow != nil {
+				<section class="bc-report-card">
+					<h3>Cycle & lead time</h3>
+					<p>Lead avg { fmt.Sprintf("%.1f", flow.LeadAvgHours) }h · Cycle avg { fmt.Sprintf("%.1f", flow.CycleAvgHours) }h · Done { fmt.Sprintf("%d", flow.DoneCount) } tasks</p>
+					<a class="bc-btn" href={ templ.URL("/app/org/"+orgID+"/project/"+projectID+"/reports/flow.csv") }>Download CSV</a>
+				</section>
+			}
+			if dist != nil {
+				<section class="bc-report-card">
+					<h3>Project distributions</h3>
+					<div class="bc-chart-wrap">{ dist.SVG }</div>
+					<table class="bc-table">
+						<tr><th>Project</th><th>Tasks</th><th>Points</th><th>Done</th></tr>
+						for _, d := range dist.Projects {
+							<tr><td>{ d.Project }</td><td>{ fmt.Sprintf("%d", d.TaskCount) }</td><td>{ fmt.Sprintf("%d", d.TotalPts) }</td><td>{ fmt.Sprintf("%d", d.DoneCount) }</td></tr>
+						}
+					</table>
+					<a class="bc-btn" href={ templ.URL("/app/org/"+orgID+"/reports/distributions.csv") }>Download CSV</a>
+				</section>
+			}
+			if burndown == nil && flow == nil && dist == nil {
+				<p>No reports available.</p>
+			}
+		</div>
+	}
+}

@@ -439,6 +439,19 @@ type Sprint struct {
 	CreatedAt string
 }
 
+type SprintSnapshot struct {
+	ID          string
+	SprintID    string
+	ProjectID   string
+	OrgID       string
+	TakenOn     string
+	TotalPoints int64
+	DonePoints  int64
+	OpenCount   int64
+	DoneCount   int64
+	CreatedAt   string
+}
+
 type Task struct {
 	ID          string
 	ProjectID   string
