@@ -47,9 +47,9 @@ func SVGBurndown(b Burndown) string {
 
 	// Grid + axis.
 	for r := 0; r <= gridRow; r++ {
-		gy := grid(int64(maxV) * int64(r) / int64(gridRow))
+		gy := grid(int64(maxV) * int64(r) / gridRow)
 		fmt.Fprintf(&buf, `<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="#e0e0e0" stroke-width="1"/>`, padL, gy, chartW-padR, gy)
-		label := int64(maxV) * int64(gridRow-r) / int64(gridRow)
+		label := int64(maxV) * int64(gridRow-r) / gridRow
 		fmt.Fprintf(&buf, `<text x="%d" y="%.1f" font-size="11" fill="#666">%d</text>`, padL-6, gy+4, label)
 	}
 	buf.WriteString(`<line x1="40" y1="16" x2="40" y2="272" stroke="#999" stroke-width="1"/>`)
