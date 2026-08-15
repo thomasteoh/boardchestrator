@@ -5,24 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 )
 
 // --- Role action definitions ---
-
-type roleCreateInput struct {
-	OrgID  string   `json:"org_id"`
-	Name   string   `json:"name"`
-	Grants []string `json:"grants"`
-}
-
-type roleUpdateInput struct {
-	ID     string   `json:"id"`
-	OrgID  string   `json:"org_id"`
-	Name   string   `json:"name"`
-	Grants []string `json:"grants"`
-}
 
 type membershipCreateInput struct {
 	OrgID        string `json:"org_id"`
@@ -87,11 +75,22 @@ func init() {
 }
 
 func handleRoleCreate(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
-	var input roleCreateInput
+	var input struct {
+		OrgID  string   `json:"org_id"`
+		Name   string   `json:"name"`
+		Grants []string `json:"grants"`
+		// GrantsStr accepts a comma/whitespace-separated string (htmx form
+		// values arrive stringified); supersedes Grants when set (WU-509).
+		GrantsStr string `json:"grants_str"`
+	}
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("role.create: %w", err)
 	}
-	grantsJSON, err := json.Marshal(input.Grants)
+	grants := input.Grants
+	if len(grants) == 0 && input.GrantsStr != "" {
+		grants = splitGrants(input.GrantsStr)
+	}
+	grantsJSON, err := json.Marshal(grants)
 	if err != nil {
 		return nil, fmt.Errorf("role.create: marshal grants: %w", err)
 	}
@@ -110,11 +109,21 @@ func handleRoleCreate(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 }
 
 func handleRoleUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
-	var input roleUpdateInput
+	var input struct {
+		ID        string   `json:"id"`
+		OrgID     string   `json:"org_id"`
+		Name      string   `json:"name"`
+		Grants    []string `json:"grants"`
+		GrantsStr string   `json:"grants_str"`
+	}
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("role.update: %w", err)
 	}
-	grantsJSON, err := json.Marshal(input.Grants)
+	grants := input.Grants
+	if len(grants) == 0 && input.GrantsStr != "" {
+		grants = splitGrants(input.GrantsStr)
+	}
+	grantsJSON, err := json.Marshal(grants)
 	if err != nil {
 		return nil, fmt.Errorf("role.update: marshal grants: %w", err)
 	}
@@ -155,6 +164,19 @@ func handleRoleList(ctx context.Context, ac ActionCtx, in json.RawMessage) (any,
 		return nil, fmt.Errorf("role.list: %w", err)
 	}
 	return roles, nil
+}
+
+// splitGrants parses a comma/whitespace-separated grant string into a slice,
+// trimming empties. Used by role.create/role.update when the htmx form posts a
+// flat text field (WU-509) instead of a JSON array.
+func splitGrants(s string) []string {
+	var out []string
+	for _, g := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '	' }) {
+		if g != "" {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 func handleMembershipCreate(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {

@@ -194,17 +194,84 @@ func handleOrgRoles(w http.ResponseWriter, r *http.Request) {
 		{Label: orgID, Href: "/app/org/" + orgID + "/settings"},
 		{Label: "Roles", Href: ""},
 	}
-	if err := views.RolesEditorPage(s, orgID, nil, breadcrumbs).Render(r.Context(), w); err != nil {
+
+	var rows []views.RoleGrantRow
+	if disp != nil {
+		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
+		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
+			actor.ID = sess.UserID
+		}
+		if res, err := disp.Dispatch(r.Context(), actor, "role.list",
+			json.RawMessage(`{}`), action.Opts{Org: orgID}); err == nil {
+			if roles, ok := res.([]sqlc.Role); ok {
+				for _, role := range roles {
+					var grants []string
+					_ = json.Unmarshal([]byte(role.GrantsJson), &grants)
+					rows = append(rows, views.RoleGrantRow{
+						RoleID: role.ID,
+						Name:   role.Name,
+						Grants: grants,
+					})
+				}
+			}
+		}
+	}
+
+	if err := views.RolesEditorPage(s, orgID, rows, breadcrumbs).Render(r.Context(), w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
 
 func handleOrgRoleNew(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	orgID := chi.URLParam(r, "orgID")
+	s := shellData(r, "New Role", "/settings")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	breadcrumbs := []views.Breadcrumb{
+		{Label: orgID, Href: "/app/org/" + orgID + "/settings"},
+		{Label: "Roles", Href: "/app/org/" + orgID + "/roles"},
+		{Label: "New Role", Href: ""},
+	}
+	if err := views.RoleFormPage(s, orgID, "", "", "", breadcrumbs).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
 }
 
 func handleOrgRoleEdit(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	orgID := chi.URLParam(r, "orgID")
+	roleID := chi.URLParam(r, "roleID")
+	s := shellData(r, "Edit Role", "/settings")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	breadcrumbs := []views.Breadcrumb{
+		{Label: orgID, Href: "/app/org/" + orgID + "/settings"},
+		{Label: "Roles", Href: "/app/org/" + orgID + "/roles"},
+		{Label: "Edit Role", Href: ""},
+	}
+
+	name, grantsStr := "", ""
+	if disp != nil {
+		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
+		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
+			actor.ID = sess.UserID
+		}
+		if res, err := disp.Dispatch(r.Context(), actor, "role.list",
+			json.RawMessage(`{}`), action.Opts{Org: orgID}); err == nil {
+			if roles, ok := res.([]sqlc.Role); ok {
+				for _, role := range roles {
+					if role.ID == roleID {
+						name = role.Name
+						var grants []string
+						_ = json.Unmarshal([]byte(role.GrantsJson), &grants)
+						grantsStr = strings.Join(grants, ", ")
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if err := views.RoleFormPage(s, orgID, roleID, name, grantsStr, breadcrumbs).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
 }
 
 // handleAction dispatches an action via the injected dispatcher.
@@ -898,6 +965,8 @@ func Routes(r chi.Router) {
 	r.Get("/app/org/{orgID}/roles/{roleID}/edit", handleOrgRoleEdit)
 	r.Post("/api/action/org.create", handleAction)
 	r.Post("/api/action/org.update", handleAction)
+	r.Post("/api/action/org.storage.configure", handleAction)
+	r.Post("/api/action/org.storage.status", handleAction)
 	r.Post("/api/action/team.create", handleAction)
 	r.Post("/api/action/team.update", handleAction)
 	r.Post("/api/action/project.create", handleAction)

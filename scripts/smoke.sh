@@ -108,4 +108,50 @@ PAGE=$(curl -sf -H "Cookie: $COOKIE" "$BASE/app/org/$ORG_ID/project/$PROJ_ID/tas
     || { echo "smoke: task page failed"; exit 1; }
 echo "$PAGE" | grep -qi "Launch" || { echo "smoke: task page missing title"; exit 1; }
 
-echo "smoke: PASS (org=$ORG_ID project=$PROJ_ID task=$TASK_ID)"
+# --- WU-509: org.storage.configure POST route (was a 404 — form posted to an
+# unregistered route). Configure S3 then read status back.
+STORAGE=$(curl -sf -X POST -H "Content-Type: application/json" -H "Cookie: $COOKIE" -H "$CSRF_HDR" \
+    -H "X-Org-Id: $ORG_ID" \
+    -d '{"storage_config":{"endpoint":"http://localhost:9000","bucket":"attachments","access_key_id":"AK","secret_access_key":"SK","path_style":true,"prefix":"prod"}}' \
+    "$BASE/api/action/org.storage.configure") \
+    || { echo "smoke: org.storage.configure returned non-200 (route missing?)"; exit 1; }
+echo "org.storage.configure -> $STORAGE"
+STATUS=$(curl -sf -X POST -H "Content-Type: application/json" -H "Cookie: $COOKIE" -H "$CSRF_HDR" \
+    -H "X-Org-Id: $ORG_ID" -d '{}' \
+    "$BASE/api/action/org.storage.status")
+echo "org.storage.status -> $STATUS"
+echo "$STATUS" | grep -q '"backend":"s3"' || { echo "smoke: storage status not s3"; exit 1; }
+
+# --- WU-509: role editor pages render + role.create/update via form values ---
+ROLEPAGE=$(curl -sf -H "Cookie: $COOKIE" "$BASE/app/org/$ORG_ID/roles") \
+    || { echo "smoke: roles page failed"; exit 1; }
+echo "$ROLEPAGE" | grep -qi "Create role" || { echo "smoke: roles page missing create button"; exit 1; }
+
+NEWPAGE=$(curl -sf -H "Cookie: $COOKIE" "$BASE/app/org/$ORG_ID/roles/new") \
+    || { echo "smoke: roles/new page failed"; exit 1; }
+echo "$NEWPAGE" | grep -qi "grants_str" || { echo "smoke: roles/new missing grants field"; exit 1; }
+
+# role.create via form-urlencoded (the exact shape the htmx form posts).
+ROLE=$(curl -sf -X POST -H "Content-Type: application/x-www-form-urlencoded" -H "Cookie: $COOKIE" -H "$CSRF_HDR" \
+    -H "X-Org-Id: $ORG_ID" \
+    -d "org_id=$ORG_ID&name=Project+Admin&grants_str=task.*,+project.read,+org.read" \
+    "$BASE/api/action/role.create") \
+    || { echo "smoke: role.create returned non-200"; exit 1; }
+echo "role.create -> $ROLE"
+ROLE_ID=$(echo "$ROLE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' 2>/dev/null \
+    || echo "$ROLE" | grep -o '"id":"[^\"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$ROLE_ID" ] || { echo "smoke: role.create failed"; exit 1; }
+
+EDITPAGE=$(curl -sf -H "Cookie: $COOKIE" "$BASE/app/org/$ORG_ID/roles/$ROLE_ID/edit") \
+    || { echo "smoke: roles/edit page failed"; exit 1; }
+echo "$EDITPAGE" | grep -qi "Project Admin" || { echo "smoke: roles/edit missing role name"; exit 1; }
+
+# role.update via form-urlencoded (drop project.read from grants).
+curl -sf -X POST -H "Content-Type: application/x-www-form-urlencoded" -H "Cookie: $COOKIE" -H "$CSRF_HDR" \
+    -H "X-Org-Id: $ORG_ID" \
+    -d "id=$ROLE_ID&org_id=$ORG_ID&name=Project+Admin&grants_str=task.*,+org.read" \
+    "$BASE/api/action/role.update" >/dev/null \
+    || { echo "smoke: role.update returned non-200"; exit 1; }
+
+echo "smoke: PASS (org=$ORG_ID project=$PROJ_ID task=$TASK_ID role=$ROLE_ID)"
+echo "smoke: WU-509 storage route + role editor round-trip PASS"

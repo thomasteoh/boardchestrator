@@ -1,0 +1,45 @@
+package views
+
+// RoleFormPage renders the create/edit role form (WU-509). It posts
+// form-urlencoded values; the action handler accepts a comma/whitespace
+// separated `grants_str` field (in addition to a JSON `grants` array) so the
+// flat form value reaches the handler as []string.
+templ RoleFormPage(s Shell, orgID, roleID, name, grantsStr string, breadcrumbs []Breadcrumb) {
+	@Base(s) {
+		@Breadcrumbs(breadcrumbs)
+		if roleID != "" {
+			<h2>Edit Role</h2>
+		} else {
+			<h2>New Role</h2>
+		}
+		<form
+			hx-post={ templ.URL(endpoint(roleID)) }
+			hx-headers={ hxHeaders(s.CSRF) }
+			hx-target="body"
+			hx-swap="innerHTML"
+		>
+			if roleID != "" {
+				<input type="hidden" name="id" value={ roleID } />
+			}
+			<input type="hidden" name="org_id" value={ orgID } />
+			<div class="field">
+				<label>Name</label>
+				<input type="text" name="name" value={ name } required placeholder="e.g. Project Admin" />
+			</div>
+			<div class="field">
+				<label>Grants (comma-separated)</label>
+				<input type="text" name="grants_str" value={ grantsStr } placeholder="task.*, project.read, org.read" />
+				<p class="text-dimmed">Grants use wildcard matching: <code>*</code>, <code>task.*</code>, <code>project.read</code>.</p>
+			</div>
+			<button type="submit" class="btn primary">Save role</button>
+			<a class="btn" href={ "/app/org/" + orgID + "/roles" }>Cancel</a>
+		</form>
+	}
+}
+
+func endpoint(roleID string) string {
+	if roleID != "" {
+		return "/api/action/role.update"
+	}
+	return "/api/action/role.create"
+}
