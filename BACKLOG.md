@@ -389,7 +389,8 @@ Deps: 003.
 `bc backup` (`VACUUM INTO` to timestamped file, prunes to N); `/readyz` covers DB + queue health; docs: RESTORE.md, DEPLOY.md (compose example, volume layout, env reference generated from config struct).
 AC: backup/restore round-trip test; readyz degradation test; env reference generation test.
 
-### WU-508 · Release readiness — `ready`
+### WU-508 · Release readiness — `done` (adaaa9f, 2026-08-15)
 Deps: all.
 Full pass: `make check` on clean clone; container smoke (compose up, bootstrap, create org→project→task via UI path exercised by chromedp if available else scripted curl); tag `0.1.0-rc.1` dry-run pipeline; CHANGELOG.md.
 AC: smoke script committed + green. Manual: rc pipeline run recorded here.
+Result: smoke (scripts/smoke.sh) PASS — surfaced 4 release-blocking bugs, all fixed (platform-scope grants, org-owner role perms, missing create routes, Dockerfile nonroot+make build). Clean-clone make check PASS; image builds+runs; workflow YAML valid; tag v0.1.0-rc.1 local.
