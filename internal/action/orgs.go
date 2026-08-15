@@ -162,9 +162,10 @@ func handleOrgCreate(ctx context.Context, ac ActionCtx, in json.RawMessage) (any
 		return nil, fmt.Errorf("org.create: %w", err)
 	}
 	// Seed the org-owner system role (WU-311 kill-switch): the creator becomes
-	// an owner holding org.* + agent.* + agent.kill, so they can kill all
-	// agents instantly. A new org starts with exactly one owner.
-	ownerGrants, _ := json.Marshal([]string{"org.*", "agent.*", "agent.kill", "org.cap.set", "org.read"})
+	// an owner holding every tenant-scope grant, so they can create projects,
+	// teams, tasks and kill agents instantly. A new org starts with exactly one
+	// owner. "*" mirrors the platform Org Owner role (migrations/0005).
+	ownerGrants, _ := json.Marshal([]string{"*"})
 	if _, err := ac.Tx.CreateRole(ctx, sqlc.CreateRoleParams{
 		ID:         newID(),
 		OrgID:      id,

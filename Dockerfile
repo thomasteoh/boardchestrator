@@ -6,16 +6,19 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ENV CGO_ENABLED=0
-RUN make build
+RUN go build -o bc ./cmd/bc
 
 # Stage 2: runtime (debian-slim has curl for HEALTHCHECK)
 FROM debian:bookworm-slim
 COPY --from=builder /src/bc /usr/local/bin/bc
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --home /app --shell /sbin/nologin nonroot
 WORKDIR /app
 ENV BC_DB_PATH=/data/bc.db
 ENV BC_DATA_DIR=/data
+RUN mkdir -p /data && chown -R nonroot:nonroot /app /data
 USER nonroot:nonroot
 VOLUME /data
 EXPOSE 8080

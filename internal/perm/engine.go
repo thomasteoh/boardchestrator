@@ -22,6 +22,17 @@ func NewChecker(d *sql.DB) *Checker {
 	return &Checker{q: sqlc.New(d)}
 }
 
+// PlatformOrg is the sentinel org that holds platform-level roles (SPEC §6:
+// roles with org_id NULL act as platform defaults). Platform-scope actions
+// (org.create, pricing, providers, ...) are granted via memberships in this
+// org; the membership walk falls back to it when orgID == "".
+const PlatformOrg = "00000000000000000000000000000000"
+
+// PlatformOwnerRole is the sentinel Org Owner role seeded on the platform org
+// (migrations/0005_roles.up.sql, grants ["*"]). Platform admins hold this role
+// via their sentinel-org membership.
+const PlatformOwnerRole = "00000000000000000000000000000000"
+
 // Allow resolves whether actor has the required permission.
 func (c *Checker) Allow(ctx context.Context, actorID string, orgID, teamID, projectID string, requiredPermission string) (bool, error) {
 	if requiredPermission == "" {
@@ -47,6 +58,14 @@ func (c *Checker) Allow(ctx context.Context, actorID string, orgID, teamID, proj
 	}
 	if orgID != "" {
 		grants, err := c.grantsForScope(ctx, "org", orgID, orgID, actorID)
+		if err != nil {
+			return false, err
+		}
+		allGrants = append(allGrants, grants...)
+	} else {
+		// Platform-scope action: grants come from the platform sentinel org
+		// (platform admins hold an Org Owner membership there).
+		grants, err := c.grantsForScope(ctx, "org", PlatformOrg, PlatformOrg, actorID)
 		if err != nil {
 			return false, err
 		}

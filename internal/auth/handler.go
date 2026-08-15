@@ -6,10 +6,12 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
+	"github.com/thomasteoh/boardchestrator/internal/perm"
 	"github.com/thomasteoh/boardchestrator/internal/tenant"
 )
 
@@ -24,6 +26,8 @@ type OAuthHandler struct {
 	SessionCfg     SessionConfig
 	AdminEmails    []string
 	BootstrapToken string
+	// DB is the database handle used for platform-admin grants.
+	DB *sql.DB
 	// SecretKey is the AES-256 key used to encrypt OAuth tokens at rest
 	// (WU-406: GitHub token reuse for wiki edits). Pad via tenant.PadKey.
 	SecretKey []byte
@@ -49,6 +53,7 @@ func NewOAuthHandler(cfg OIDCConfig, ghCfg GitHubConfig, store *SessionStore, d 
 		Bootstrap:  NewDBBootstrapStore(d),
 		BaseURL:    cfg.BaseURL,
 		SessionCfg: sc,
+		DB:         d,
 		stateMap:   make(map[string]stateEntry),
 	}
 }
@@ -57,6 +62,52 @@ func NewOAuthHandler(cfg OIDCConfig, ghCfg GitHubConfig, store *SessionStore, d 
 func (h *OAuthHandler) SetBootstrapConfig(adminEmails []string, token string) {
 	h.AdminEmails = adminEmails
 	h.BootstrapToken = token
+}
+
+// ensurePlatformAdmin grants a bootstrap/admin user an Org Owner membership in
+// the platform sentinel org, which covers platform-scope actions (org.create,
+// pricing, providers, ...). It is idempotent and a no-op for non-admin emails.
+// SPEC §6: platform default roles live on the sentinel org (org_id NULL).
+func (h *OAuthHandler) ensurePlatformAdmin(ctx context.Context, w http.ResponseWriter, userID, email string) {
+	isAdmin := false
+	for _, ae := range h.AdminEmails {
+		if ae == email {
+			isAdmin = true
+			break
+		}
+	}
+	if !isAdmin {
+		return
+	}
+
+	q := sqlc.New(h.DB)
+	// Already a platform admin? No-op.
+	rows, err := q.FindMemberships(ctx, sqlc.FindMembershipsParams{
+		OrgID:        perm.PlatformOrg,
+		ActorType:    "user",
+		ActorID:      userID,
+		ResourceType: "org",
+		ResourceID:   perm.PlatformOrg,
+	})
+	if err != nil {
+		slog.Warn("auth: check platform membership", "err", err)
+		return
+	}
+	if len(rows) > 0 {
+		return
+	}
+
+	if _, err := q.CreateMembership(ctx, sqlc.CreateMembershipParams{
+		ID:           newID(),
+		OrgID:        perm.PlatformOrg,
+		ActorID:      userID,
+		ActorType:    "user",
+		ResourceType: "org",
+		ResourceID:   perm.PlatformOrg,
+		RoleID:       sql.NullString{String: perm.PlatformOwnerRole, Valid: true},
+	}); err != nil {
+		slog.Warn("auth: grant platform admin", "err", err)
+	}
 }
 
 // bootstrapGate checks whether the caller's email is allowed during pre-bootstrap.
@@ -133,6 +184,11 @@ func (h *OAuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Platform admins (bootstrap admins) get an Org Owner membership in the
+	// platform sentinel org, which grants platform-scope actions (org.create,
+	// pricing, providers). Idempotent: no-op if already granted.
+	h.ensurePlatformAdmin(ctx, w, userID, claims.Email)
+
 	raw, _, err := h.Store.Create(ctx, userID, r.RemoteAddr, r.UserAgent())
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -194,6 +250,10 @@ func (h *OAuthHandler) HandleGitHubCallback(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "internal server error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Platform admins (bootstrap admins) get an Org Owner membership in the
+	// platform sentinel org (see ensurePlatformAdmin).
+	h.ensurePlatformAdmin(ctx, w, userID, user.Email)
 
 	// WU-406: encrypt the OAuth access token at rest so the github.connect
 	// action can reuse it (and Phase-5 wiki edits can commit as this user).
@@ -275,6 +335,15 @@ func (s *DBIdentityStore) SetIdentityToken(ctx context.Context, userID, provider
 		UserID:   userID,
 		Provider: provider,
 	})
+}
+
+// newID returns a random hex id (16 bytes) for platform-admin membership rows.
+func newID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic(fmt.Sprintf("auth: crypto/rand failed: %v", err))
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // DBBootstrapStore implements BootstrapChecker using sqlc.
