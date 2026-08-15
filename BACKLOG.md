@@ -394,3 +394,35 @@ Deps: all.
 Full pass: `make check` on clean clone; container smoke (compose up, bootstrap, create org→project→task via UI path exercised by chromedp if available else scripted curl); tag `0.1.0-rc.1` dry-run pipeline; CHANGELOG.md.
 AC: smoke script committed + green. Manual: rc pipeline run recorded here.
 Result: smoke (scripts/smoke.sh) PASS — surfaced 4 release-blocking bugs, all fixed (platform-scope grants, org-owner role perms, missing create routes, Dockerfile nonroot+make build). Clean-clone make check PASS; image builds+runs; workflow YAML valid; tag v0.1.0-rc.1 local.
+
+### WU-509 · Route gaps — S3 config + role editor stubs — `ready`
+Deps: 506, 107.
+Comprehensive review (2026-08-15) found two real 404/501 bugs:
+1. `org.storage.configure` has **no POST route** in web.go — the S3 settings form (`settings_org.templ`) posts to `/api/action/org.storage.configure` → 404. Only `org.storage.status` is wired (GET inline-dispatch). WU-506 regression missed by WU-508 smoke (smoke didn't exercise S3 config).
+2. `handleOrgRoleNew` / `handleOrgRoleEdit` (web.go:203/207) are **501 stubs** — `/app/org/{orgID}/roles/new` and `/roles/{roleID}/edit` render nothing, though routes are registered and `role.create`/`role.update` actions + RolesEditorPage exist. Role editing UI incomplete since WU-107.
+AC: register `/api/action/org.storage.configure` POST route (form posts reach the action); S3 config round-trip via smoke/curl; implement role new/edit page handlers rendering a grant-editor (reuse RolesEditorPage) posting to role.create/role.update; both pages return 200 + save.
+
+### WU-510 · Notifications page — `ready`
+Deps: 211.
+`notif.list` / `notif.mark_read` / `notif.mark_all_read` actions exist, but only `/api/notif/unread-count` GET is wired. The layout's `/notifications` link 404s — no notifications page route or view. Notify engine (`internal/notify`) is real (not stub), events are grouped, but there's no list/mark UI.
+AC: `/app/notifications` GET route + list view (grouped, unread-first) rendering notif.list rows; POST `/api/action/notif.mark_read` + `notif.mark_all_read` wired; unread badge updates via existing SSE/partial.
+
+### WU-511 · Task templates + recurring — wire UI — `ready`
+Deps: 209.
+`template.*` / `recurring.*` actions have full backend (schedule engine computes cron nextAt) but **no routes, no UI, no dispatch anywhere** — dead actions. Task templates (create-from) and recurring tasks exist server-side but are unreachable from the task UI.
+AC: wire create-from-template on task detail/new; recurring UI (cron expr input) on task create; register template.create/update/delete + recurring.create/update/delete routes; round-trip via smoke.
+
+### WU-512 · Outbound webhooks — wire UI — `ready`
+Deps: 405.
+`webhook.create/update/delete/list` actions exist with sqlc + retry/DLQ/SSRF-guard engine, but **no routes, no UI, no dispatch** — Phase 4 "outbound webhooks" surface is backend-only. Inbound GitHub hooks are wired (handleGithubHook); outbound management isn't.
+AC: webhooks admin page (`/app/org/{orgID}/webhooks`) + create/update/delete/list routes + delivery log; retry/DLQ controls; SSRF guard verified.
+
+### WU-513 · Q4 decision — require `BC_SESSION_SECRET` — `ready`
+Deps: 101.
+QUESTIONS.md Q4 is **unanswered**: `config.Load` does not require `BC_SESSION_SECRET` (empty → CSRF HMAC keyed on "", weakens security; future session-cookie signing unsafe). Options: (a) require min-32 in config.Load + update tests; (b) leave optional + document; (c) auto-generate (breaks multi-instance). Recommendation was (a) folded into WU-101 but never landed.
+AC: decide (a)/(b)/(c) — record answer in QUESTIONS.md; if (a), make secret required + fix config tests + `bc serve` already supplies it.
+
+### WU-514 · Wiki status stale — `ready`
+Deps: none.
+`~/wiki/projects/boardchestrator.md` line 18 says "Phase 3 in progress, WUs 304+ ready" — stale; all WUs 001–508 are done and the Ready list is empty.
+AC: update Status section to reflect all phases 0–5 complete through WU-508; re-index wiki (`qmd update`).
