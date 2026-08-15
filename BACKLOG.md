@@ -395,12 +395,13 @@ Full pass: `make check` on clean clone; container smoke (compose up, bootstrap, 
 AC: smoke script committed + green. Manual: rc pipeline run recorded here.
 Result: smoke (scripts/smoke.sh) PASS — surfaced 4 release-blocking bugs, all fixed (platform-scope grants, org-owner role perms, missing create routes, Dockerfile nonroot+make build). Clean-clone make check PASS; image builds+runs; workflow YAML valid; tag v0.1.0-rc.1 local.
 
-### WU-509 · Route gaps — S3 config + role editor stubs — `ready`
+### WU-509 · Route gaps — S3 config + role editor stubs — `done (9c25ee2, 2026-08-15)`
 Deps: 506, 107.
 Comprehensive review (2026-08-15) found two real 404/501 bugs:
 1. `org.storage.configure` has **no POST route** in web.go — the S3 settings form (`settings_org.templ`) posts to `/api/action/org.storage.configure` → 404. Only `org.storage.status` is wired (GET inline-dispatch). WU-506 regression missed by WU-508 smoke (smoke didn't exercise S3 config).
 2. `handleOrgRoleNew` / `handleOrgRoleEdit` (web.go:203/207) are **501 stubs** — `/app/org/{orgID}/roles/new` and `/roles/{roleID}/edit` render nothing, though routes are registered and `role.create`/`role.update` actions + RolesEditorPage exist. Role editing UI incomplete since WU-107.
-AC: register `/api/action/org.storage.configure` POST route (form posts reach the action); S3 config round-trip via smoke/curl; implement role new/edit page handlers rendering a grant-editor (reuse RolesEditorPage) posting to role.create/role.update; both pages return 200 + save.
+Result: registered POST `/api/action/org.storage.configure` (+ status); handleOrgRoles loads roles via role.list; role new/edit pages implemented (RoleFormPage, preloaded name/grants); role.create/update accept `grants_str` (flat form value) via splitGrants. AC: `org.storage.configure` POST route registered (form posts reach the action); S3 config round-trip via smoke — PASS; role new/edit page handlers render a grant-editor posting to role.create/role.update — PASS; both pages return 200 + save — PASS.
+Full-pass: make check PASS, 22 pkgs green, smoke PASS (`org=a09e.. project=cf65.. task=92d7.. role=5d73..`), git clean.
 
 ### WU-510 · Notifications page — `ready`
 Deps: 211.
