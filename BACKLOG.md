@@ -384,7 +384,7 @@ Deps: 207.
 S3 store impl (AWS SDK v2, custom endpoint, path-style option); org settings UI for backend config (encrypted); migration helper `bc storage migrate` local→S3; served via streamed proxy (same headers as local).
 AC: tests against minio-compatible fake or SDK middleware stub; config round-trip; migrate helper moves + verifies checksums.
 
-### WU-507 · Backup + ops polish — `ready`
+### WU-507 · Backup + ops polish — `done` (51eae7c, 2026-08-15)
 Deps: 003.
 `bc backup` (`VACUUM INTO` to timestamped file, prunes to N); `/readyz` covers DB + queue health; docs: RESTORE.md, DEPLOY.md (compose example, volume layout, env reference generated from config struct).
 AC: backup/restore round-trip test; readyz degradation test; env reference generation test.
