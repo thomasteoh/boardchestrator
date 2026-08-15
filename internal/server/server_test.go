@@ -92,6 +92,8 @@ func TestHealthz(t *testing.T) {
 
 func TestReadyzWhenReady(t *testing.T) {
 	s := server.New(testConfig())
+	d := dbtest.New(t)
+	s.SetDB(d)
 	s.SetReady(true)
 	srv := httptest.NewServer(s)
 	defer srv.Close()
@@ -104,6 +106,69 @@ func TestReadyzWhenReady(t *testing.T) {
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
+// TestReadyzDegradedDB verifies /readyz returns 503 when the DB is down
+// (WU-507 AC: readyz degradation test).
+func TestReadyzDegradedDB(t *testing.T) {
+	s := server.New(testConfig())
+	// DB handle set but the connection is closed → Ping fails → degraded.
+	d := dbtest.New(t)
+	s.SetDB(d)
+	s.SetReady(true)
+	d.Close()
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/readyz")
+	if err != nil {
+		t.Fatalf("GET /readyz: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", resp.StatusCode)
+	}
+}
+
+// TestReadyzReportsQueue verifies /readyz includes queue health (depth + oldest)
+// when the DB is healthy (WU-507).
+func TestReadyzReportsQueue(t *testing.T) {
+	s := server.New(testConfig())
+	d := dbtest.New(t)
+	s.SetDB(d)
+	s.SetReady(true)
+	// Seed a queued job so depth > 0.
+	_, err := d.Exec(`INSERT INTO jobs (id, kind, payload_json, run_at, max_attempts)
+		VALUES ('j1', 'test.run', '{}', '1970-01-01T00:00:00.000Z', 3)`)
+	if err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/readyz")
+	if err != nil {
+		t.Fatalf("GET /readyz: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	q, ok := body["queue"].(map[string]any)
+	if !ok {
+		t.Fatalf("queue absent: %v", body)
+	}
+	if q["queued"] != float64(1) {
+		t.Errorf("queued = %v, want 1", q["queued"])
+	}
+	if q["oldest"] == "" || q["oldest"] == nil {
+		t.Errorf("oldest = %v, want a timestamp", q["oldest"])
 	}
 }
 
@@ -298,6 +363,8 @@ func TestShutdownDrainInFlightRequests(t *testing.T) {
 
 func TestJSONResponseFormat(t *testing.T) {
 	s := server.New(testConfig())
+	d := dbtest.New(t)
+	s.SetDB(d)
 	s.SetReady(true)
 	srv := httptest.NewServer(s)
 	defer srv.Close()

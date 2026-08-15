@@ -350,11 +350,56 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
-	if s.ready.Load() {
-		serveJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	// Readiness covers: server ready flag, DB connectivity, and queue health
+	// (WU-507). Any degraded component returns 503 with the failing check.
+	if !s.ready.Load() {
+		serveJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "starting"})
 		return
 	}
-	serveJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "starting"})
+
+	// DB health: ping the connection.
+	if s.db == nil {
+		serveJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "degraded", "db": "unconfigured"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := s.db.PingContext(ctx); err != nil {
+		serveJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "degraded", "db": err.Error()})
+		return
+	}
+
+	// Queue health: depth by status + oldest queued age (WU-507).
+	q := sqlc.New(s.db)
+	depth, err := q.GetQueueDepth(ctx)
+	if err != nil {
+		serveJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "degraded", "queue": err.Error()})
+		return
+	}
+	counts := map[string]int64{"queued": 0, "running": 0, "dead": 0}
+	for _, d := range depth {
+		counts[d.Status] = d.Count
+	}
+	oldest, err := q.GetQueueOldestAge(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			oldest = "" // no queued jobs — healthy
+		} else {
+			serveJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "degraded", "queue": "oldest-age: " + err.Error()})
+			return
+		}
+	}
+
+	serveJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"db":     "ok",
+		"queue": map[string]any{
+			"queued":  counts["queued"],
+			"running": counts["running"],
+			"dead":    counts["dead"],
+			"oldest":  oldest,
+		},
+	})
 }
 
 func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
@@ -382,6 +427,9 @@ func serveJSON(w http.ResponseWriter, status int, v any) {
 func (s *Server) SetReady(v bool) {
 	s.ready.Store(v)
 }
+
+// SetDB sets the server's DB handle for tests (WU-507 readyz queue/DB checks).
+func (s *Server) SetDB(d *sql.DB) { s.db = d }
 
 // Ready reports whether the server passed readiness.
 func (s *Server) Ready() bool {
