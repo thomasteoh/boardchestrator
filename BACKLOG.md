@@ -452,3 +452,10 @@ Gap (from UX review): landing page unstyled (missing CSS classes), nav badge uns
 Result: **styled landing** (bc-hero/features/feature-card + bc-btn-secondary + entrance animation with stagger, reduced-motion safe), **SVG favicon** served at /favicon.svg (replaced garbage 40-byte public/favicon.ico, dead dir removed), **SVG icon marks** replacing ☰/◐ glyphs, **manifest theme_color** → #2f6fed (test updated), **Ctrl+K removed** from help dialog (no palette exists).
 AC: landing renders styled; favicon served as SVG; icons are SVG; manifest accent correct; help honest.
 Full-pass: `go test ./internal/web/...` PASS; `go build ./...` PASS; smoke WU-513 UI section PASS; `make check` PASS.
+
+### WU-517 · In-app help/docs area — `done (2026-08-16, 9187c3d)`
+Deps: none.
+Gap: `/app/docs` was a bare OpenAPI spec dump (raw JSON `<pre>`), no usable help; only a keyboard-shortcut dialog existed.
+Result: **real help page** — `docs.templ` app-shell page with sidebar nav + `bc-prose` body. **7 embedded markdown guides** (`internal/web/docs/*.md`, `//go:embed`): getting-started, board, backlog, chat, wiki, permissions, webhooks — rendered via `wiki.Render` (sanitized, GFM, consistent with wiki pages). OpenAPI reference link retained; spec still at `/api/v1/openapi.json`. Routes `/app/docs` + `/app/docs/{slug}`.
+AC: /app/docs renders help overview + sidebar + API link; each guide renders with active nav; spec endpoint intact.
+Full-pass: `go test ./internal/web/...` PASS (TestDocsPageRenders extended + TestDocsGuideRenders new); `go build ./...` PASS; smoke WU-517 docs section PASS; `make check` PASS.
