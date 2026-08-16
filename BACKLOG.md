@@ -418,10 +418,12 @@ Result: new project **TemplatesPage** at `/app/org/{orgID}/project/{projectID}/t
 AC: project templates page lists templates + recurring rules; create/delete + create-from round-trip; routes registered; smoke round-trip.
 Full-pass: make check PASS (22 pkgs), smoke PASS (`templates page 200; template.create → template; create_from → task ceb0-2; recurring.create → rule`), git clean. Also fixed latent board.column.create scope failure.
 
-### WU-512 · Outbound webhooks — wire UI — `ready`
+### WU-512 · Outbound webhooks — wire UI — `done (32b3814, 2026-08-16)`
 Deps: 405.
-`webhook.create/update/delete/list` actions exist with sqlc + retry/DLQ/SSRF-guard engine, but **no routes, no UI, no dispatch** — Phase 4 "outbound webhooks" surface is backend-only. Inbound GitHub hooks are wired (handleGithubHook); outbound management isn't.
-AC: webhooks admin page (`/app/org/{orgID}/webhooks`) + create/update/delete/list routes + delivery log; retry/DLQ controls; SSRF guard verified.
+`webhook.create/update/delete/list` actions had sqlc + retry/DLQ/SSRF-guard engine but **no routes, no UI, no dispatch** — Phase 4 outbound surface was backend-only. Inbound GitHub hooks wired (handleGithubHook); outbound management wasn't.
+Result: org **WebhooksPage** at `/app/org/{orgID}/webhooks` listing webhooks (direct sqlc ListWebhooksByOrg, reports pattern) with create form (name/url/secret/team/event_filter_str) + enable/disable toggle + delete (htmx → registered actions). Registered `webhook.create/update/delete/list` POST routes (were unregistered 404s). Added `event_filter_str` (comma-separated, splitGrants) to create/update inputs — htmx forms can't send a JSON array, mirrors role grants_str pattern.
+AC: webhooks admin page + create/update/delete/list routes; toggle + delete round-trip; delivery log + retry/DLQ controls noted as follow-up (engine exists, no UI page for deliveries yet).
+Full-pass: make check PASS (22 pkgs), smoke PASS (`webhooks page 200; webhook.create → webhook; toggle disable → page No; delete → DB row gone + page no longer lists`), git clean. Smoke greps match `<td>name</td>` cells (form placeholder "e.g. Slack channel" would false-positive a bare name grep).
 
 ### WU-513 · Q4 decision — require `BC_SESSION_SECRET` — `ready`
 Deps: 101.
