@@ -1148,6 +1148,16 @@ func handleManifest(w http.ResponseWriter, r *http.Request) {
 	serveEmbedded(w, "static/manifest.json")
 }
 
+// handleFavicon serves the SVG brand mark at the conventional /favicon.svg
+// path. Browsers request this automatically; SVG keeps it sharp at any size
+// and matches the public website brand. Immutable cache: content-addressed
+// by the embed hash, so a change ships a fresh path on the next build.
+func handleFavicon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	serveEmbedded(w, "static/favicon.svg")
+}
+
 // handleServiceWorker serves the service worker at the stable root path
 // /sw.js. Serving from the origin root (rather than a hashed /static/ URL)
 // gives the worker default scope of "/", so it can intercept navigations to
@@ -1168,6 +1178,7 @@ func handleServiceWorker(w http.ResponseWriter, r *http.Request) {
 func Routes(r chi.Router) {
 	r.Handle("/static/*", StaticHandler())
 	r.Get("/manifest.json", handleManifest)
+	r.Get("/favicon.svg", handleFavicon)
 	r.Get("/sw.js", handleServiceWorker)
 	r.Get("/", handleRoot)
 	r.Get("/app", handleAppShell)

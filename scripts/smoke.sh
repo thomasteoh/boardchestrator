@@ -266,3 +266,23 @@ WHPAGE4=$(curl -sf -H "Cookie: $COOKIE" "$WHURL")
 echo "$WHPAGE4" | grep -q "<td>Slack</td>" && { echo "smoke: webhook not deleted on page"; exit 1; }
 
 echo "smoke: WU-512 webhooks page + create/toggle/delete round-trip PASS"
+
+# --- WU-513: public UI surface (landing, favicon, manifest, SVG icons) ---
+# Unauthenticated root renders the styled landing page (hero + feature cards).
+ROOT=$(curl -sf "$BASE/") || { echo "smoke: landing page failed"; exit 1; }
+echo "$ROOT" | grep -q "bc-hero-title" || { echo "smoke: landing missing hero"; exit 1; }
+echo "$ROOT" | grep -q "bc-feature-card" || { echo "smoke: landing missing feature cards"; exit 1; }
+echo "$ROOT" | grep -q 'href="/favicon.svg"' || { echo "smoke: landing missing favicon link"; exit 1; }
+
+# favicon served as SVG brand mark.
+curl -sf -o /dev/null -w "%{content_type}" "$BASE/favicon.svg" \
+    | grep -q "image/svg+xml" || { echo "smoke: favicon wrong content-type"; exit 1; }
+
+# manifest theme_color matches the app accent (was #6366f1 mismatch).
+MANIFEST=$(curl -sf "$BASE/manifest.json")
+echo "$MANIFEST" | grep -q '"theme_color": "#2f6fed"' || { echo "smoke: manifest theme_color mismatch"; exit 1; }
+
+# App shell uses SVG icon marks, not unicode glyphs.
+echo "$ROOT" | grep -q 'class="bc-ico"' || { echo "smoke: app shell missing SVG icons"; exit 1; }
+
+echo "smoke: WU-513 public UI surface (landing + favicon + manifest + icons) PASS"

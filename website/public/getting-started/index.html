@@ -1,0 +1,90 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Getting started · Boardchestrator</title>
+    <meta name="description" content="Install, configure, and run Boardchestrator locally or in production.">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="canonical" href="https://thomasteoh.github.io/boardchestrator/getting-started/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://thomasteoh.github.io/boardchestrator/getting-started/">
+    <meta property="og:title" content="Getting started">
+    <meta property="og:description" content="Install, configure, and run Boardchestrator locally or in production.">
+    <meta property="og:site_name" content="Boardchestrator">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Getting started">
+    <meta name="twitter:description" content="Install, configure, and run Boardchestrator locally or in production.">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#2f6fed">
+    <link rel="stylesheet" href="/css/screen.css">
+    <script>(function(){var t=localStorage.getItem('bc-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}());</script>
+</head>
+<body>
+    <a href="#main" class="skip-link">skip to content</a>
+    <nav class="topnav" aria-label="Primary">
+        <a href="/" class="brand">Boardchestrator</a>
+        <div class="topnav-links">
+            <a href="/#features">Features</a>
+            <a href="/docs/">Docs</a>
+            <a href="https://github.com/thomasteoh/boardchestrator" rel="noopener">GitHub</a>
+            <button class="theme-toggle" aria-label="Toggle theme">◑</button>
+        </div>
+    </nav>
+    <main id="main">
+        
+        <article class="prose">
+            <header><h1>Getting started</h1><p class="lede">Install, configure, and run Boardchestrator locally or in production.</p></header>
+            <h2>Requirements</h2>
+<ul>
+<li>Go 1.25+ (or a prebuilt binary / Docker image)</li>
+<li>A <code>BC_SESSION_SECRET</code> of at least 32 characters</li>
+<li>One OAuth provider: Google (recommended) or GitHub</li>
+</ul>
+<h2>Run it</h2>
+<pre><code class="language-sh"># build the server
+go build -o bc ./cmd/bc
+
+# run with the required secrets
+BC_SESSION_SECRET=&quot;$(openssl rand -hex 32)&quot; \
+BC_GOOGLE_CLIENT_ID=&quot;...&quot; \
+BC_GOOGLE_CLIENT_SECRET=&quot;...&quot; \
+BC_SECRET_KEY=&quot;$(openssl rand -hex 32)&quot; \
+./bc serve
+</code></pre>
+<p>The server listens on <code>0.0.0.0:8080</code> by default. Open <code>http://localhost:8080</code> and sign in with Google.</p>
+<h2>First run</h2>
+<p>On first boot, if you set <code>BC_BOOTSTRAP_TOKEN</code>, a bootstrap endpoint lets you create the first org without a provider. Otherwise sign in through the configured OAuth provider — the first user to sign in becomes an owner.</p>
+<h2>Configuration</h2>
+<p>Every setting is an environment variable prefixed with <code>BC_</code>. See the <a href="/docs/deployment/">deployment reference</a> for the full table. The two non-negotiable secrets:</p>
+<ul>
+<li><code>BC_SESSION_SECRET</code> — HMAC key for session CSRF tokens. <strong>Required, ≥32 chars.</strong></li>
+<li><code>BC_SECRET_KEY</code> — encryption key for secrets at rest. <strong>Required.</strong></li>
+</ul>
+<h2>What you get</h2>
+<ul>
+<li>A real-time kanban <strong>board</strong> with drag-and-drop, WIP limits, and swimlanes</li>
+<li>An <strong>agent chat</strong> that can assign, label, and decompose tasks</li>
+<li>A versioned <strong>wiki</strong> with autolinking and semantic search</li>
+<li><strong>MCP</strong> tool servers plugged into the agent runtime</li>
+</ul>
+
+            <p class="doc-cta"><a href="https://github.com/thomasteoh/boardchestrator" rel="noopener">Open source on GitHub</a></p>
+        </article>
+        
+    </main>
+    <footer>
+        <nav aria-label="Footer">
+            <a href="/">Home</a>
+            <a href="/docs/">Docs</a>
+            <a href="https://github.com/thomasteoh/boardchestrator" rel="noopener">GitHub</a>
+            <a href="/llms.txt" class="icon-link" aria-label="LLM manifest">llms.txt</a>
+        </nav>
+        <p class="foot-note">Boardchestrator — open source · Apache-2.0 · self-hosted</p>
+    </footer>
+    <script src="/js/theme.js" defer></script>
+    <script src="/js/brand.js" defer></script>
+    
+</body>
+</html>

@@ -1,0 +1,206 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Deployment · Boardchestrator</title>
+    <meta name="description" content="Docker, environment reference, and operations for running Boardchestrator in production.">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="canonical" href="https://thomasteoh.github.io/boardchestrator/deployment/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://thomasteoh.github.io/boardchestrator/deployment/">
+    <meta property="og:title" content="Deployment">
+    <meta property="og:description" content="Docker, environment reference, and operations for running Boardchestrator in production.">
+    <meta property="og:site_name" content="Boardchestrator">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Deployment">
+    <meta name="twitter:description" content="Docker, environment reference, and operations for running Boardchestrator in production.">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#2f6fed">
+    <link rel="stylesheet" href="/css/screen.css">
+    <script>(function(){var t=localStorage.getItem('bc-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}());</script>
+</head>
+<body>
+    <a href="#main" class="skip-link">skip to content</a>
+    <nav class="topnav" aria-label="Primary">
+        <a href="/" class="brand">Boardchestrator</a>
+        <div class="topnav-links">
+            <a href="/#features">Features</a>
+            <a href="/docs/">Docs</a>
+            <a href="https://github.com/thomasteoh/boardchestrator" rel="noopener">GitHub</a>
+            <button class="theme-toggle" aria-label="Toggle theme">◑</button>
+        </div>
+    </nav>
+    <main id="main">
+        
+        <article class="prose">
+            <header><h1>Deployment</h1><p class="lede">Docker, environment reference, and operations for running Boardchestrator in production.</p></header>
+            <p>Boardchestrator ships as a single Go binary. The official container image is published to <code>ghcr.io/thomasteoh/boardchestrator</code> on every version tag.</p>
+<h2>Docker Compose</h2>
+<pre><code class="language-yaml">services:
+  bc:
+    image: ghcr.io/thomasteoh/boardchestrator:latest
+    ports:
+      - &quot;8080:8080&quot;
+    environment:
+      BC_DB_PATH: /data/bc.db
+      BC_DATA_DIR: /data
+      BC_BASE_URL: https://bc.example.com
+      BC_BIND: 0.0.0.0:8080
+      BC_SECRET_KEY: ${BC_SECRET_KEY}
+      BC_SESSION_SECRET: ${BC_SESSION_SECRET}
+      BC_GOOGLE_CLIENT_ID: ${BC_GOOGLE_CLIENT_ID}
+      BC_GOOGLE_CLIENT_SECRET: ${BC_GOOGLE_CLIENT_SECRET}
+      BC_AGENT_WORKERS: &quot;4&quot;
+    volumes:
+      - bc-data:/data
+    healthcheck:
+      test: [&quot;CMD&quot;, &quot;wget&quot;, &quot;-qO-&quot;, &quot;http://localhost:8080/readyz&quot;]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  bc-data:
+</code></pre>
+<p>Secrets come from a <code>.env</code> file or your secret store — never commit them.</p>
+<h2>Data layout</h2>
+<p>The single <code>bc-data</code> volume maps to <code>BC_DATA_DIR</code>:</p>
+<pre><code>/data
+├── bc.db              # SQLite database
+├── backups/           # snapshots (pruned to newest 5)
+├── attachments/       # org/task file attachments
+└── wiki/              # wiki checkout cache
+</code></pre>
+<p>Mount <code>bc-data</code> on durable storage. Put <code>backups/</code> on a separate persistent volume if you need snapshot history beyond the container.</p>
+<h2>Environment reference</h2>
+<table>
+<thead>
+<tr>
+<th>Env</th>
+<th>Type</th>
+<th>Default</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BC_DB_PATH</code></td>
+<td>string</td>
+<td><code>bc.db</code></td>
+<td>SQLite database path</td>
+</tr>
+<tr>
+<td><code>BC_DATA_DIR</code></td>
+<td>string</td>
+<td><code>./data</code></td>
+<td>data root</td>
+</tr>
+<tr>
+<td><code>BC_BASE_URL</code></td>
+<td>string</td>
+<td><code>http://localhost:8080</code></td>
+<td>external URL (OAuth redirects)</td>
+</tr>
+<tr>
+<td><code>BC_BIND</code></td>
+<td>string</td>
+<td><code>0.0.0.0:8080</code></td>
+<td>listen address</td>
+</tr>
+<tr>
+<td><code>BC_LOG_LEVEL</code></td>
+<td>string</td>
+<td><code>info</code></td>
+<td>debug/info/warn/error</td>
+</tr>
+<tr>
+<td><code>BC_SECRET_KEY</code></td>
+<td>string</td>
+<td>required</td>
+<td>encryption key for secrets</td>
+</tr>
+<tr>
+<td><code>BC_SESSION_SECRET</code></td>
+<td>string</td>
+<td>required</td>
+<td>session HMAC secret (≥32 chars)</td>
+</tr>
+<tr>
+<td><code>BC_BOOTSTRAP_TOKEN</code></td>
+<td>string</td>
+<td>``</td>
+<td>first-run bootstrap token</td>
+</tr>
+<tr>
+<td><code>BC_ADMIN_EMAILS</code></td>
+<td>string</td>
+<td>``</td>
+<td>comma-separated admin emails</td>
+</tr>
+<tr>
+<td><code>BC_GOOGLE_CLIENT_ID</code></td>
+<td>string</td>
+<td>required</td>
+<td>Google OAuth client id</td>
+</tr>
+<tr>
+<td><code>BC_GOOGLE_CLIENT_SECRET</code></td>
+<td>string</td>
+<td>required</td>
+<td>Google OAuth client secret</td>
+</tr>
+<tr>
+<td><code>BC_GITHUB_CLIENT_ID</code></td>
+<td>string</td>
+<td>``</td>
+<td>GitHub OAuth client id</td>
+</tr>
+<tr>
+<td><code>BC_GITHUB_CLIENT_SECRET</code></td>
+<td>string</td>
+<td>``</td>
+<td>GitHub OAuth client secret</td>
+</tr>
+<tr>
+<td><code>BC_AGENT_WORKERS</code></td>
+<td>int</td>
+<td><code>4</code></td>
+<td>worker pool size</td>
+</tr>
+<tr>
+<td><code>BC_SCHED_POLL_INTERVAL</code></td>
+<td>int</td>
+<td><code>60</code></td>
+<td>scheduler poll seconds</td>
+</tr>
+</tbody>
+</table>
+<h2>Operations</h2>
+<ul>
+<li><code>bc serve</code> — run the server.</li>
+<li><code>bc backup</code> — online SQLite snapshot via <code>VACUUM INTO</code>, pruned to the newest 5.</li>
+<li><code>bc storage migrate &lt;org-id&gt;</code> — migrate an org's attachments from local to S3.</li>
+</ul>
+<p><code>GET /readyz</code> returns <code>200 {&quot;status&quot;:&quot;ok&quot;}</code> when the server is up, the DB is reachable, and the queue is healthy. Wire it to your orchestrator's healthcheck (see the compose example).</p>
+
+            <p class="doc-cta"><a href="https://github.com/thomasteoh/boardchestrator" rel="noopener">Open source on GitHub</a></p>
+        </article>
+        
+    </main>
+    <footer>
+        <nav aria-label="Footer">
+            <a href="/">Home</a>
+            <a href="/docs/">Docs</a>
+            <a href="https://github.com/thomasteoh/boardchestrator" rel="noopener">GitHub</a>
+            <a href="/llms.txt" class="icon-link" aria-label="LLM manifest">llms.txt</a>
+        </nav>
+        <p class="foot-note">Boardchestrator — open source · Apache-2.0 · self-hosted</p>
+    </footer>
+    <script src="/js/theme.js" defer></script>
+    <script src="/js/brand.js" defer></script>
+    
+</body>
+</html>

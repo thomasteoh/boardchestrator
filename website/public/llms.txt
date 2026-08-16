@@ -1,0 +1,12 @@
+# Boardchestrator
+
+The operating system for your agents — a self-hosted agent workspace with boards, autonomous agents, a versioned wiki, and MCP tool integration.
+
+## Docs
+
+- Concepts: Boards, agents, wiki, and MCP — how the pieces fit together. (https://thomasteoh.github.io/boardchestrator/concepts/)
+- Deployment: Docker, environment reference, and operations for running Boardchestrator in production. (https://thomasteoh.github.io/boardchestrator/deployment/)
+- Documentation: Getting started, usage, and deployment for Boardchestrator. (https://thomasteoh.github.io/boardchestrator/docs/)
+- Getting started: Install, configure, and run Boardchestrator locally or in production. (https://thomasteoh.github.io/boardchestrator/getting-started/)
+
+Source: https://github.com/thomasteoh/boardchestrator

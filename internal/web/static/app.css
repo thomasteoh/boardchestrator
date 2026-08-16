@@ -196,6 +196,17 @@ a {
   background: var(--bc-accent-soft);
 }
 
+/* SVG icon marks inside icon buttons (server-rendered, CSP-safe). */
+.bc-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.bc-ico svg {
+  display: block;
+  color: currentColor;
+}
+
 /* ---------- Shell grid ---------- */
 
 .bc-shell {
@@ -669,6 +680,16 @@ a {
   filter: brightness(1.1);
 }
 
+.bc-btn-secondary {
+  background: var(--bc-surface);
+  color: var(--bc-text);
+  border-color: var(--bc-border);
+}
+
+.bc-btn-secondary:hover {
+  background: var(--bc-surface-hover, var(--bc-bg));
+}
+
 .bc-btn-danger {
   color: var(--bc-danger);
   border-color: var(--bc-danger);
@@ -816,4 +837,100 @@ a {
     flex: 0 0 18rem;
     scroll-snap-align: none;
   }
+}
+
+/* ===== Landing page (unauthenticated entry) ===== */
+.bc-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 4.5rem 1.5rem 2.5rem;
+  text-align: center;
+  animation: bc-rise-in 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.bc-hero-title {
+  font-size: clamp(2.4rem, 6vw, 3.4rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0;
+}
+.bc-hero-subtitle {
+  color: var(--bc-text-muted);
+  font-size: clamp(1.1rem, 2.6vw, 1.35rem);
+  max-width: 40rem;
+  margin: 0;
+}
+.bc-hero-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 1rem;
+}
+.bc-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1.25rem;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 0 1.5rem 4rem;
+}
+.bc-feature-card {
+  background: var(--bc-surface);
+  border: 1px solid var(--bc-border);
+  border-radius: var(--bc-radius-md, 10px);
+  box-shadow: var(--bc-shadow, none);
+  padding: 1.5rem;
+}
+.bc-feature-card h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+.bc-feature-card p {
+  margin: 0;
+  color: var(--bc-text-muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* Feature cards rise in with a per-card stagger (respects reduced-motion
+ * via the global kill-switch above). */
+.bc-feature-card {
+  animation: bc-rise-in 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation-delay: calc(var(--bc-card-index, 0) * 90ms);
+}
+.bc-features .bc-feature-card:nth-child(1) { --bc-card-index: 1; }
+.bc-features .bc-feature-card:nth-child(2) { --bc-card-index: 2; }
+.bc-features .bc-feature-card:nth-child(3) { --bc-card-index: 3; }
+.bc-features .bc-feature-card:nth-child(4) { --bc-card-index: 4; }
+
+@keyframes bc-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== Notification badge ===== */
+.bc-notif-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--bc-danger, #c62828);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
 }

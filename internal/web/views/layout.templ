@@ -10,6 +10,7 @@ templ Base(s Shell) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ s.Title } · Boardchestrator</title>
+			<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
 			<link rel="manifest" href="/manifest.json"/>
 			<link rel="stylesheet" href={ templ.URL(s.Assets.AppCSS) }/>
 			// Nonced theme bootstrap: applies the persisted theme before first
@@ -38,7 +39,9 @@ templ Base(s Shell) {
 					x-on:click="openDrawer"
 					x-bind:aria-expanded="drawerOpen"
 				>
-					<span aria-hidden="true">☰</span>
+					<span aria-hidden="true" class="bc-ico">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="20" height="20" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+					</span>
 				</button>
 				<span class="bc-brand">Boardchestrator</span>
 				<button
@@ -47,7 +50,9 @@ templ Base(s Shell) {
 					aria-label="Toggle colour theme"
 					x-on:click="toggleTheme"
 				>
-					<span aria-hidden="true">◐</span>
+					<span aria-hidden="true" class="bc-ico">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="20" height="20" aria-hidden="true"><path d="M12 3a6 6 0 0 0 0 12 6 6 0 0 0 0-12zM12 15v4M12 3V1M12 15v3M9 17h6"/></svg>
+					</span>
 				</button>
 			</header>
 			<div class="bc-shell">

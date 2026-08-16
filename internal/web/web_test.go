@@ -94,7 +94,7 @@ func TestManifestServed(t *testing.T) {
 	if !strings.Contains(json, `"display": "standalone"`) {
 		t.Error("manifest missing display")
 	}
-	if !strings.Contains(json, `"theme_color": "#6366f1"`) {
+	if !strings.Contains(json, `"theme_color": "#2f6fed"`) {
 		t.Error("manifest missing theme_color")
 	}
 	if !strings.Contains(json, `"background_color": "#1a1a1a"`) {

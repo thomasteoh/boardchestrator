@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://thomasteoh.github.io/boardchestrator/sitemap.xml
