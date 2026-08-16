@@ -274,6 +274,40 @@ func handleOrgRoles(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handleOrgWebhooks(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	s := shellData(r, "Webhooks", "/settings")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	breadcrumbs := []views.Breadcrumb{
+		{Label: orgID, Href: "/app/org/" + orgID + "/settings"},
+		{Label: "Webhooks", Href: ""},
+	}
+
+	var rows []views.WebhookRow
+	if disp != nil {
+		q := sqlc.New(disp.DB())
+		whs, err := q.ListWebhooksByOrg(r.Context(), orgID)
+		if err == nil {
+			for _, wh := range whs {
+				var filter []string
+				_ = json.Unmarshal([]byte(wh.EventFilter), &filter)
+				rows = append(rows, views.WebhookRow{
+					ID:          wh.ID,
+					Name:        wh.Name,
+					URL:         wh.Url,
+					TeamID:      wh.TeamID.String,
+					Enabled:     wh.Enabled != 0,
+					EventFilter: filter,
+				})
+			}
+		}
+	}
+
+	if err := views.WebhooksPage(s, orgID, rows, breadcrumbs).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
 func handleOrgRoleNew(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "orgID")
 	s := shellData(r, "New Role", "/settings")
@@ -1152,6 +1186,7 @@ func Routes(r chi.Router) {
 	r.Get("/app/org/{orgID}/roles", handleOrgRoles)
 	r.Get("/app/org/{orgID}/roles/new", handleOrgRoleNew)
 	r.Get("/app/org/{orgID}/roles/{roleID}/edit", handleOrgRoleEdit)
+	r.Get("/app/org/{orgID}/webhooks", handleOrgWebhooks)
 	r.Post("/api/action/org.create", handleAction)
 	r.Post("/api/action/org.update", handleAction)
 	r.Post("/api/action/org.storage.configure", handleAction)
@@ -1172,6 +1207,10 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/invite.accept", handleAction)
 	r.Post("/api/action/role.create", handleAction)
 	r.Post("/api/action/role.update", handleAction)
+	r.Post("/api/action/webhook.create", handleAction)
+	r.Post("/api/action/webhook.update", handleAction)
+	r.Post("/api/action/webhook.delete", handleAction)
+	r.Post("/api/action/webhook.list", handleAction)
 	// API key routes (WU-109)
 	r.Get("/app/org/{orgID}/apikeys", handleAPIKeys)
 	r.Get("/app/org/{orgID}/usage", handleUsage)

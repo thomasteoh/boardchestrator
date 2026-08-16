@@ -227,3 +227,42 @@ echo "$TPLURL2" | grep -q "Bug report" || { echo "smoke: templates page missing 
 echo "$TPLURL2" | grep -q "0 9 \* \* 1" || { echo "smoke: templates page missing recurring rule"; exit 1; }
 
 echo "smoke: WU-511 templates + recurring page + round-trip PASS"
+
+# --- WU-512: webhooks page + create/toggle/delete round-trip ---
+WHURL="$BASE/app/org/$ORG_ID/webhooks"
+WHPAGE=$(curl -sf -H "Cookie: $COOKIE" "$WHURL") \
+    || { echo "smoke: webhooks page failed"; exit 1; }
+echo "$WHPAGE" | grep -qi "Webhooks" || { echo "smoke: webhooks page missing title"; exit 1; }
+
+# webhook.create (form shape the page posts: name/url/secret/event_filter_str).
+WH=$(curl -sf -X POST -H "Cookie: $COOKIE" -H "$CSRF_HDR" \
+    -d "org_id=$ORG_ID&name=Slack&url=https%3A%2F%2Fhooks.example.com%2Fabc&secret=s3cr3t&event_filter_str=task.create,task.update" \
+    "$BASE/api/action/webhook.create") \
+    || { echo "smoke: webhook.create failed"; exit 1; }
+WH_ID=$(echo "$WH" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id"))')
+[ -n "$WH_ID" ] || { echo "smoke: webhook.create bad id"; exit 1; }
+echo "webhook.create -> $WH_ID"
+
+# Page now lists it (match name in a table cell, not the form placeholder).
+WHPAGE2=$(curl -sf -H "Cookie: $COOKIE" "$WHURL")
+echo "$WHPAGE2" | grep -q "<td>Slack</td>" || { echo "smoke: webhooks page missing created webhook"; exit 1; }
+
+# webhook.update: disable (enabled=false).
+curl -sf -X POST -H "Content-Type: application/json" -H "Cookie: $COOKIE" -H "$CSRF_HDR" \
+    -d "{\"id\":\"$WH_ID\",\"org_id\":\"$ORG_ID\",\"enabled\":false}" \
+    "$BASE/api/action/webhook.update" >/dev/null \
+    || { echo "smoke: webhook.update failed"; exit 1; }
+WHPAGE3=$(curl -sf -H "Cookie: $COOKIE" "$WHURL")
+echo "$WHPAGE3" | grep -q ">No<" || { echo "smoke: webhook not disabled on page"; exit 1; }
+
+# webhook.delete.
+curl -sf -X POST -H "Content-Type: application/json" -H "Cookie: $COOKIE" -H "$CSRF_HDR" \
+    -d "{\"id\":\"$WH_ID\",\"org_id\":\"$ORG_ID\"}" \
+    "$BASE/api/action/webhook.delete" >/dev/null \
+    || { echo "smoke: webhook.delete failed"; exit 1; }
+LEFT=$(sqlite3 "$BC_DB_PATH" "SELECT COUNT(*) FROM webhooks WHERE id='$WH_ID'" 2>/dev/null)
+[ "$LEFT" = "0" ] || { echo "smoke: webhook row still present (left=$LEFT)"; exit 1; }
+WHPAGE4=$(curl -sf -H "Cookie: $COOKIE" "$WHURL")
+echo "$WHPAGE4" | grep -q "<td>Slack</td>" && { echo "smoke: webhook not deleted on page"; exit 1; }
+
+echo "smoke: WU-512 webhooks page + create/toggle/delete round-trip PASS"

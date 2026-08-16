@@ -1,0 +1,111 @@
+package views
+
+// WebhookRow is one outbound webhook in the org webhooks list.
+type WebhookRow struct {
+	ID          string
+	Name        string
+	URL         string
+	TeamID      string
+	Enabled     bool
+	EventFilter []string
+}
+
+// WebhooksPage renders the org outbound-webhook admin page (WU-512).
+// Mutations post to the registered org-scoped actions: webhook.create/update/delete.
+// event_filter is a comma-separated text field → event_filter_str (splitGrants).
+templ WebhooksPage(s Shell, orgID string, rows []WebhookRow, breadcrumbs []Breadcrumb) {
+	@Base(s) {
+		@Breadcrumbs(breadcrumbs)
+		<h2>Webhooks</h2>
+
+		<form
+			hx-post="/api/action/webhook.create"
+			hx-headers={ hxHeaders(s.CSRF) }
+			hx-target="body"
+			hx-swap="innerHTML"
+			class="bc-form"
+		>
+			<input type="hidden" name="org_id" value={ orgID } />
+			<div class="field">
+				<label>Name</label>
+				<input type="text" name="name" required placeholder="e.g. Slack channel" />
+			</div>
+			<div class="field">
+				<label>URL</label>
+				<input type="text" name="url" required placeholder="https://hooks.example.com/..." />
+			</div>
+			<div class="field">
+				<label>Secret</label>
+				<input type="text" name="secret" placeholder="signing secret (blank = none)" />
+			</div>
+			<div class="field">
+				<label>Team (optional)</label>
+				<input type="text" name="team_id" placeholder="team id (blank = org-wide)" />
+			</div>
+			<div class="field">
+				<label>Event filter</label>
+				<input type="text" name="event_filter_str" placeholder="comma-separated events (blank = all)" />
+			</div>
+			<button type="submit" class="bc-btn bc-btn-primary">Create webhook</button>
+		</form>
+
+		<table class="bc-table">
+			<thead>
+				<tr><th>Name</th><th>URL</th><th>Team</th><th>Events</th><th>Enabled</th><th>Actions</th></tr>
+			</thead>
+			<tbody>
+				for _, wh := range rows {
+					<tr>
+						<td>{ wh.Name }</td>
+						<td>{ wh.URL }</td>
+						<td>{ wh.TeamID }</td>
+						<td>
+							if len(wh.EventFilter) == 0 {
+								<span class="text-dimmed">all</span>
+							} else {
+								for _, ev := range wh.EventFilter {
+									<span class="bc-tag">{ ev }</span>
+								}
+							}
+						</td>
+						<td>{ boolYesNo(wh.Enabled) }</td>
+						<td>
+							<button
+								class="bc-btn bc-btn-sm"
+								hx-post="/api/action/webhook.update"
+								hx-headers={ hxHeaders(s.CSRF) }
+								hx-vals={ templ.URL(`{"id":"`+wh.ID+`","org_id":"`+orgID+`","enabled":`+boolJSON(!wh.Enabled)+`}`,) }
+								hx-target="body"
+								hx-swap="innerHTML"
+							>{ toggleLabel(wh.Enabled) }</button>
+							<button
+								class="bc-btn bc-btn-danger bc-btn-sm"
+								hx-post="/api/action/webhook.delete"
+								hx-headers={ hxHeaders(s.CSRF) }
+								hx-vals={ templ.URL(`{"id":"`+wh.ID+`","org_id":"`+orgID+`"}`,) }
+								hx-target="body"
+								hx-swap="innerHTML"
+							>Delete</button>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+// boolJSON renders a bool as a JSON literal (true/false) for hx-vals.
+func boolJSON(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+// toggleLabel is the enable/disable button label for a webhook row.
+func toggleLabel(enabled bool) string {
+	if enabled {
+		return "Disable"
+	}
+	return "Enable"
+}

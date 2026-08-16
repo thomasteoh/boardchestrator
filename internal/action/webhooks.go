@@ -12,23 +12,25 @@ import (
 
 // --- Action definitions for outbound webhooks (WU-404) ---
 type webhookCreateInput struct {
-	OrgID       string   `json:"org_id"`
-	TeamID      string   `json:"team_id,omitempty"`
-	Name        string   `json:"name"`
-	URL         string   `json:"url"`
-	Secret      string   `json:"secret,omitempty"`
-	EventFilter []string `json:"event_filter,omitempty"`
+	OrgID          string   `json:"org_id"`
+	TeamID         string   `json:"team_id,omitempty"`
+	Name           string   `json:"name"`
+	URL            string   `json:"url"`
+	Secret         string   `json:"secret,omitempty"`
+	EventFilter    []string `json:"event_filter,omitempty"`
+	EventFilterStr string   `json:"event_filter_str,omitempty"`
 }
 
 type webhookUpdateInput struct {
-	ID          string   `json:"id"`
-	OrgID       string   `json:"org_id"`
-	TeamID      string   `json:"team_id,omitempty"`
-	Name        string   `json:"name"`
-	URL         string   `json:"url"`
-	Secret      string   `json:"secret,omitempty"`
-	EventFilter []string `json:"event_filter,omitempty"`
-	Enabled     *bool    `json:"enabled,omitempty"`
+	ID             string   `json:"id"`
+	OrgID          string   `json:"org_id"`
+	TeamID         string   `json:"team_id,omitempty"`
+	Name           string   `json:"name"`
+	URL            string   `json:"url"`
+	Secret         string   `json:"secret,omitempty"`
+	EventFilter    []string `json:"event_filter,omitempty"`
+	EventFilterStr string   `json:"event_filter_str,omitempty"`
+	Enabled        *bool    `json:"enabled,omitempty"`
 }
 
 type webhookDeleteInput struct {
@@ -98,6 +100,9 @@ func handleWebhookCreate(ctx context.Context, ac ActionCtx, in json.RawMessage) 
 		teamID = sql.NullString{String: team.ID, Valid: true}
 	}
 	filter, _ := json.Marshal(input.EventFilter)
+	if len(input.EventFilter) == 0 && input.EventFilterStr != "" {
+		filter, _ = json.Marshal(splitGrants(input.EventFilterStr))
+	}
 	wh, err := ac.Tx.CreateWebhook(ctx, sqlc.CreateWebhookParams{
 		ID:          newID(),
 		OrgID:       org,
@@ -141,6 +146,9 @@ func handleWebhookUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage) 
 	filter := existing.EventFilter
 	if input.EventFilter != nil {
 		b, _ := json.Marshal(input.EventFilter)
+		filter = string(b)
+	} else if input.EventFilterStr != "" {
+		b, _ := json.Marshal(splitGrants(input.EventFilterStr))
 		filter = string(b)
 	}
 	enabled := existing.Enabled
