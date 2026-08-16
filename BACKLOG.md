@@ -438,3 +438,17 @@ Deps: none.
 Result: **verified fixed** — status line now current ("Phase 0–5 complete through WU-513 (2026-08-16)"), no "Phase 3 in progress"/"WUs 304+" text remains, Ready list empty (stray WU-514 row removed). Re-indexed via `qmd update` (done under WU-510/511/512/513 close-outs).
 AC: Status section current; no stale text; Ready list clean; wiki re-indexed.
 Full-pass: grep for stale phrases → none; Ready table empty; `qmd update` clean. Docs-only, no code.
+
+### WU-515 · Public OSS website + docs — `done (2026-08-16, 3691554)`
+Deps: none.
+Gap: no README, no docs site, no LICENSE — the repo had no public face beyond DEPLOY.md.
+Result: **Go static site generator** at `website/` (markdown-driven, goldmark + yaml, single base template — awry pattern, no node deps). Pages: home (hero + 4 feature cards + brand canvas animation), docs/getting-started, deployment (env reference table), concepts. OG/canonical meta, sitemap.xml, robots.txt, llms.txt, SVG favicon, dark/light theme toggle. GitHub Pages deploy workflow `.github/workflows/pages.yml`. README.md (what/why/quickstart/layout), LICENSE (Apache-2.0), docs pages surfaced in README.
+AC: public site builds (`go build` + `bc-site build`), Pages workflow present, README + LICENSE added.
+Full-pass: `go build` OK; 6 pages generated; served + verified (CSS, canvas `ready`, zero JS errors); smoke WU-513 UI section PASS; `make check` PASS.
+
+### WU-516 · App UI polish — `done (2026-08-16, 3691554)`
+Deps: none.
+Gap (from UX review): landing page unstyled (missing CSS classes), nav badge unstyled, broken favicon.ico, false Ctrl+K claim, manifest theme mismatch, unicode glyph icons.
+Result: **styled landing** (bc-hero/features/feature-card + bc-btn-secondary + entrance animation with stagger, reduced-motion safe), **SVG favicon** served at /favicon.svg (replaced garbage 40-byte public/favicon.ico, dead dir removed), **SVG icon marks** replacing ☰/◐ glyphs, **manifest theme_color** → #2f6fed (test updated), **Ctrl+K removed** from help dialog (no palette exists).
+AC: landing renders styled; favicon served as SVG; icons are SVG; manifest accent correct; help honest.
+Full-pass: `go test ./internal/web/...` PASS; `go build ./...` PASS; smoke WU-513 UI section PASS; `make check` PASS.
