@@ -155,3 +155,33 @@ curl -sf -X POST -H "Content-Type: application/x-www-form-urlencoded" -H "Cookie
 
 echo "smoke: PASS (org=$ORG_ID project=$PROJ_ID task=$TASK_ID role=$ROLE_ID)"
 echo "smoke: WU-509 storage route + role editor round-trip PASS"
+
+# --- WU-510: notifications page + mark-read round-trip ---
+NOTIFPAGE=$(curl -sf -H "Cookie: $COOKIE" "$BASE/app/notifications") \
+    || { echo "smoke: notifications page failed"; exit 1; }
+echo "$NOTIFPAGE" | grep -qi "Notifications" || { echo "smoke: notif page missing title"; exit 1; }
+
+# unread-count is DB-backed now: returns JSON count (0 for a fresh user).
+UNREAD=$(curl -sf -H "Cookie: $COOKIE" "$BASE/api/notif/unread-count")
+echo "unread-count -> $UNREAD"
+echo "$UNREAD" | grep -q '"count"' || { echo "smoke: unread-count not JSON"; exit 1; }
+
+# Seed a notification for the session user (u1) directly, then verify it shows
+# as unread and mark-read works.
+sqlite3 "$BC_DB_PATH" "INSERT INTO notifications (id, org_id, user_id, event_name, title, body, grouping_key)
+  VALUES ('smokenotif1','$ORG_ID','u1','task.create','Smoke notif','body','smokeg')" 2>/dev/null \
+    || { echo "smoke: seed notification failed"; }
+if sqlite3 "$BC_DB_PATH" "SELECT COUNT(*) FROM notifications WHERE id='smokenotif1'" 2>/dev/null | grep -q 1; then
+    UNREAD2=$(curl -sf -H "Cookie: $COOKIE" "$BASE/api/notif/unread-count")
+    echo "unread-count after seed -> $UNREAD2"
+    echo "$UNREAD2" | grep -q '"count":1' || { echo "smoke: unread-count did not reflect seed"; exit 1; }
+
+    # mark-all-read clears it.
+    curl -sf -X POST -H "Cookie: $COOKIE" -H "$CSRF_HDR" "$BASE/api/notif/mark-all-read" >/dev/null \
+        || { echo "smoke: mark-all-read failed"; exit 1; }
+    UNREAD3=$(curl -sf -H "Cookie: $COOKIE" "$BASE/api/notif/unread-count")
+    echo "unread-count after mark-all -> $UNREAD3"
+    echo "$UNREAD3" | grep -q '"count":0' || { echo "smoke: mark-all-read did not clear"; exit 1; }
+fi
+
+echo "smoke: WU-510 notifications page + mark-read round-trip PASS"

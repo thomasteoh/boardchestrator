@@ -257,10 +257,22 @@ document.addEventListener("alpine:init", function () {
         bc.theme.toggle();
       },
       init: function () {
-        // Register notification-badge SSE handler
+        // Register notification-badge SSE handler. Fetch the unread count and
+        // update Alpine state (x-text on #notif-badge) — the endpoint returns
+        // JSON, not a partial, so bc.sse.refresh (innerHTML swap) doesn't fit.
         var self = this;
         bc.sse.on("notification", function () {
-          bc.sse.refresh("notification", "#notif-badge", "/api/notif/unread-count");
+          var xhr = new XMLHttpRequest();
+          xhr.open("GET", "/api/notif/unread-count");
+          xhr.onload = function () {
+            if (xhr.status === 200) {
+              try {
+                var d = JSON.parse(xhr.responseText);
+                self.unreadCount = d.count || 0;
+              } catch (e) { /* ignore */ }
+            }
+          };
+          xhr.send();
         });
 
         // Keyboard: Escape closes drawer or help dialog

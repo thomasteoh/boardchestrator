@@ -1,0 +1,63 @@
+package views
+
+// NotificationRow is one notification in the personal notification centre.
+type NotificationRow struct {
+	ID     string
+	Title  string
+	Body   string
+	Unread bool
+}
+
+// notifClass returns the CSS class for a notification item.
+func notifClass(unread bool) string {
+	if unread {
+		return "notif-item unread"
+	}
+	return "notif-item"
+}
+
+// NotificationsPage renders the personal in-app notification centre (WU-510).
+// Mark-read buttons post to /api/notif/mark-read (form field `id`); the
+// mark-all-read button posts to /api/notif/mark-all-read.
+templ NotificationsPage(s Shell, rows []NotificationRow, unreadCount int64) {
+	@Base(s) {
+		<h2>Notifications</h2>
+		<div class="notif-toolbar">
+			<span class="text-dimmed">{ unreadCount } unread</span>
+			<button
+				class="bc-btn bc-btn-sm"
+				hx-post="/api/notif/mark-all-read"
+				hx-headers={ hxHeaders(s.CSRF) }
+				hx-target="body"
+				hx-swap="innerHTML"
+			>Mark all read</button>
+		</div>
+		<div class="notif-list">
+			if len(rows) == 0 {
+				<p class="empty">No notifications yet.</p>
+			}
+			for _, n := range rows {
+				<div class={ notifClass(n.Unread) }>
+					<div class="notif-title">
+						if n.Unread {
+							<strong>{ n.Title }</strong>
+						} else {
+							{ n.Title }
+						}
+					</div>
+					<div class="text-dimmed">{ n.Body }</div>
+					if n.Unread {
+						<button
+							class="bc-btn bc-btn-sm"
+							hx-post="/api/notif/mark-read"
+							hx-headers={ hxHeaders(s.CSRF) }
+							hx-vals={ `{"id":"` + n.ID + `"}` }
+							hx-target="#notif-list"
+							hx-swap="innerHTML"
+						>Mark read</button>
+					}
+				</div>
+			}
+		</div>
+	}
+}

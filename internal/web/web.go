@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -743,18 +744,132 @@ func handleCommentsPartial(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleNotifUnreadCount returns the unread notification count for the current user
-// as JSON. Used by the notification badge SSE refresh.
+// handleNotifUnreadCount returns the unread notification count for the current
+// user as JSON. Used by the notification badge SSE refresh. Falls back to 0
+// when unauthenticated or no dispatcher/DB is wired (WU-510: stub → real).
 func handleNotifUnreadCount(w http.ResponseWriter, r *http.Request) {
-	sess, ok := auth.SessionFrom(r.Context())
-	if !ok || sess.UserID == "" {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"count":0}`))
+	count := int64(0)
+	if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" && disp != nil {
+		q := sqlc.New(disp.DB())
+		if c, err := q.UnreadNotificationCount(r.Context(), sess.UserID); err == nil {
+			count = c
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]int64{"count": count})
+}
+
+// handleNotifications renders the personal in-app notification centre (WU-510).
+// Reads the session user's notifications directly via sqlc (user-scoped, no
+// per-org permission gate — same pattern as unread-count/reports/search).
+func handleNotifications(w http.ResponseWriter, r *http.Request) {
+	s := shellData(r, "Notifications", "/notifications")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	unreadCount := int64(0)
+	rows := []views.NotificationRow{}
+	if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" && disp != nil {
+		q := sqlc.New(disp.DB())
+		notifs, err := q.ListNotifications(r.Context(), sqlc.ListNotificationsParams{
+			UserID: sess.UserID,
+			Limit:  50,
+			Offset: 0,
+		})
+		if err == nil {
+			for _, n := range notifs {
+				rows = append(rows, views.NotificationRow{
+					ID:     n.ID,
+					Title:  n.Title,
+					Body:   n.Body,
+					Unread: n.ReadAt == "",
+				})
+			}
+		}
+		if c, err := q.UnreadNotificationCount(r.Context(), sess.UserID); err == nil {
+			unreadCount = c
+		}
+	}
+
+	if err := views.NotificationsPage(s, rows, unreadCount).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+// handleNotifMarkRead marks one notification read for the session user.
+// Direct sqlc handler (user-scoped from session) — the notif.mark_read action
+// is ungrantable to regular users (ScopePlatform + notif.* perm only on
+// platform admin), so the UI uses the direct path like unread-count.
+func handleNotifMarkRead(w http.ResponseWriter, r *http.Request) {
+	if disp == nil {
+		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
 		return
 	}
-	// Stub: return zero until DB-backed query is wired.
+	sess, ok := auth.SessionFrom(r.Context())
+	if !ok || sess.UserID == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	// Accept both hx-vals JSON bodies and form-urlencoded (id field).
+	var id string
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form body", http.StatusBadRequest)
+			return
+		}
+		id = r.PostFormValue("id")
+	} else {
+		var body struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		id = body.ID
+	}
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	q := sqlc.New(disp.DB())
+	if err := q.MarkNotificationRead(r.Context(), sqlc.MarkNotificationReadParams{
+		ReadAt: timestampNow(),
+		ID:     id,
+		UserID: sess.UserID,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"count":0}`))
+	_ = json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+// handleNotifMarkAllRead marks all of the session user's notifications read.
+func handleNotifMarkAllRead(w http.ResponseWriter, r *http.Request) {
+	if disp == nil {
+		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
+		return
+	}
+	sess, ok := auth.SessionFrom(r.Context())
+	if !ok || sess.UserID == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	q := sqlc.New(disp.DB())
+	if err := q.MarkAllNotificationsRead(r.Context(), sqlc.MarkAllNotificationsReadParams{
+		ReadAt: timestampNow(),
+		UserID: sess.UserID,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
+}
+
+func timestampNow() string {
+	return time.Now().UTC().Format(time.RFC3339)
 }
 
 // handleSprintList renders the sprints list page for a project.
@@ -1078,6 +1193,9 @@ func Routes(r chi.Router) {
 	r.Get("/app/project/{projectID}/board/partial", handleBoardPartial)
 	r.Get("/api/project/{projectID}/task/{taskID}/comments-partial", handleCommentsPartial)
 	r.Get("/api/notif/unread-count", handleNotifUnreadCount)
+	r.Get("/app/notifications", handleNotifications)
+	r.Post("/api/notif/mark-read", handleNotifMarkRead)
+	r.Post("/api/notif/mark-all-read", handleNotifMarkAllRead)
 
 	// Sprint routes
 	r.Get("/app/org/{orgID}/project/{projectID}/sprints", handleSprintList)
