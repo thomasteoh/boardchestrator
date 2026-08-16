@@ -219,7 +219,8 @@ func TestOpenAPIValidates(t *testing.T) {
 	}
 }
 
-// TestDocsPageRenders covers WU-402 AC: the embedded docs viewer page renders.
+// TestDocsPageRenders covers WU-402 AC (extended): the in-app help area
+// renders the overview with the guide sidebar and the API reference link.
 func TestDocsPageRenders(t *testing.T) {
 	db := dbtest.New(t)
 	router, _ := newV1Router(t, db)
@@ -231,7 +232,31 @@ func TestDocsPageRenders(t *testing.T) {
 	if !strings.Contains(ct, "text/html") {
 		t.Fatalf("docs content-type %q, want text/html", ct)
 	}
-	if !strings.Contains(rec.Body.String(), "OpenAPI") {
-		t.Fatalf("docs page missing OpenAPI content")
+	if !strings.Contains(rec.Body.String(), "Boardchestrator help") {
+		t.Fatalf("docs page missing help overview")
+	}
+	if !strings.Contains(rec.Body.String(), "Getting started") {
+		t.Fatalf("docs page missing guide nav")
+	}
+	if !strings.Contains(rec.Body.String(), "/api/v1/openapi.json") {
+		t.Fatalf("docs page missing API reference link")
+	}
+}
+
+// TestDocsGuideRenders checks each embedded guide renders as an app page.
+func TestDocsGuideRenders(t *testing.T) {
+	db := dbtest.New(t)
+	router, _ := newV1Router(t, db)
+	for _, slug := range docsSlugs() {
+		if slug == "index" {
+			continue
+		}
+		rec := v1Get(t, router, "", "/app/docs/"+slug)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("docs/%s: status %d, want 200", slug, rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), "Help") {
+			t.Fatalf("docs/%s: missing app shell title", slug)
+		}
 	}
 }

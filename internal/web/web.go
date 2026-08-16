@@ -1238,6 +1238,7 @@ func Routes(r chi.Router) {
 	r.Get("/api/v1/orgs/{orgID}/labels", handleResourceLabels)
 	r.Get("/api/v1/orgs/{orgID}/search", handleResourceSearch)
 	r.Get("/app/docs", handleDocsPage)
+	r.Get("/app/docs/{slug}", handleDocsPage)
 	// MCP server (WU-403): Streamable HTTP JSON-RPC at /mcp, behind the API-key
 	// auth middleware (mounted earlier in the chain).
 	r.Post("/mcp", handleMCP)

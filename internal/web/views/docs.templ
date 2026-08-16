@@ -1,0 +1,56 @@
+package views
+
+// docsNav is the ordered list of in-app help guides.
+var docsNav = []struct{ Slug, Label string }{
+	{"getting-started", "Getting started"},
+	{"board", "Board"},
+	{"backlog", "Backlog"},
+	{"chat", "Chat & agents"},
+	{"wiki", "Wiki"},
+	{"permissions", "Permissions & roles"},
+	{"webhooks", "Webhooks & triggers"},
+}
+
+// DocsNav exposes the guide list to the web package (titles + ordering).
+func DocsNav() []struct{ Slug, Label string } {
+	return docsNav
+}
+
+// DocsPage renders the in-app help area: a sidebar of guides and the
+// rendered markdown body. html is pre-sanitized by wiki.Render.
+templ DocsPage(s Shell, slug, title string, html string) {
+	@Base(s) {
+		<div class="bc-wiki" data-docs>
+			<aside class="bc-wiki-nav">
+				<h3>Help</h3>
+				<ul>
+					<li>
+						<a href="/app/docs" class="bc-nav-link">Overview</a>
+					</li>
+					for _, g := range docsNav {
+						<li>
+							<a
+								href={ templ.URL("/app/docs/" + g.Slug) }
+								class="bc-nav-link"
+								if slug == g.Slug {
+									aria-current="page"
+								}
+							>{ g.Label }</a>
+						</li>
+					}
+					<li class="bc-wiki-nav-api">
+						<a href="/api/v1/openapi.json" class="bc-nav-link">API reference (JSON)</a>
+					</li>
+				</ul>
+			</aside>
+			<section class="bc-wiki-body">
+				<div class="bc-wiki-tools">
+					<h1>{ title }</h1>
+				</div>
+				<div class="bc-wiki-content bc-prose">
+					@templ.Raw(html)
+				</div>
+			</section>
+		</div>
+	}
+}

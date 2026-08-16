@@ -934,3 +934,44 @@ a {
   line-height: 1;
   vertical-align: middle;
 }
+
+/* ===== Docs / help area (bc-prose body) ===== */
+.bc-prose {
+  line-height: 1.6;
+  font-size: 0.98rem;
+  color: var(--bc-text);
+}
+.bc-prose h1 { font-size: 1.35rem; margin: 0 0 0.75rem; }
+.bc-prose h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+.bc-prose h3 { font-size: 1rem; margin: 1.25rem 0 0.4rem; }
+.bc-prose p { margin: 0 0 0.75rem; }
+.bc-prose ul, .bc-prose ol { margin: 0 0 0.75rem 1.4rem; }
+.bc-prose li { margin: 0.25rem 0; }
+.bc-prose code {
+  background: var(--bc-surface-hover, var(--bc-bg));
+  border: 1px solid var(--bc-border);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+  font-size: 0.92em;
+}
+.bc-prose a { color: var(--bc-accent); text-decoration: underline; }
+.bc-prose blockquote {
+  border-left: 3px solid var(--bc-border);
+  padding-left: 0.75rem;
+  margin: 0 0 0.75rem;
+  color: var(--bc-text-muted);
+}
+.bc-nav-link {
+  display: block;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  color: var(--bc-text);
+  text-decoration: none;
+}
+.bc-nav-link:hover { background: var(--bc-accent-soft); }
+.bc-nav-link[aria-current="page"] {
+  background: var(--bc-accent-soft);
+  color: var(--bc-accent);
+  font-weight: 600;
+}
+.bc-wiki-nav-api { margin-top: 1rem; }

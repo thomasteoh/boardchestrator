@@ -149,14 +149,3 @@ func handleOpenAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(openapiV1)
 }
-
-// handleDocsPage renders the embedded OpenAPI docs viewer (WU-402 AC).
-func handleDocsPage(w http.ResponseWriter, r *http.Request) {
-	// Minimal embedded viewer: load the spec into a pre-formatted block.
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	b, _ := json.MarshalIndent(openapiV1, "", "  ")
-	_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><title>Boardchestrator API docs</title></head>
-<body><h1>Boardchestrator API — OpenAPI 3.1</h1>
-<p>Spec: <a href="/api/v1/openapi.json">/api/v1/openapi.json</a></p>
-<pre style="white-space:pre-wrap">` + string(b) + `</pre></body></html>`))
-}

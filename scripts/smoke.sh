@@ -286,3 +286,21 @@ echo "$MANIFEST" | grep -q '"theme_color": "#2f6fed"' || { echo "smoke: manifest
 echo "$ROOT" | grep -q 'class="bc-ico"' || { echo "smoke: app shell missing SVG icons"; exit 1; }
 
 echo "smoke: WU-513 public UI surface (landing + favicon + manifest + icons) PASS"
+
+# --- WU-517: in-app help/docs area (was a bare OpenAPI dump) ---
+# Overview page renders the help sidebar + API reference link.
+DOCS=$(curl -sf "$BASE/app/docs") || { echo "smoke: docs page failed"; exit 1; }
+echo "$DOCS" | grep -q "Boardchestrator help" || { echo "smoke: docs missing overview"; exit 1; }
+echo "$DOCS" | grep -q "Getting started" || { echo "smoke: docs missing guide nav"; exit 1; }
+echo "$DOCS" | grep -q "/api/v1/openapi.json" || { echo "smoke: docs missing API link"; exit 1; }
+
+# Each embedded guide renders as an app page.
+for slug in getting-started board backlog chat wiki permissions webhooks; do
+    G=$(curl -sf "$BASE/app/docs/$slug") || { echo "smoke: docs/$slug failed"; exit 1; }
+    echo "$G" | grep -q "aria-current=\"page\"" || { echo "smoke: docs/$slug missing active nav"; exit 1; }
+done
+
+# OpenAPI spec endpoint still serves the raw spec.
+curl -sf -o /dev/null "$BASE/api/v1/openapi.json" || { echo "smoke: openapi.json missing"; exit 1; }
+
+echo "smoke: WU-517 in-app help/docs area PASS"
