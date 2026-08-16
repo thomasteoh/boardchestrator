@@ -185,3 +185,45 @@ if sqlite3 "$BC_DB_PATH" "SELECT COUNT(*) FROM notifications WHERE id='smokenoti
 fi
 
 echo "smoke: WU-510 notifications page + mark-read round-trip PASS"
+
+# --- WU-511: templates + recurring page + round-trips ---
+TPLURL="$BASE/app/org/$ORG_ID/project/$PROJ_ID/templates"
+TPLPAGE=$(curl -sf -H "Cookie: $COOKIE" "$TPLURL") \
+    || { echo "smoke: templates page failed"; exit 1; }
+echo "$TPLPAGE" | grep -qi "Templates & Recurring" || { echo "smoke: templates page missing title"; exit 1; }
+
+# template.create (hx-vals JSON shape the form posts).
+TPL=$(curl -sf -X POST -H "Content-Type: application/json" -H "Cookie: $COOKIE" -H "$CSRF_HDR" \
+    -H "X-Org-Id: $ORG_ID" \
+    -d "{\"org_id\":\"$ORG_ID\",\"project_id\":\"$PROJ_ID\",\"name\":\"Bug report\",\"title_template\":\"[Bug] {title}\",\"points\":3}" \
+    "$BASE/api/action/template.create") \
+    || { echo "smoke: template.create failed"; exit 1; }
+TPL_ID=$(echo "$TPL" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("ID") or d.get("id"))')
+[ -n "$TPL_ID" ] || { echo "smoke: template.create bad id"; exit 1; }
+echo "template.create -> $TPL_ID"
+
+# template.create_from creates a task from the template.
+TASK2=$(curl -sf -X POST -H "Content-Type: application/json" -H "Cookie: $COOKIE" -H "$CSRF_HDR" \
+    -H "X-Org-Id: $ORG_ID" \
+    -d "{\"org_id\":\"$ORG_ID\",\"project_id\":\"$PROJ_ID\",\"template_id\":\"$TPL_ID\"}" \
+    "$BASE/api/action/template.create_from") \
+    || { echo "smoke: template.create_from failed"; exit 1; }
+echo "$TASK2" | grep -qE '"Key"|"key"' || { echo "smoke: create_from did not create a task"; exit 1; }
+echo "template.create_from -> $(echo "$TASK2" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("Key") or d.get("key",""))' 2>/dev/null)"
+
+# recurring.create (cron -> next_at).
+RULE=$(curl -sf -X POST -H "Content-Type: application/json" -H "Cookie: $COOKIE" -H "$CSRF_HDR" \
+    -H "X-Org-Id: $ORG_ID" \
+    -d "{\"org_id\":\"$ORG_ID\",\"project_id\":\"$PROJ_ID\",\"template_id\":\"$TPL_ID\",\"cron_expr\":\"0 9 * * 1\"}" \
+    "$BASE/api/action/recurring.create") \
+    || { echo "smoke: recurring.create failed"; exit 1; }
+RULE_ID=$(echo "$RULE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("ID") or d.get("id"))' 2>/dev/null)
+[ -n "$RULE_ID" ] || { echo "smoke: recurring.create bad id"; exit 1; }
+echo "recurring.create -> $RULE_ID (next_at=$(echo "$RULE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("NextAt") or d.get("next_at",""))' 2>/dev/null))"
+
+# Page now lists the template + rule.
+TPLURL2=$(curl -sf -H "Cookie: $COOKIE" "$TPLURL")
+echo "$TPLURL2" | grep -q "Bug report" || { echo "smoke: templates page missing created template"; exit 1; }
+echo "$TPLURL2" | grep -q "0 9 \* \* 1" || { echo "smoke: templates page missing recurring rule"; exit 1; }
+
+echo "smoke: WU-511 templates + recurring page + round-trip PASS"

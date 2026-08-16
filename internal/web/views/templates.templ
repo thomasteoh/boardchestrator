@@ -1,0 +1,162 @@
+package views
+
+// TemplateRow is one task template in the project templates list.
+type TemplateRow struct {
+	ID          string
+	Name        string
+	Title       string
+	Description string
+	Points      int64
+	Priority    int64
+	Status      string
+}
+
+// RecurringRuleRow is one recurring task rule in the project list.
+type RecurringRuleRow struct {
+	ID         string
+	CronExpr   string
+	NextAt     string
+	Enabled    bool
+	TemplateID string
+}
+
+// boolYesNo renders a bool as "Yes"/"No".
+func boolYesNo(b bool) string {
+	if b {
+		return "Yes"
+	}
+	return "No"
+}
+
+// TemplatesPage renders the project task-templates + recurring-rules page
+// (WU-511). Mutations post to the registered project-scoped actions via
+// hx-vals JSON: template.create/update/create_from, recurring.create/update/delete.
+templ TemplatesPage(s Shell, orgID, projectID string, templates []TemplateRow, rules []RecurringRuleRow, breadcrumbs []Breadcrumb) {
+	@Base(s) {
+		@Breadcrumbs(breadcrumbs)
+		<h2>Templates & Recurring</h2>
+
+		<h3>Task templates</h3>
+		<form
+			hx-post="/api/action/template.create"
+			hx-headers={ hxHeaders(s.CSRF) }
+			hx-target="body"
+			hx-swap="innerHTML"
+			hx-vals={ templ.URL(`{"org_id":"`+orgID+`","project_id":"`+projectID+`"}`,) }
+			class="bc-form"
+		>
+			<input type="hidden" name="org_id" value={ orgID } />
+			<input type="hidden" name="project_id" value={ projectID } />
+			<div class="field">
+				<label>Name</label>
+				<input type="text" name="name" required placeholder="e.g. Bug report" />
+			</div>
+			<div class="field">
+				<label>Title template</label>
+				<input type="text" name="title_template" placeholder="e.g. [Bug] {title}" />
+			</div>
+			<div class="field">
+				<label>Description template</label>
+				<input type="text" name="description_template" placeholder="Default description" />
+			</div>
+			<div class="field-row">
+				<div class="field">
+					<label>Points</label>
+					<input type="number" name="points" value="0" />
+				</div>
+				<div class="field">
+					<label>Priority</label>
+					<input type="number" name="priority" value="0" />
+				</div>
+				<div class="field">
+					<label>Status</label>
+					<input type="text" name="status" value="" placeholder="backlog" />
+				</div>
+			</div>
+			<button type="submit" class="bc-btn bc-btn-primary">Create template</button>
+		</form>
+
+		<table class="bc-table">
+			<thead>
+				<tr><th>Name</th><th>Title</th><th>Points</th><th>Priority</th><th>Status</th><th>Actions</th></tr>
+			</thead>
+			<tbody>
+				for _, t := range templates {
+					<tr>
+						<td>{ t.Name }</td>
+						<td>{ t.Title }</td>
+						<td>{ t.Points }</td>
+						<td>{ t.Priority }</td>
+						<td>{ t.Status }</td>
+						<td>
+							<button
+								class="bc-btn bc-btn-sm"
+								hx-post="/api/action/template.create_from"
+								hx-headers={ hxHeaders(s.CSRF) }
+								hx-vals={ templ.URL(`{"org_id":"`+orgID+`","project_id":"`+projectID+`","template_id":"`+t.ID+`"}`,) }
+								hx-target="body"
+								hx-swap="innerHTML"
+							>Create task</button>
+							<button
+								class="bc-btn bc-btn-danger bc-btn-sm"
+								hx-post="/api/action/template.delete"
+								hx-headers={ hxHeaders(s.CSRF) }
+								hx-vals={ templ.URL(`{"org_id":"`+orgID+`","id":"`+t.ID+`"}`,) }
+								hx-target="body"
+								hx-swap="innerHTML"
+							>Delete</button>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+
+		<h3>Recurring rules</h3>
+		<form
+			hx-post="/api/action/recurring.create"
+			hx-headers={ hxHeaders(s.CSRF) }
+			hx-target="body"
+			hx-swap="innerHTML"
+			hx-vals={ templ.URL(`{"org_id":"`+orgID+`","project_id":"`+projectID+`"}`,) }
+			class="bc-form"
+		>
+			<input type="hidden" name="org_id" value={ orgID } />
+			<input type="hidden" name="project_id" value={ projectID } />
+			<div class="field">
+				<label>Cron expression</label>
+				<input type="text" name="cron_expr" required placeholder="e.g. 0 9 * * 1 (weekly Mon 09:00)" />
+			</div>
+			<div class="field">
+				<label>Template ID</label>
+				<input type="text" name="template_id" placeholder="template id" />
+			</div>
+			<button type="submit" class="bc-btn bc-btn-primary">Create rule</button>
+		</form>
+
+		<table class="bc-table">
+			<thead>
+				<tr><th>Cron</th><th>Next run</th><th>Enabled</th><th>Template</th><th>Actions</th></tr>
+			</thead>
+			<tbody>
+				for _, rl := range rules {
+					<tr>
+						<td>{ rl.CronExpr }</td>
+						<td>{ rl.NextAt }</td>
+						<td>{ boolYesNo(rl.Enabled) }</td>
+						<td>{ rl.TemplateID }</td>
+						<td>
+							<button
+								class="bc-btn bc-btn-danger bc-btn-sm"
+								hx-post="/api/action/recurring.delete"
+								hx-headers={ hxHeaders(s.CSRF) }
+								hx-vals={ templ.URL(`{"org_id":"`+orgID+`","id":"`+rl.ID+`"}`,) }
+								hx-target="body"
+								hx-swap="innerHTML"
+							>Delete</button>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}

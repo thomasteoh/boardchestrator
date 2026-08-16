@@ -74,6 +74,14 @@ func init() {
 		Handle:     handleTemplateCreateFrom,
 	})
 	Register(Definition{
+		Name:       "template.delete",
+		Impact:     ImpactLow,
+		Permission: "template.delete",
+		Scope:      ScopeProject,
+		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
+		Handle:     handleTemplateDelete,
+	})
+	Register(Definition{
 		Name:       "recurring.create",
 		Impact:     ImpactLow,
 		Permission: "recurring.create",
@@ -201,6 +209,23 @@ func handleTemplateCreateFrom(ctx context.Context, ac ActionCtx, in json.RawMess
 	}
 
 	return task, nil
+}
+
+func handleTemplateDelete(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
+	var input struct {
+		ID    string `json:"id"`
+		OrgID string `json:"org_id"`
+	}
+	if err := json.Unmarshal(in, &input); err != nil {
+		return nil, fmt.Errorf("template.delete: bad input: %w", err)
+	}
+	if err := ac.Tx.DeleteTemplate(ctx, sqlc.DeleteTemplateParams{
+		ID:    input.ID,
+		OrgID: input.OrgID,
+	}); err != nil {
+		return nil, fmt.Errorf("template.delete: %w", err)
+	}
+	return map[string]bool{"deleted": true}, nil
 }
 
 // --- Recurring rule handlers ---

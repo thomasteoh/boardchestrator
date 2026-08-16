@@ -187,6 +187,57 @@ func handleProjectSettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleTemplates renders the project task-templates + recurring-rules page
+// (WU-511). Reads both lists via direct sqlc (project-scoped) — the same
+// pattern as reports/search. Mutations post to the registered actions.
+func handleTemplates(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "orgID")
+	projectID := chi.URLParam(r, "projectID")
+	s := shellData(r, "Templates & Recurring", "/templates")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	breadcrumbs := []views.Breadcrumb{
+		{Label: orgID, Href: "/app/org/" + orgID + "/settings"},
+		{Label: projectID, Href: ""},
+		{Label: "Templates", Href: ""},
+	}
+
+	templates := []views.TemplateRow{}
+	rules := []views.RecurringRuleRow{}
+	if disp != nil {
+		q := sqlc.New(disp.DB())
+		ts, err := q.ListTemplates(r.Context(), sqlc.ListTemplatesParams{OrgID: orgID, ProjectID: projectID})
+		if err == nil {
+			for _, t := range ts {
+				templates = append(templates, views.TemplateRow{
+					ID:          t.ID,
+					Name:        t.Name,
+					Title:       t.TitleTemplate,
+					Description: t.DescriptionTemplate,
+					Points:      t.Points,
+					Priority:    t.Priority,
+					Status:      t.Status,
+				})
+			}
+		}
+		rs, err := q.ListRecurringRules(r.Context(), sqlc.ListRecurringRulesParams{OrgID: orgID, ProjectID: projectID})
+		if err == nil {
+			for _, rl := range rs {
+				rules = append(rules, views.RecurringRuleRow{
+					ID:         rl.ID,
+					CronExpr:   rl.CronExpr,
+					NextAt:     rl.NextAt,
+					Enabled:    rl.Enabled != 0,
+					TemplateID: rl.TemplateID,
+				})
+			}
+		}
+	}
+
+	if err := views.TemplatesPage(s, orgID, projectID, templates, rules, breadcrumbs).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
 func handleOrgRoles(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "orgID")
 	s := shellData(r, "Roles", "/settings")
@@ -325,6 +376,29 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	if v := r.Header.Get("X-Team-Id"); v != "" {
 		opts.Team = v
+	}
+	// Fall back to scope ids carried in the action input (htmx forms send
+	// org_id/project_id/team_id fields but rarely the X-* headers). The DB
+	// ScopeResolver reads ac.Org/Proj/Team, so without this every project- or
+	// team-scoped form (board columns, templates, recurring, ...) would 403.
+	// Headers win when present; input only fills gaps.
+	if (opts.Org == "" || opts.Proj == "" || opts.Team == "") && len(input) > 0 {
+		var scope struct {
+			OrgID  string `json:"org_id"`
+			ProjID string `json:"project_id"`
+			TeamID string `json:"team_id"`
+		}
+		if err := json.Unmarshal(input, &scope); err == nil {
+			if opts.Org == "" {
+				opts.Org = scope.OrgID
+			}
+			if opts.Proj == "" {
+				opts.Proj = scope.ProjID
+			}
+			if opts.Team == "" {
+				opts.Team = scope.TeamID
+			}
+		}
 	}
 	result, err := disp.Dispatch(r.Context(), actor, name, input, opts)
 	if err != nil {
@@ -1083,6 +1157,13 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/org.storage.configure", handleAction)
 	r.Post("/api/action/org.storage.status", handleAction)
 	r.Post("/api/action/team.create", handleAction)
+	r.Post("/api/action/template.create", handleAction)
+	r.Post("/api/action/template.update", handleAction)
+	r.Post("/api/action/template.create_from", handleAction)
+	r.Post("/api/action/template.delete", handleAction)
+	r.Post("/api/action/recurring.create", handleAction)
+	r.Post("/api/action/recurring.update", handleAction)
+	r.Post("/api/action/recurring.delete", handleAction)
 	r.Post("/api/action/team.update", handleAction)
 	r.Post("/api/action/project.create", handleAction)
 	r.Post("/api/action/project.update", handleAction)
@@ -1199,6 +1280,7 @@ func Routes(r chi.Router) {
 
 	// Sprint routes
 	r.Get("/app/org/{orgID}/project/{projectID}/sprints", handleSprintList)
+	r.Get("/app/org/{orgID}/project/{projectID}/templates", handleTemplates)
 	r.Get("/app/org/{orgID}/project/{projectID}/reports", handleReports)
 	r.Get("/app/org/{orgID}/project/{projectID}/reports/burndown.csv", handleBurndownCSV)
 	r.Get("/app/org/{orgID}/project/{projectID}/reports/flow.csv", handleFlowCSV)
