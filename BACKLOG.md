@@ -432,7 +432,9 @@ Result: **decided (a)** — already implemented in `87afbf8` (WU-101, 2026-07-24
 AC: answer recorded in QUESTIONS.md Q4 (a); required-check verified present in config.go; config tests pass.
 Full-pass: `go test ./internal/config/` PASS. No build changes (code already landed under WU-101).
 
-### WU-514 · Wiki status stale — `ready`
+### WU-514 · Wiki status stale — `done (2026-08-16)`
 Deps: none.
-`~/wiki/projects/boardchestrator.md` line 18 says "Phase 3 in progress, WUs 304+ ready" — stale; all WUs 001–508 are done and the Ready list is empty.
-AC: update Status section to reflect all phases 0–5 complete through WU-508; re-index wiki (`qmd update`).
+`~/wiki/projects/boardchestrator.md` line 18 said "Phase 3 in progress, WUs 304+ ready" — stale; all WUs were done and the Ready list empty.
+Result: **verified fixed** — status line now current ("Phase 0–5 complete through WU-513 (2026-08-16)"), no "Phase 3 in progress"/"WUs 304+" text remains, Ready list empty (stray WU-514 row removed). Re-indexed via `qmd update` (done under WU-510/511/512/513 close-outs).
+AC: Status section current; no stale text; Ready list clean; wiki re-indexed.
+Full-pass: grep for stale phrases → none; Ready table empty; `qmd update` clean. Docs-only, no code.
