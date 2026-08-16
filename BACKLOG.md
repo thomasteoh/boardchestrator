@@ -403,10 +403,13 @@ Comprehensive review (2026-08-15) found two real 404/501 bugs:
 Result: registered POST `/api/action/org.storage.configure` (+ status); handleOrgRoles loads roles via role.list; role new/edit pages implemented (RoleFormPage, preloaded name/grants); role.create/update accept `grants_str` (flat form value) via splitGrants. AC: `org.storage.configure` POST route registered (form posts reach the action); S3 config round-trip via smoke — PASS; role new/edit page handlers render a grant-editor posting to role.create/role.update — PASS; both pages return 200 + save — PASS.
 Full-pass: make check PASS, 22 pkgs green, smoke PASS (`org=a09e.. project=cf65.. task=92d7.. role=5d73..`), git clean.
 
-### WU-510 · Notifications page — `ready`
+### WU-510 · Notifications page — `/notifications` 404s; wire notif.list/mark_read/mark_all_read — `done (0ee4e63, 2026-08-16)`
 Deps: 211.
-`notif.list` / `notif.mark_read` / `notif.mark_all_read` actions exist, but only `/api/notif/unread-count` GET is wired. The layout's `/notifications` link 404s — no notifications page route or view. Notify engine (`internal/notify`) is real (not stub), events are grouped, but there's no list/mark UI.
-AC: `/app/notifications` GET route + list view (grouped, unread-first) rendering notif.list rows; POST `/api/action/notif.mark_read` + `notif.mark_all_read` wired; unread badge updates via existing SSE/partial.
+`notif.list` / `notif.mark_read` / `notif.mark_all_read` actions exist, but only `/api/notif/unread-count` GET is wired (and its handler was a **stub returning `{"count":0}`**). The layout's `/notifications` link 404s — no notifications page route or view. Notify engine (`internal/notify`) is real, events are grouped, but there's no list/mark UI.
+Result: `handleNotifications` renders a personal notification centre (direct sqlc read, user-scoped from session — same pattern as unread-count/reports/search); `handleNotifMarkRead`/`handleNotifMarkAllRead` direct sqlc mutations (accept hx-vals JSON or form id); `handleNotifUnreadCount` stub → real `UnreadNotificationCount`; `NotificationsPage` templ; badge SSE handler fixed (fetch count JSON → update Alpine `x-text`, was `bc.sse.refresh` innerHTML-swapping JSON). Routes: `GET /app/notifications`, `POST /api/notif/mark-read` + `/api/notif/mark-all-read`.
+Design note: `notif.*` actions are ScopePlatform + perm only on platform admin (`["*"]`), ungrantable to regular users, so the UI bypasses action dispatch for the user's own notifications (consistent with the pre-existing unread-count handler).
+AC: `/app/notifications` GET route + list view rendering session user's notifications; POST mark-read + mark-all-read wired; unread-count returns real DB count (0→1→0 round-trip); badge updates via SSE/Alpine.
+Full-pass: make check PASS (22 pkgs), smoke PASS (`notif page 200; count 0→1→0`), git clean.
 
 ### WU-511 · Task templates + recurring — wire UI — `ready`
 Deps: 209.
