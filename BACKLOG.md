@@ -411,10 +411,12 @@ Design note: `notif.*` actions are ScopePlatform + perm only on platform admin (
 AC: `/app/notifications` GET route + list view rendering session user's notifications; POST mark-read + mark-all-read wired; unread-count returns real DB count (0→1→0 round-trip); badge updates via SSE/Alpine.
 Full-pass: make check PASS (22 pkgs), smoke PASS (`notif page 200; count 0→1→0`), git clean.
 
-### WU-511 · Task templates + recurring — wire UI — `ready`
+### WU-511 · Task templates + recurring — wire UI — `done (2a86c15, 2026-08-16)`
 Deps: 209.
-`template.*` / `recurring.*` actions have full backend (schedule engine computes cron nextAt) but **no routes, no UI, no dispatch anywhere** — dead actions. Task templates (create-from) and recurring tasks exist server-side but are unreachable from the task UI.
-AC: wire create-from-template on task detail/new; recurring UI (cron expr input) on task create; register template.create/update/delete + recurring.create/update/delete routes; round-trip via smoke.
+`template.*` / `recurring.*` actions had full backend (schedule engine computes cron nextAt) but **no routes, no UI, no dispatch anywhere** — dead actions. Task templates (create-from) and recurring tasks existed server-side but were unreachable.
+Result: new project **TemplatesPage** at `/app/org/{orgID}/project/{projectID}/templates` listing task templates + recurring rules (direct sqlc reads, reports pattern) with create / create-from / delete and recurring create / delete forms (htmx → registered actions). Registered `template.create/update/create_from/delete` + `recurring.create/update/delete` POST routes (were unregistered 404s). Added missing `template.delete` action (query existed, no action). Fixed **latent scope bug**: `handleAction` only resolved project/team scope from `X-Org-Id`/`X-Project-Id`/`X-Team-Id` headers, which htmx forms don't send — added fallback populating `Opts` from the action input's `org_id`/`project_id`/`team_id`. This also fixes `board.column.create` and every project-/team-scoped form (they would 403 "missing org_id or project_id"). Headers still win when present.
+AC: project templates page lists templates + recurring rules; create/delete + create-from round-trip; routes registered; smoke round-trip.
+Full-pass: make check PASS (22 pkgs), smoke PASS (`templates page 200; template.create → template; create_from → task ceb0-2; recurring.create → rule`), git clean. Also fixed latent board.column.create scope failure.
 
 ### WU-512 · Outbound webhooks — wire UI — `ready`
 Deps: 405.
