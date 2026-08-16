@@ -425,10 +425,12 @@ Result: org **WebhooksPage** at `/app/org/{orgID}/webhooks` listing webhooks (di
 AC: webhooks admin page + create/update/delete/list routes; toggle + delete round-trip; delivery log + retry/DLQ controls noted as follow-up (engine exists, no UI page for deliveries yet).
 Full-pass: make check PASS (22 pkgs), smoke PASS (`webhooks page 200; webhook.create → webhook; toggle disable → page No; delete → DB row gone + page no longer lists`), git clean. Smoke greps match `<td>name</td>` cells (form placeholder "e.g. Slack channel" would false-positive a bare name grep).
 
-### WU-513 · Q4 decision — require `BC_SESSION_SECRET` — `ready`
+### WU-513 · Q4 decision — require `BC_SESSION_SECRET` — `done (decided 2026-08-16, code landed 87afbf8)`
 Deps: 101.
-QUESTIONS.md Q4 is **unanswered**: `config.Load` does not require `BC_SESSION_SECRET` (empty → CSRF HMAC keyed on "", weakens security; future session-cookie signing unsafe). Options: (a) require min-32 in config.Load + update tests; (b) leave optional + document; (c) auto-generate (breaks multi-instance). Recommendation was (a) folded into WU-101 but never landed.
-AC: decide (a)/(b)/(c) — record answer in QUESTIONS.md; if (a), make secret required + fix config tests + `bc serve` already supplies it.
+QUESTIONS.md Q4 asked whether `config.Load` should require `BC_SESSION_SECRET` (empty → CSRF HMAC keyed on `""`, weakens security; future session-cookie signing unsafe). Options: (a) require min-32 in config.Load + update tests; (b) leave optional + document; (c) auto-generate (breaks multi-instance).
+Result: **decided (a)** — already implemented in `87afbf8` (WU-101, 2026-07-24): `config.Load` requires `BC_SESSION_SECRET` ≥32 chars (fatal on load), covered by `TestLoadRequiresSessionSecret` + `TestLoadSessionSecretTooShort`. `bc serve` + smoke harness already supply it. No new code needed; closed the decision record in QUESTIONS.md Q4.
+AC: answer recorded in QUESTIONS.md Q4 (a); required-check verified present in config.go; config tests pass.
+Full-pass: `go test ./internal/config/` PASS. No build changes (code already landed under WU-101).
 
 ### WU-514 · Wiki status stale — `ready`
 Deps: none.
