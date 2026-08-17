@@ -459,3 +459,12 @@ Gap: `/app/docs` was a bare OpenAPI spec dump (raw JSON `<pre>`), no usable help
 Result: **real help page** — `docs.templ` app-shell page with sidebar nav + `bc-prose` body. **7 embedded markdown guides** (`internal/web/docs/*.md`, `//go:embed`): getting-started, board, backlog, chat, wiki, permissions, webhooks — rendered via `wiki.Render` (sanitized, GFM, consistent with wiki pages). OpenAPI reference link retained; spec still at `/api/v1/openapi.json`. Routes `/app/docs` + `/app/docs/{slug}`.
 AC: /app/docs renders help overview + sidebar + API link; each guide renders with active nav; spec endpoint intact.
 Full-pass: `go test ./internal/web/...` PASS (TestDocsPageRenders extended + TestDocsGuideRenders new); `go build ./...` PASS; smoke WU-517 docs section PASS; `make check` PASS.
+
+### WU-518 · API/action + MCP docs — `done (2026-08-16, 8718fb5)`
+Deps: WU-517 (docs area).
+Gap: the OpenAPI spec existed but no human guide covered the action dispatch pipeline, auth, or MCP integration.
+Result: **two guides added** to the in-app help sidebar + index:
+- `api.md` — action dispatch pipeline (resolve→validate→scope→perm→approval→idem→tx→event→audit), auth (session cookie + `X-CSRF-Token` HMAC, API-key `Bearer <prefix><secret>`), scoping (`X-Org-Id`/`X-Project-Id`/`X-Team-Id` headers + input fallback), dry-run (`X-Dry-Run: true`), idempotency (`idem` key), action index by domain.
+- `mcp.md` — Boardchestrator's own MCP endpoint (`POST /mcp`, Streamable HTTP JSON-RPC: initialize/tools/list/tools/call/resources/prompts; tool names dots→underscores; scope-aware tools), plus plugging external MCP servers into agents via Skills.
+AC: both guides render with active nav; index lists them; smoke covers both slugs.
+Full-pass: `go test ./...` (22 pkgs) PASS; smoke WU-517 (now incl. api+mcp) PASS; `make check` PASS.
