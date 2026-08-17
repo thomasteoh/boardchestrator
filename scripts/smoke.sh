@@ -295,7 +295,7 @@ echo "$DOCS" | grep -q "Getting started" || { echo "smoke: docs missing guide na
 echo "$DOCS" | grep -q "/api/v1/openapi.json" || { echo "smoke: docs missing API link"; exit 1; }
 
 # Each embedded guide renders as an app page.
-for slug in getting-started board backlog chat wiki permissions webhooks; do
+for slug in getting-started board backlog chat wiki permissions webhooks api mcp; do
     G=$(curl -sf "$BASE/app/docs/$slug") || { echo "smoke: docs/$slug failed"; exit 1; }
     echo "$G" | grep -q "aria-current=\"page\"" || { echo "smoke: docs/$slug missing active nav"; exit 1; }
 done

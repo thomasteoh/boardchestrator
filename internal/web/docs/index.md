@@ -9,3 +9,5 @@ This is the in-app help. Pick a guide from the sidebar, or open the [API referen
 - [Wiki](/app/docs/wiki) — the versioned knowledge base.
 - [Permissions & roles](/app/docs/permissions) — orgs, teams, projects, and what each member can do.
 - [Outbound webhooks & triggers](/app/docs/webhooks) — events, filtering, and delivery.
+- [API & actions](/app/docs/api) — the action dispatch pipeline, auth, scoping, and the action index.
+- [MCP integration](/app/docs/mcp) — Boardchestrator's MCP endpoint and plugging external servers into agents.
