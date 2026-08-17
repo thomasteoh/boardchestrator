@@ -35,7 +35,7 @@ Full docs live in the [public website](/website/content/):
 - [Deployment](/website/content/deployment.md) — Docker, environment reference, operations
 - [Concepts](/website/content/concepts.md) — boards, agents, wiki, MCP
 
-Project-internal docs: [PRD.md](PRD.md), [SPEC.md](SPEC.md), [DEPLOY.md](DEPLOY.md), [BACKLOG.md](BACKLOG.md).
+Project-internal docs: [PRD.md](PRD.md), [SPEC.md](SPEC.md), [DEPLOY.md](DEPLOY.md), [BACKLOG.md](BACKLOG.md), [PROCESS-WORKFLOW.md](PROCESS-WORKFLOW.md), [PROCESS-RETRO.md](PROCESS-RETRO.md).
 
 ## Repository layout
 
