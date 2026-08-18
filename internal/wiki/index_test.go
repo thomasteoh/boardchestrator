@@ -31,13 +31,16 @@ func TestIndexPagesOnRefresh(t *testing.T) {
 
 	seedOrg(t, db, orgID)
 	seedConfig(t, q, orgID, fixture, "main", "docs")
+	// WU-520: wiki search is scoped to members — grant the querying user
+	// membership in the org.
+	seedMembership(t, db, orgID, "user-idx")
 	st := NewStore(db, t.TempDir(), WithCloneFunc(fixtureClone))
 
 	// Fresh checkout auto-indexes (indexOnRefresh=true).
 	if _, err := st.Checkout(context.Background(), orgID); err != nil {
 		t.Fatalf("checkout: %v", err)
 	}
-	res, err := search.QueryWiki(context.Background(), db, "home", "", 50)
+	res, err := search.QueryWiki(context.Background(), db, "home", "user-idx", 50)
 	if err != nil {
 		t.Fatalf("query: %v", err)
 	}
@@ -53,7 +56,7 @@ func TestIndexPagesOnRefresh(t *testing.T) {
 	if _, err := st.Checkout(context.Background(), orgID); err != nil {
 		t.Fatalf("refresh checkout: %v", err)
 	}
-	res, err = search.QueryWiki(context.Background(), db, "fresh", "", 50)
+	res, err = search.QueryWiki(context.Background(), db, "fresh", "user-idx", 50)
 	if err != nil {
 		t.Fatalf("query fresh: %v", err)
 	}

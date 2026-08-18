@@ -39,11 +39,9 @@ func handleSearchQuery(ctx context.Context, ac ActionCtx, in json.RawMessage) (a
 		return nil, fmt.Errorf("search.query: %w", err)
 	}
 
-	// Filter by visibility
-	visible, err := search.FilterByVisibility(ctx, ac.DB, results, ac.Actor.ID)
-	if err != nil {
-		return nil, fmt.Errorf("search.query: visibility: %w", err)
-	}
-
-	return searchQueryOutput{Results: visible}, nil
+	// Scoping is enforced inside search.Query (org membership for tasks,
+	// comments, and wiki pages — WU-520), so no caller-side filter is needed.
+	// A FilterByVisibility pass here would additionally drop wiki hits (they
+	// carry no project_id), masking the wiki results from the action path.
+	return searchQueryOutput{Results: results}, nil
 }

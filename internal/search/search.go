@@ -117,9 +117,16 @@ type QueryResult struct {
 	Path  string `json:"path,omitempty"`
 }
 
-// Query runs an FTS5 search across tasks and comments.
+// Query runs an FTS5 search across tasks, comments, and wiki pages, scoped to
+// the orgs the userID is a member of. Tasks and comments are scoped through
+// their owning project's org; wiki pages through the org membership. An empty
+// userID (unauthenticated) returns no results. Scoping is enforced here, not
+// left to an optional caller-side filter (WU-520).
 func Query(ctx context.Context, db *sql.DB, query string, userID string, limit int) ([]QueryResult, error) {
 	if strings.TrimSpace(query) == "" {
+		return nil, nil
+	}
+	if userID == "" {
 		return nil, nil
 	}
 	if limit <= 0 {
@@ -130,14 +137,20 @@ func Query(ctx context.Context, db *sql.DB, query string, userID string, limit i
 
 	var results []QueryResult
 
-	// Search tasks
+	// Search tasks, scoped to projects whose org the user is a member of.
 	rows, err := db.QueryContext(ctx, `
 		SELECT t.id, t.project_id, t.title, t.key, t.status
 		FROM tasks t
 		INNER JOIN tasks_fts ON tasks_fts.rowid = t.rowid
+		JOIN projects p ON p.id = t.project_id
 		WHERE tasks_fts MATCH ?
+		  AND EXISTS (
+			SELECT 1 FROM memberships m
+			WHERE m.org_id = p.org_id AND m.actor_id = ? AND m.actor_type = 'user'
+			  AND m.resource_type = 'org'
+		  )
 		ORDER BY rank
-		LIMIT ?`, ftsQuery, limit)
+		LIMIT ?`, ftsQuery, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search tasks: %w", err)
 	}
@@ -154,14 +167,20 @@ func Query(ctx context.Context, db *sql.DB, query string, userID string, limit i
 		return nil, err
 	}
 
-	// Search comments
+	// Search comments, scoped to projects whose org the user is a member of.
 	rows2, err := db.QueryContext(ctx, `
 		SELECT c.id, c.task_id, c.project_id, c.body
 		FROM comments c
 		INNER JOIN comments_fts ON comments_fts.rowid = c.rowid
+		JOIN projects p ON p.id = c.project_id
 		WHERE comments_fts MATCH ?
+		  AND EXISTS (
+			SELECT 1 FROM memberships m
+			WHERE m.org_id = p.org_id AND m.actor_id = ? AND m.actor_type = 'user'
+			  AND m.resource_type = 'org'
+		  )
 		ORDER BY rank
-		LIMIT ?`, ftsQuery, limit)
+		LIMIT ?`, ftsQuery, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search comments: %w", err)
 	}
@@ -192,9 +211,13 @@ func Query(ctx context.Context, db *sql.DB, query string, userID string, limit i
 
 // QueryWiki runs an FTS5 search across the wiki_fts index (WU-503). Results
 // are scoped to orgs the user is a member of. Each hit is a wiki page
-// (Type "wiki", OrgID + Path set). Empty query or no access returns nil.
+// (Type "wiki", OrgID + Path set). Empty query, empty userID, or no access
+// returns nil.
 func QueryWiki(ctx context.Context, db *sql.DB, query string, userID string, limit int) ([]QueryResult, error) {
 	if strings.TrimSpace(query) == "" {
+		return nil, nil
+	}
+	if userID == "" {
 		return nil, nil
 	}
 	if limit <= 0 {
@@ -230,13 +253,7 @@ func QueryWiki(ctx context.Context, db *sql.DB, query string, userID string, lim
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if userID != "" {
-		results, err = filterWikiByMembership(ctx, db, results, userID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return results, nil
+	return filterWikiByMembership(ctx, db, results, userID)
 }
 
 // filterWikiByMembership keeps wiki results whose org the user belongs to
@@ -298,27 +315,3 @@ func buildFTSQuery(raw string) string {
 
 // ErrProjectNotVisible is returned when the user has no access to a project.
 var ErrProjectNotVisible = errors.New("project not visible")
-
-// FilterByVisibility filters results to projects the user can see.
-func FilterByVisibility(ctx context.Context, db *sql.DB, results []QueryResult, userID string) ([]QueryResult, error) {
-	if userID == "" {
-		return nil, nil
-	}
-
-	filtered := make([]QueryResult, 0, len(results))
-	for _, r := range results {
-		var count int
-		err := db.QueryRowContext(ctx, `
-			SELECT COUNT(*) FROM memberships m
-			JOIN projects p ON p.id = ? AND p.org_id = m.org_id
-			WHERE m.actor_id = ? AND m.actor_type = 'user'`, r.ProjectID, userID,
-		).Scan(&count)
-		if err != nil {
-			continue
-		}
-		if count > 0 {
-			filtered = append(filtered, r)
-		}
-	}
-	return filtered, nil
-}

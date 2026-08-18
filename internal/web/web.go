@@ -813,21 +813,26 @@ func handleAttachmentDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleSearchPage renders the search page.
+// handleSearchPage renders the search page. Requires a session; anonymous
+// callers get 401 (WU-520 — scoping is principal-bound).
 func handleSearchPage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	s := shellData(r, "Search", "/search")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	var results []views.SearchResultRow
 	if q != "" {
-		sess, _ := auth.SessionFrom(r.Context())
-		r, err := search.Query(r.Context(), disp.DB(), q, sess.UserID, 50)
+		sess, ok := auth.SessionFrom(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		rs, err := search.Query(r.Context(), disp.DB(), q, sess.UserID, 50)
 		if err != nil {
 			slog.Error("search", "error", err)
 			http.Error(w, "search error", http.StatusInternalServerError)
 			return
 		}
-		for _, res := range r {
+		for _, res := range rs {
 			results = append(results, views.SearchResultRow{
 				Type:      res.Type,
 				ID:        res.ID,
@@ -847,9 +852,15 @@ func handleSearchPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSearchAPI handles HTMX search queries via GET /api/search?q=...
+// Requires an authenticated session — unauthenticated callers are rejected
+// (WU-520), never answered with an unscoped search.
 func handleSearchAPI(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
-	sess, _ := auth.SessionFrom(r.Context())
+	sess, ok := auth.SessionFrom(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	results, err := search.Query(r.Context(), disp.DB(), q, sess.UserID, 50)
 	if err != nil {
