@@ -520,6 +520,15 @@ func TestEventsStreamsToAuthedUser(t *testing.T) {
 	if _, err := d.ExecContext(context.Background(), `INSERT INTO users (id, email) VALUES (?, ?)`, "u1", "u1@example.com"); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
+	// WU-521: the published event is org-scoped (Org "org1"); the authed user
+	// must be a member of org1 for the hub to deliver it.
+	if _, err := d.ExecContext(context.Background(), `INSERT INTO orgs (id, name, slug) VALUES ('org1', 'Org One', 'org-1')`); err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	if _, err := d.ExecContext(context.Background(), `INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id)
+		VALUES ('m1', 'org1', 'u1', 'user', 'org', '')`); err != nil {
+		t.Fatalf("seed membership: %v", err)
+	}
 	s := server.NewWithDB(cfg, d)
 	s.SetReady(true)
 

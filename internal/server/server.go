@@ -138,8 +138,11 @@ func NewWithDB(cfg *config.Config, d *sql.DB) *Server {
 		s.db = d
 		// The /events stream authenticates via the session the middleware
 		// stashes in the request context (WU-005). No DB ⇒ no sessions ⇒ no
-		// stream (nothing to authorise).
-		s.hub = sse.New(s.bus, sse.SessionUserResolver)
+		// stream (nothing to authorise). Tenant scoping (WU-521) resolves each
+		// user's org memberships from the DB so an event is delivered only to
+		// members of its org.
+		s.hub = sse.New(s.bus, sse.SessionUserResolver,
+			sse.WithMembershipResolver(s.membershipResolver()))
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -940,6 +943,22 @@ func (s *Server) chatDeltaSink() func(chatID, runID, userID, delta string) {
 			return
 		}
 		s.hub.SendToUser(userID, sse.EventChatDelta, payload)
+	}
+}
+
+// membershipResolver returns the SSE tenant-scoping resolver (WU-521): it
+// reports the org ids a user belongs to via the memberships table. A user with
+// no memberships sees only platform-wide events and user-targeted messages.
+func (s *Server) membershipResolver() sse.MembershipResolver {
+	return func(userID string) []string {
+		if userID == "" || s.db == nil {
+			return nil
+		}
+		orgs, err := sqlc.New(s.db).FindOrgIDsForActor(context.Background(), userID)
+		if err != nil {
+			return nil
+		}
+		return orgs
 	}
 }
 
