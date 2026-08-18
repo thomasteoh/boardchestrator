@@ -495,3 +495,20 @@ Result: **both fixed + tested.**
 
 AC: `/files/{id}` requires an authenticated principal (session or API key) **and** membership of `att.OrgID` — anonymous → 401, non-member → 404 (not 403; do not confirm existence cross-tenant); `attachment.upload` rejects an `input.MimeType` that disagrees with the extension-derived type, or drops the field and stores only the derived type; tests cover anonymous, cross-org member, and same-org member; test asserts a `.txt` upload cannot be served as `text/javascript`.
 Full-pass: `go test ./...` PASS; `make check` PASS. New tests: `TestAttachmentUploadDerivesMIME` (action), `TestAttachmentDownloadRequiresMembership` + `TestAttachmentDownloadAPIKeyOrgBinding` (web).
+
+
+### WU-520 · Search: enforce org scoping on all call sites — `done (2026-08-18)`
+Deps: none.
+`search.Query` took a `userID` argument that appeared in **no WHERE clause** — the tasks and comments queries had no org or user predicate. Scoping was a separate opt-in function, `FilterByVisibility`, called on exactly one of four paths; the other three answered unscoped or anonymous. `/api/search` additionally discarded the session-lookup `ok`, answering unauthenticated callers.
+
+| Call site | Before | After |
+|---|---|---|
+| `internal/action/search.go` (search.query) | caller-side `FilterByVisibility` (dropped wiki hits) | scoped inside `Query`; wiki survives |
+| `internal/web/web.go` (search page) | unscoped, ignored `ok` | session required, scoped |
+| `internal/web/web.go` (`/api/search`) | unscoped, answered anonymous | session required (401), scoped |
+| `internal/web/resources_v1.go` (API-key REST) | scoped by key id (no memberships) | scoped by `actor.OwnerUserID` |
+
+Result: **all four call sites scoped + tested.** `search.Query` now scopes tasks/comments through their owning project's org membership (`EXISTS` on `memberships`) and returns nil for empty `userID` (unauthenticated); `QueryWiki` returns nil for empty `userID` and always filters by membership. The redundant caller-side `FilterByVisibility` (which silently dropped every wiki hit — empty `ProjectID` on wiki rows) is deleted. `/api/search` and the search page now reject anonymous callers (401). The API-key REST search scopes by the key's `OwnerUserID`, not the key id.
+
+AC: org/visibility scoping is enforced **inside** `search.Query`/`QueryWiki` (parameter actually used), not left to an optional caller-side filter; all four call sites pass a real principal; `/api/search` rejects unauthenticated callers; wiki results survive filtering on the action path; regression test seeds two orgs and asserts a search in org A returns zero rows from org B on every one of the four paths.
+Full-pass: `go test ./...` PASS; `make check` PASS. New tests: `TestQueryOrgScoping` (search), `TestSearchQueryOrgScoping` (action, wiki survival), `TestSearchAPIAuthAndOrgScoping` (web). Wiki index tests updated to pass a member userID.

@@ -234,10 +234,13 @@ func handleResourceLabels(w http.ResponseWriter, r *http.Request) {
 	writeResourceList(w, items, "")
 }
 
-// handleResourceSearch runs the search index scoped to the API-key actor.
+// handleResourceSearch runs the search index scoped to the API-key actor's
+// owner user (WU-520). The key itself carries no memberships; scoping is via
+// the owning user's org memberships.
 func handleResourceSearch(w http.ResponseWriter, r *http.Request) {
-	actorID, ok := requireAPIKey(w, r)
+	actor, ok := auth.APIKeyActorFrom(r.Context())
 	if !ok {
+		writeProblem(w, http.StatusUnauthorized, "unauthorized", "Bearer API key required", "")
 		return
 	}
 	query := r.URL.Query().Get("q")
@@ -245,7 +248,7 @@ func handleResourceSearch(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "invalid_input", "Missing q", "")
 		return
 	}
-	results, err := search.Query(context.Background(), disp.DB(), query, actorID, pageLimit(r))
+	results, err := search.Query(context.Background(), disp.DB(), query, actor.OwnerUserID, pageLimit(r))
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, "internal", "Search", err.Error())
 		return

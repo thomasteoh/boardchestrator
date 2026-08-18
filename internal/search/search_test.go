@@ -55,6 +55,8 @@ func TestIndexEvent(t *testing.T) {
 	ix := NewIndexer(d)
 	ctx := context.Background()
 
+	seedScope(t, d, "u1", "p1")
+
 	// Insert a task directly
 	_, err := d.ExecContext(ctx, `INSERT INTO tasks (id, project_id, title, description, key, status, priority, points)
 		VALUES ('t1', 'p1', 'Test task', 'a description', 'TASK-1', 'open', 2, 3)`)
@@ -71,8 +73,8 @@ func TestIndexEvent(t *testing.T) {
 		t.Fatalf("IndexEvent: %v", err)
 	}
 
-	// Search should find it
-	results, err := Query(ctx, d, "test", "", 10)
+	// Search should find it (user u1 is a member of the org owning p1)
+	results, err := Query(ctx, d, "test", "u1", 10)
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
@@ -91,6 +93,8 @@ func TestIndexCommentEvent(t *testing.T) {
 	d := setupDB(t)
 	ix := NewIndexer(d)
 	ctx := context.Background()
+
+	seedScope(t, d, "u1", "p1")
 
 	// Need a task first (FK)
 	_, err := d.ExecContext(ctx, `INSERT INTO tasks (id, project_id, title, description, key, status, priority, points)
@@ -112,7 +116,7 @@ func TestIndexCommentEvent(t *testing.T) {
 		t.Fatalf("IndexEvent comment: %v", err)
 	}
 
-	results, err := Query(ctx, d, "searchable", "", 10)
+	results, err := Query(ctx, d, "searchable", "u1", 10)
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
@@ -128,6 +132,8 @@ func TestDeleteFromIndex(t *testing.T) {
 	d := setupDB(t)
 	ix := NewIndexer(d)
 	ctx := context.Background()
+
+	seedScope(t, d, "u1", "p1")
 
 	// Insert a task, then index it, then delete via event.
 	_, err := d.ExecContext(ctx, `INSERT INTO tasks (id, project_id, title, description, key, status, priority, points)
@@ -148,7 +154,7 @@ func TestDeleteFromIndex(t *testing.T) {
 		t.Fatalf("IndexEvent archive: %v", err)
 	}
 
-	results, err := Query(ctx, d, "delete", "", 10)
+	results, err := Query(ctx, d, "delete", "u1", 10)
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
@@ -175,70 +181,25 @@ func TestBuildFTSQuery(t *testing.T) {
 	}
 }
 
-func TestFilterByVisibility(t *testing.T) {
-	d := setupDB(t)
-	ctx := context.Background()
-
-	// Create org, project, user, membership
-	if _, err := d.ExecContext(ctx, `INSERT INTO orgs (id, name, slug) VALUES ('org1', 'Test Org', 'test-org')`); err != nil {
-		t.Fatalf("insert org: %v", err)
-	}
-	if _, err := d.ExecContext(ctx, `INSERT INTO users (id, email) VALUES ('u1', 'u1@test')`); err != nil {
-		t.Fatalf("insert user: %v", err)
-	}
-	if _, err := d.ExecContext(ctx, `INSERT INTO projects (id, org_id, name, key) VALUES ('p1', 'org1', 'Project 1', 'P1')`); err != nil {
-		t.Fatalf("insert project: %v", err)
-	}
-	if _, err := d.ExecContext(ctx, `INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id)
-		VALUES ('m1', 'org1', 'u1', 'user', 'org', '')`); err != nil {
-		t.Fatalf("insert membership: %v", err)
-	}
-
-	results := []QueryResult{
-		{Type: "task", ID: "t1", ProjectID: "p1"},
-	}
-
-	filtered, err := FilterByVisibility(ctx, d, results, "u1")
-	if err != nil {
-		t.Fatalf("FilterByVisibility: %v", err)
-	}
-	if len(filtered) != 1 {
-		t.Fatal("user should see their project's results")
-	}
-
-	filtered2, err := FilterByVisibility(ctx, d, results, "u2")
-	if err != nil {
-		t.Fatalf("FilterByVisibility (no access): %v", err)
-	}
-	if len(filtered2) != 0 {
-		t.Fatal("non-member should see no results")
-	}
-}
-
 func TestEmptyQuery(t *testing.T) {
 	d := setupDB(t)
 	ctx := context.Background()
 
-	results, err := Query(ctx, d, "", "", 10)
+	results, err := Query(ctx, d, "", "u1", 10)
 	if err != nil {
 		t.Fatalf("Query empty: %v", err)
 	}
 	if len(results) != 0 {
 		t.Fatal("empty query should return no results")
 	}
-}
 
-func TestEmptyUserFilter(t *testing.T) {
-	ctx := context.Background()
-	d := setupDB(t)
-
-	results := []QueryResult{{Type: "task", ID: "t1", ProjectID: "p1"}}
-	filtered, err := FilterByVisibility(ctx, d, results, "")
+	// Empty userID (unauthenticated) returns nothing too (WU-520).
+	results, err = Query(ctx, d, "test", "", 10)
 	if err != nil {
-		t.Fatalf("FilterByVisibility empty user: %v", err)
+		t.Fatalf("Query empty user: %v", err)
 	}
-	if len(filtered) != 0 {
-		t.Fatal("empty user should see nothing")
+	if len(results) != 0 {
+		t.Fatal("unauthenticated search should return no results")
 	}
 }
 
@@ -260,6 +221,8 @@ func TestSearchLimit(t *testing.T) {
 	ix := NewIndexer(d)
 	ctx := context.Background()
 
+	seedScope(t, d, "u1", "p1")
+
 	// Insert 60 tasks
 	for i := 0; i < 60; i++ {
 		id := strings.Repeat("a", 10) + string(rune('0'+i%10))
@@ -271,11 +234,112 @@ func TestSearchLimit(t *testing.T) {
 		_ = ix.IndexEvent(ctx, "task.create", payload)
 	}
 
-	results, err := Query(ctx, d, "test", "", 50)
+	results, err := Query(ctx, d, "test", "u1", 50)
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
 	if len(results) > 50 {
 		t.Fatalf("got %d results, want at most 50", len(results))
+	}
+}
+
+// seedScope creates an org, a project, and an org membership for userID so the
+// user can see the project's search results.
+func seedScope(t *testing.T, d *sql.DB, userID, projectID string) {
+	t.Helper()
+	ctx := context.Background()
+	orgID := "org-" + projectID
+	if _, err := d.ExecContext(ctx, `INSERT INTO orgs (id, name, slug) VALUES (?, 'Org', ?)`, orgID, "slug-"+projectID); err != nil {
+		t.Fatalf("insert org: %v", err)
+	}
+	if _, err := d.ExecContext(ctx, `INSERT INTO users (id, email) VALUES (?, ?)`, userID, userID+"@t"); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	if _, err := d.ExecContext(ctx, `INSERT INTO projects (id, org_id, name, key) VALUES (?, ?, 'P', 'P')`, projectID, orgID); err != nil {
+		t.Fatalf("insert project: %v", err)
+	}
+	if _, err := d.ExecContext(ctx, `INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id)
+		VALUES (?, ?, ?, 'user', 'org', '')`, "m-"+userID+"-"+projectID, orgID, userID); err != nil {
+		t.Fatalf("insert membership: %v", err)
+	}
+}
+
+// TestQueryOrgScoping seeds two orgs and asserts a search in org A returns
+// zero rows from org B across tasks, comments, and wiki (WU-520).
+func TestQueryOrgScoping(t *testing.T) {
+	d := setupDB(t)
+	ix := NewIndexer(d)
+	ctx := context.Background()
+
+	// Org A: project pA, member uA. Org B: project pB, member uB.
+	seedScope(t, d, "uA", "pA")
+	seedScope(t, d, "uB", "pB")
+
+	// Tasks + comments + wiki pages in both orgs.
+	for _, p := range []string{"pA", "pB"} {
+		_, err := d.ExecContext(ctx, `INSERT INTO tasks (id, project_id, title, description, key, status, priority, points)
+			VALUES (?, ?, 'secret', '', ?, 'open', 2, 3)`, "t-"+p, p, "K-"+p)
+		if err != nil {
+			t.Fatalf("insert task %s: %v", p, err)
+		}
+		payload, _ := json.Marshal(map[string]string{
+			"id": "t-" + p, "title": "secret", "key": "K", "project_id": p,
+		})
+		if err := ix.IndexEvent(ctx, "task.create", payload); err != nil {
+			t.Fatalf("index task %s: %v", p, err)
+		}
+		_, err = d.ExecContext(ctx, `INSERT INTO comments (id, task_id, project_id, author_id, body)
+			VALUES (?, ?, ?, 'u', 'secret comment')`, "c-"+p, "t-"+p, p)
+		if err != nil {
+			t.Fatalf("insert comment %s: %v", p, err)
+		}
+		cp, _ := json.Marshal(map[string]string{
+			"id": "c-" + p, "body": "secret comment", "task_id": "t-" + p, "project_id": p,
+		})
+		if err := ix.IndexEvent(ctx, "comment.create", cp); err != nil {
+			t.Fatalf("index comment %s: %v", p, err)
+		}
+		// Wiki page for each org (wiki_fts columns: org_id, path, content).
+		_, err = d.ExecContext(ctx, `INSERT INTO wiki_fts (org_id, path, content)
+			VALUES (?, ?, 'secret wiki')`, "org-"+p, "docs/secret.md")
+		if err != nil {
+			t.Fatalf("insert wiki %s: %v", p, err)
+		}
+	}
+
+	// uA searching sees only org A rows (task, comment, wiki), never org B.
+	results, err := Query(ctx, d, "secret", "uA", 50)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	for _, r := range results {
+		got := r.OrgID
+		if r.Type == "task" || r.Type == "comment" {
+			got = "org-" + r.ProjectID
+		}
+		if got == "org-pB" {
+			t.Fatalf("uA saw org B row: type=%s id=%s", r.Type, r.ID)
+		}
+	}
+	if len(results) == 0 {
+		t.Fatal("uA should see their own org's rows")
+	}
+
+	// uB searching sees only org B rows, never org A.
+	resultsB, err := Query(ctx, d, "secret", "uB", 50)
+	if err != nil {
+		t.Fatalf("Query uB: %v", err)
+	}
+	for _, r := range resultsB {
+		got := r.OrgID
+		if r.Type == "task" || r.Type == "comment" {
+			got = "org-" + r.ProjectID
+		}
+		if got == "org-pA" {
+			t.Fatalf("uB saw org A row: type=%s id=%s", r.Type, r.ID)
+		}
+	}
+	if len(resultsB) == 0 {
+		t.Fatal("uB should see their own org's rows")
 	}
 }
