@@ -12,7 +12,7 @@ func TestLocalStoreUpload(t *testing.T) {
 	store := NewLocalStore(Config{DataDir: dir, MaxSize: 1 << 20})
 
 	ctx := context.Background()
-	id, key, err := store.Upload(ctx, "test.png", []byte("hello world"), "org1", "task1")
+	id, key, mime, err := store.Upload(ctx, "test.png", []byte("hello world"), "org1", "task1")
 	if err != nil {
 		t.Fatalf("Upload: %v", err)
 	}
@@ -21,6 +21,9 @@ func TestLocalStoreUpload(t *testing.T) {
 	}
 	if key == "" {
 		t.Fatal("empty storage key")
+	}
+	if mime != "image/png" {
+		t.Fatalf("derived MIME = %q, want image/png", mime)
 	}
 
 	// File should exist on disk.
@@ -42,7 +45,7 @@ func TestLocalStoreDelete(t *testing.T) {
 	store := NewLocalStore(Config{DataDir: dir, MaxSize: 1 << 20})
 
 	ctx := context.Background()
-	_, key, err := store.Upload(ctx, "delete.txt", []byte("delete me"), "org1", "task1")
+	_, key, _, err := store.Upload(ctx, "delete.txt", []byte("delete me"), "org1", "task1")
 	if err != nil {
 		t.Fatalf("Upload: %v", err)
 	}
@@ -69,7 +72,7 @@ func TestLocalStoreSizeLimit(t *testing.T) {
 
 	ctx := context.Background()
 	data := make([]byte, 200)
-	_, _, err := store.Upload(ctx, "large.txt", data, "org1", "task1")
+	_, _, _, err := store.Upload(ctx, "large.txt", data, "org1", "task1")
 	if err == nil {
 		t.Fatal("expected size limit error, got nil")
 	}
@@ -85,13 +88,13 @@ func TestLocalStoreContentType(t *testing.T) {
 
 	ctx := context.Background()
 	// .txt is text/plain -> allowed
-	_, _, err := store.Upload(ctx, "ok.txt", []byte("ok"), "org1", "task1")
+	_, _, _, err := store.Upload(ctx, "ok.txt", []byte("ok"), "org1", "task1")
 	if err != nil {
 		t.Fatalf("Upload allowed type: %v", err)
 	}
 
 	// .png is not in allowed list -> rejected
-	_, _, err = store.Upload(ctx, "bad.png", []byte("bad"), "org1", "task1")
+	_, _, _, err = store.Upload(ctx, "bad.png", []byte("bad"), "org1", "task1")
 	if err == nil {
 		t.Fatal("expected rejection for .png, got nil")
 	}
@@ -103,7 +106,7 @@ func TestLocalStoreSVGSanitise(t *testing.T) {
 
 	ctx := context.Background()
 	svg := `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><text>hello</text></svg>`
-	_, _, err := store.Upload(ctx, "test.svg", []byte(svg), "org1", "task1")
+	_, _, _, err := store.Upload(ctx, "test.svg", []byte(svg), "org1", "task1")
 	if err != nil {
 		t.Fatalf("Upload SVG: %v", err)
 	}

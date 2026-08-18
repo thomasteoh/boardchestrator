@@ -743,6 +743,43 @@ func handleAttachmentDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Authorize: the caller must be a member of att.OrgID (WU-519). Anonymous
+	// → 401; non-member → 404 (never confirm a cross-tenant attachment exists).
+	q := sqlc.New(disp.DB())
+	if sess, ok := auth.SessionFrom(r.Context()); ok {
+		// Session principal: user must hold org-level membership.
+		_, err := q.FindMembership(r.Context(), sqlc.FindMembershipParams{
+			OrgID:        att.OrgID,
+			ActorID:      sess.UserID,
+			ActorType:    "user",
+			ResourceType: "org",
+			ResourceID:   "",
+		})
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				http.Error(w, "attachment not found", http.StatusNotFound)
+				return
+			}
+			slog.Error("attachment download membership", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+	} else if keyActor, ok := auth.APIKeyActorFrom(r.Context()); ok {
+		// API-key principal: the key must belong to att.OrgID.
+		key, err := q.FindAPIKeyByID(r.Context(), keyActor.ID)
+		if err != nil {
+			http.Error(w, "attachment not found", http.StatusNotFound)
+			return
+		}
+		if key.OrgID != att.OrgID {
+			http.Error(w, "attachment not found", http.StatusNotFound)
+			return
+		}
+	} else {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	// Resolve the store for the attachment's org (per-org backend, local
 	// fallback), then open the object.
 	var st storage.Store

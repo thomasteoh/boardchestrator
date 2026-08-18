@@ -98,8 +98,11 @@ func handleAttachmentUpload(ctx context.Context, ac ActionCtx, in json.RawMessag
 		return nil, fmt.Errorf("attachment.upload: %w", err)
 	}
 
-	// Delegate to the store — it handles size/type validation and processing.
-	id, storageKey, err := store.Upload(ctx, input.Filename, input.Data, ac.Org, input.TaskID)
+	// Delegate to the store — it handles size/type validation and processing,
+	// and returns the extension-derived MIME type (WU-519). The client-supplied
+	// MimeType is ignored: only the store-derived type is stored and served, so
+	// a .txt upload can never be served as text/javascript.
+	id, storageKey, mime, err := store.Upload(ctx, input.Filename, input.Data, ac.Org, input.TaskID)
 	if err != nil {
 		return nil, fmt.Errorf("attachment.upload: %w", err)
 	}
@@ -111,7 +114,7 @@ func handleAttachmentUpload(ctx context.Context, ac ActionCtx, in json.RawMessag
 		TaskID:     input.TaskID,
 		UploaderID: ac.Actor.ID,
 		Filename:   input.Filename,
-		Mime:       input.MimeType,
+		Mime:       mime,
 		Size:       int64(len(input.Data)),
 		StorageKey: storageKey,
 	})

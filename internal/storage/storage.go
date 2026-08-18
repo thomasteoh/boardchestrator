@@ -31,8 +31,11 @@ func ID() string {
 
 // Store is the attachment storage interface.
 type Store interface {
-	// Upload stores a file and returns the attachment ID and storage key.
-	Upload(ctx context.Context, filename string, data []byte, orgID, taskID string) (attachmentID, storageKey string, err error)
+	// Upload stores a file and returns the attachment ID, storage key, and the
+	// MIME type derived from the filename extension (never the caller-supplied
+	// type — see WU-519). The returned mime is what the server will serve, so
+	// callers must store it and discard any client-claimed type.
+	Upload(ctx context.Context, filename string, data []byte, orgID, taskID string) (attachmentID, storageKey, mime string, err error)
 	// Delete removes a stored file by its storage key.
 	Delete(ctx context.Context, storageKey string) error
 	// Open returns a reader for a stored file by storage key.
@@ -107,11 +110,12 @@ func sanitizeFilename(name string) string {
 	return s
 }
 
-// Upload stores a file on the local filesystem.
-func (s *LocalStore) Upload(ctx context.Context, filename string, data []byte, orgID, taskID string) (string, string, error) {
+// Upload stores a file on the local filesystem. The returned MIME is derived
+// from the filename extension and is the type the server will serve (WU-519).
+func (s *LocalStore) Upload(ctx context.Context, filename string, data []byte, orgID, taskID string) (string, string, string, error) {
 	// Validate size
 	if int64(len(data)) > s.maxSize {
-		return "", "", fmt.Errorf("storage: file too large (%d bytes, max %d)", len(data), s.maxSize)
+		return "", "", "", fmt.Errorf("storage: file too large (%d bytes, max %d)", len(data), s.maxSize)
 	}
 
 	// Validate content type from filename extension
@@ -134,7 +138,7 @@ func (s *LocalStore) Upload(ctx context.Context, filename string, data []byte, o
 		mimeType = "application/octet-stream"
 	}
 	if !s.allowed[mimeType] {
-		return "", "", fmt.Errorf("storage: content type %q not allowed", mimeType)
+		return "", "", "", fmt.Errorf("storage: content type %q not allowed", mimeType)
 	}
 
 	// Re-encode images to strip metadata
@@ -144,11 +148,11 @@ func (s *LocalStore) Upload(ctx context.Context, filename string, data []byte, o
 			var buf bytes.Buffer
 			if mimeType == "image/png" {
 				if err := png.Encode(&buf, img); err != nil {
-					return "", "", fmt.Errorf("storage: re-encode png: %w", err)
+					return "", "", "", fmt.Errorf("storage: re-encode png: %w", err)
 				}
 			} else {
 				if err := jpeg.Encode(&buf, img, nil); err != nil {
-					return "", "", fmt.Errorf("storage: re-encode jpeg: %w", err)
+					return "", "", "", fmt.Errorf("storage: re-encode jpeg: %w", err)
 				}
 			}
 			data = buf.Bytes()
@@ -160,7 +164,7 @@ func (s *LocalStore) Upload(ctx context.Context, filename string, data []byte, o
 		var err error
 		data, err = sanitiseSVG(data)
 		if err != nil {
-			return "", "", fmt.Errorf("storage: sanitise svg: %w", err)
+			return "", "", "", fmt.Errorf("storage: sanitise svg: %w", err)
 		}
 	}
 
@@ -171,14 +175,14 @@ func (s *LocalStore) Upload(ctx context.Context, filename string, data []byte, o
 	path := s.storagePath(storageKey)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return "", "", fmt.Errorf("storage: mkdir: %w", err)
+		return "", "", "", fmt.Errorf("storage: mkdir: %w", err)
 	}
 
 	if err := os.WriteFile(path, data, 0600); err != nil {
-		return "", "", fmt.Errorf("storage: write: %w", err)
+		return "", "", "", fmt.Errorf("storage: write: %w", err)
 	}
 
-	return id, storageKey, nil
+	return id, storageKey, mimeType, nil
 }
 
 // Delete removes a stored file.

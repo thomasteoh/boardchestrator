@@ -468,3 +468,30 @@ Result: **two guides added** to the in-app help sidebar + index:
 - `mcp.md` — Boardchestrator's own MCP endpoint (`POST /mcp`, Streamable HTTP JSON-RPC: initialize/tools/list/tools/call/resources/prompts; tool names dots→underscores; scope-aware tools), plus plugging external MCP servers into agents via Skills.
 AC: both guides render with active nav; index lists them; smoke covers both slugs.
 Full-pass: `go test ./...` (22 pkgs) PASS; smoke WU-517 (now incl. api+mcp) PASS; `make check` PASS.
+
+---
+
+## Phase 6 — Security remediation (post-review 2026-08-17)
+
+Source: six-dimension review of `main` at `e46fb31` (tenant isolation, auth/secrets, action registry/permissions, agent runtime/MCP, data layer, web/XSS). Build was green at review time — `go build`, `go vet`, `gofmt`, `go test -race` (22 pkgs) and `scripts/check-scope.sh` all passed. **The gates did not catch any of the findings below**; see WU-545.
+
+Recurring root cause across findings: *the safe helper exists but was never wired in.* `md.Render` has zero production callers; `search.FilterByVisibility` is called on 1 of 4 paths; `SessionStore.Rotate` is never called; `orgExists()` stands where a membership check belongs; `api_keys.org_id`/`scope_json` are selected then discarded; SSE scope-narrowing was deferred to "later WUs" that never landed. Most fixes are small and local.
+
+Ordering: **WU-519 … WU-527 are deploy blockers** — the product must not run as a multi-tenant service until they are all done. WU-528 … WU-542 are correctness/hardening. WU-543 … WU-546 are process and docs.
+
+Branching per the rules above: one branch `wu-<N>` per WU from `main`, PR, squash-merge.
+
+---
+
+### WU-519 · Attachments: authorize downloads + validate MIME — `done (2026-08-18)`
+Deps: none.
+Two defects that chain into full script execution (see WU-525).
+1. **`GET /files/{attachmentID}` has no authentication of any kind.** Route `internal/web/web.go:1352`, handler `web.go:724`. No `SessionFrom`, no `APIKeyActorFrom`, no org check — it reads the id, calls `GetAttachment`, and streams the bytes. `att.OrgID` is used *only* to pick the storage backend (`web.go:750`), never to authorize. Anonymous cross-tenant download by attachment id.
+2. **Attachment MIME is attacker-chosen.** `internal/action/attachments.go:114` stores `Mime: input.MimeType` verbatim from client JSON. `internal/storage/storage.go:118-137` *does* validate a MIME — but one derived from the filename extension — and then discards it without comparing. Upload `notes.txt` with `"mime_type":"text/javascript"` and a JS body; `web.go:768` serves it as `text/javascript`, satisfying `nosniff`.
+
+Result: **both fixed + tested.**
+1. **Download authorized.** `handleAttachmentDownload` now requires an authenticated principal and org membership: session principal → `FindMembership(att.OrgID)` (no row → 404); API-key principal → `FindAPIKeyByID` + `key.OrgID == att.OrgID` (else 404); neither → 401. Cross-tenant and anonymous callers get 404/401, never confirming existence.
+2. **MIME derived, client claim dropped.** `storage.Store.Upload` now returns the extension-derived MIME (`LocalStore`, `S3Store`); `attachment.upload` stores that derived type and ignores `input.MimeType`. A `.txt` upload claiming `text/javascript` is stored and served as `text/plain`.
+
+AC: `/files/{id}` requires an authenticated principal (session or API key) **and** membership of `att.OrgID` — anonymous → 401, non-member → 404 (not 403; do not confirm existence cross-tenant); `attachment.upload` rejects an `input.MimeType` that disagrees with the extension-derived type, or drops the field and stores only the derived type; tests cover anonymous, cross-org member, and same-org member; test asserts a `.txt` upload cannot be served as `text/javascript`.
+Full-pass: `go test ./...` PASS; `make check` PASS. New tests: `TestAttachmentUploadDerivesMIME` (action), `TestAttachmentDownloadRequiresMembership` + `TestAttachmentDownloadAPIKeyOrgBinding` (web).
