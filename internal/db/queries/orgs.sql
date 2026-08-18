@@ -120,6 +120,12 @@ SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, cr
 FROM memberships
 WHERE org_id = ? AND actor_type = ? AND actor_id = ?;
 
+-- name: FindOrgIDsForActor :many
+SELECT org_id
+FROM memberships
+WHERE actor_id = ? AND actor_type = 'user' AND resource_type = 'org'
+ORDER BY org_id;
+
 -- name: CreateMembershipFromOrgQuery :one
 INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id, role_id)
 VALUES (?, ?, ?, ?, ?, ?, ?)
