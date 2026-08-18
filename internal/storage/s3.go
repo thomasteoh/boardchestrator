@@ -120,15 +120,16 @@ func (s *S3Store) objectKey(key string) string {
 	return s.prefix + key
 }
 
-// Upload stores a file on S3. It returns the attachment ID and storage key,
-// mirroring LocalStore semantics (same key format).
-func (s *S3Store) Upload(ctx context.Context, filename string, data []byte, orgID, taskID string) (string, string, error) {
+// Upload stores a file on S3. It returns the attachment ID, storage key, and
+// the extension-derived MIME (WU-519), mirroring LocalStore semantics (same
+// key format).
+func (s *S3Store) Upload(ctx context.Context, filename string, data []byte, orgID, taskID string) (string, string, string, error) {
 	if int64(len(data)) > s.maxSize {
-		return "", "", fmt.Errorf("storage: file too large (%d bytes, max %d)", len(data), s.maxSize)
+		return "", "", "", fmt.Errorf("storage: file too large (%d bytes, max %d)", len(data), s.maxSize)
 	}
 	mimeType := ContentType(filename)
 	if !s.allowed[mimeType] {
-		return "", "", fmt.Errorf("storage: content type %q not allowed", mimeType)
+		return "", "", "", fmt.Errorf("storage: content type %q not allowed", mimeType)
 	}
 
 	// Sanitise SVG (mirror LocalStore; images are re-encoded by the caller).
@@ -136,7 +137,7 @@ func (s *S3Store) Upload(ctx context.Context, filename string, data []byte, orgI
 		var err error
 		data, err = sanitiseSVG(data)
 		if err != nil {
-			return "", "", fmt.Errorf("storage: sanitise svg: %w", err)
+			return "", "", "", fmt.Errorf("storage: sanitise svg: %w", err)
 		}
 	}
 
@@ -151,9 +152,9 @@ func (s *S3Store) Upload(ctx context.Context, filename string, data []byte, orgI
 		ContentType: aws.String(mimeType),
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("storage: s3 put: %w", err)
+		return "", "", "", fmt.Errorf("storage: s3 put: %w", err)
 	}
-	return id, storageKey, nil
+	return id, storageKey, mimeType, nil
 }
 
 // Delete removes a stored object. Missing objects are a no-op.

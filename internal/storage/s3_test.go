@@ -85,7 +85,7 @@ func TestS3StoreUploadOpenDelete(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	id, key, err := store.Upload(ctx, "test.png", []byte("hello world"), "org1", "task1")
+	id, key, _, err := store.Upload(ctx, "test.png", []byte("hello world"), "org1", "task1")
 	if err != nil {
 		t.Fatalf("Upload: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestS3StoreSizeLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewS3Store: %v", err)
 	}
-	_, _, err = store.Upload(context.Background(), "big.bin", make([]byte, 200), "o", "t")
+	_, _, _, err = store.Upload(context.Background(), "big.bin", make([]byte, 200), "o", "t")
 	if err == nil {
 		t.Fatal("expected size limit error")
 	}
@@ -148,7 +148,7 @@ func TestS3StoreRejectsBadType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewS3Store: %v", err)
 	}
-	_, _, err = store.Upload(context.Background(), "bad.png", []byte("bad"), "o", "t")
+	_, _, _, err = store.Upload(context.Background(), "bad.png", []byte("bad"), "o", "t")
 	if err == nil {
 		t.Fatal("expected content-type rejection")
 	}
@@ -172,7 +172,7 @@ func TestS3StoreSanitisesSVG(t *testing.T) {
 		t.Fatalf("NewS3Store: %v", err)
 	}
 	svg := `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><text>hi</text></svg>`
-	_, _, err = store.Upload(context.Background(), "x.svg", []byte(svg), "o", "t")
+	_, _, _, err = store.Upload(context.Background(), "x.svg", []byte(svg), "o", "t")
 	if err != nil {
 		t.Fatalf("Upload: %v", err)
 	}

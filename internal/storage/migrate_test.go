@@ -20,7 +20,7 @@ func TestMigrateLocalToS3(t *testing.T) {
 	// Upload two files to local.
 	keys := []string{}
 	for _, fname := range []string{"a.png", "b.png"} {
-		_, key, err := local.Upload(ctx, fname, []byte("content-"+fname), "org1", "task1")
+		_, key, _, err := local.Upload(ctx, fname, []byte("content-"+fname), "org1", "task1")
 		if err != nil {
 			t.Fatalf("local upload: %v", err)
 		}
