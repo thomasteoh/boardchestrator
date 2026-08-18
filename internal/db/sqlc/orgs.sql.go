@@ -374,6 +374,36 @@ func (q *Queries) FindOrgBySlug(ctx context.Context, slug string) (Org, error) {
 	return i, err
 }
 
+const findOrgIDsForActor = `-- name: FindOrgIDsForActor :many
+SELECT org_id
+FROM memberships
+WHERE actor_id = ? AND actor_type = 'user' AND resource_type = 'org'
+ORDER BY org_id
+`
+
+func (q *Queries) FindOrgIDsForActor(ctx context.Context, actorID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, findOrgIDsForActor, actorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var org_id string
+		if err := rows.Scan(&org_id); err != nil {
+			return nil, err
+		}
+		items = append(items, org_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findProjectByID = `-- name: FindProjectByID :one
 SELECT id, org_id, team_id, name, key, context, visibility, archived, next_task_num, created_at
 FROM projects

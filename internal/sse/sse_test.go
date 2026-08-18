@@ -19,6 +19,22 @@ func stubUser(id string) UserResolver {
 	return func(*http.Request) (string, bool) { return id, id != "" }
 }
 
+// stubMembers returns a MembershipResolver that reports the given org ids for
+// every user (WU-521 test seam).
+func stubMembers(orgs ...string) MembershipResolver {
+	set := map[string]struct{}{}
+	for _, o := range orgs {
+		set[o] = struct{}{}
+	}
+	return func(string) []string {
+		out := make([]string, 0, len(set))
+		for o := range set {
+			out = append(out, o)
+		}
+		return out
+	}
+}
+
 // TestHandlerRejectsUnauthenticated: no user → 401, no stream.
 func TestHandlerRejectsUnauthenticated(t *testing.T) {
 	h := New(event.New(), stubUser(""))
@@ -55,7 +71,7 @@ func TestHandlerSetsSSEHeaders(t *testing.T) {
 // shared-buffer race with the handler's writes).
 func TestEventFraming(t *testing.T) {
 	bus := event.New()
-	h := New(bus, stubUser("u1"), WithHeartbeat(time.Hour))
+	h := New(bus, stubUser("u1"), WithHeartbeat(time.Hour), WithMembershipResolver(stubMembers("org1")))
 	hubCtx, hubCancel := context.WithCancel(context.Background())
 	go h.Run(hubCtx)
 	defer hubCancel()
@@ -114,7 +130,7 @@ func TestHeartbeat(t *testing.T) {
 // replayed when it reconnects with Last-Event-ID.
 func TestReplayFromRingBuffer(t *testing.T) {
 	bus := event.New()
-	h := New(bus, stubUser("u1"), WithHeartbeat(time.Hour))
+	h := New(bus, stubUser("u1"), WithHeartbeat(time.Hour), WithMembershipResolver(stubMembers("o")))
 	hubCtx, hubCancel := context.WithCancel(context.Background())
 	go h.Run(hubCtx)
 	defer hubCancel()
@@ -163,6 +179,130 @@ func TestEventNameMapping(t *testing.T) {
 			t.Errorf("eventNameFor(%q) = %q, want %q", in, got, want)
 		}
 	}
+}
+
+// stubUserParam resolves the user id from a `user` query param ("a" or "b");
+// lets one hub serve two distinct clients in a test (WU-521 two-org scoping).
+func stubUserParam() UserResolver {
+	return func(r *http.Request) (string, bool) {
+		switch u := r.URL.Query().Get("user"); u {
+		case "a", "b":
+			return u, true
+		default:
+			return "", false
+		}
+	}
+}
+
+// TestTwoOrgNoCrossDelivery is the WU-521 regression: two orgs' clients on one
+// hub get zero cross-delivery — live (org-scoped dispatch) and via
+// Last-Event-ID:0 replay. Also asserts SendToUser chat deltas are not recorded
+// into the shared ring (so they never replay to anyone).
+//
+// Each stream is used for exactly one assertion (positive readFrame or
+// negative tryReadFrame) and then closed, so the non-fatal tryReadFrame's
+// lingering read goroutine never races a later readFrame on the same reader.
+func TestTwoOrgNoCrossDelivery(t *testing.T) {
+	bus := event.New()
+	h := New(bus, stubUserParam(), WithHeartbeat(time.Hour))
+	// Per-user tenant scoping: user a → orgA, user b → orgB. Must be set
+	// before clients connect (the handler snapshots orgs at connect time).
+	h.orgs = func(userID string) []string {
+		if userID == "a" {
+			return []string{"orgA"}
+		}
+		if userID == "b" {
+			return []string{"orgB"}
+		}
+		return nil
+	}
+	hubCtx, hubCancel := context.WithCancel(context.Background())
+	go h.Run(hubCtx)
+	defer hubCancel()
+	waitFor(t, func() bool { return bus.SubscriberCount() >= 1 })
+
+	srv := httptest.NewServer(http.HandlerFunc(h.Handler))
+	defer closeServer(srv)
+
+	// Live, orgA event: member a receives it; non-member b (orgB member) must
+	// not. Separate streams: posA asserts delivery, negB asserts absence.
+	posA := openStream(t, srv.URL+"/events?user=a", nil)
+	negB := openStream(t, srv.URL+"/events?user=b", nil)
+	waitFor(t, func() bool { return h.ClientCount() >= 2 })
+	bus.Publish(event.Event{Name: "task.create", Org: "orgA", Subject: "secretA",
+		Payload: json.RawMessage(`{"secret":"A"}`)})
+	fa := posA.readFrame(t)
+	if !strings.Contains(fa, `"subject":"secretA"`) {
+		t.Fatalf("member of orgA should receive orgA event, got:\n%q", fa)
+	}
+	if got := negB.tryReadFrame(); got != "" {
+		t.Fatalf("non-member of orgA received orgA event (live):\n%q", got)
+	}
+	posA.close()
+	negB.close()
+
+	// Live, orgB event: member b receives it; non-member a must not.
+	posB := openStream(t, srv.URL+"/events?user=b", nil)
+	negA := openStream(t, srv.URL+"/events?user=a", nil)
+	waitFor(t, func() bool { return h.ClientCount() >= 2 })
+	bus.Publish(event.Event{Name: "task.create", Org: "orgB", Subject: "secretB",
+		Payload: json.RawMessage(`{"secret":"B"}`)})
+	fb := posB.readFrame(t)
+	if !strings.Contains(fb, `"subject":"secretB"`) {
+		t.Fatalf("member of orgB should receive orgB event, got:\n%q", fb)
+	}
+	if got := negA.tryReadFrame(); got != "" {
+		t.Fatalf("non-member of orgB received orgB event (live):\n%q", got)
+	}
+	posB.close()
+	negA.close()
+
+	// Replay via Last-Event-ID:0 must be scoped like live. Publish an orgA
+	// event while no client is connected (lands in the ring), then reconnect
+	// user b (orgB member) from id 0. user b legitimately replays the orgB
+	// event (id 2) but must NOT receive the orgA event (id 3, secretA2).
+	bus.Publish(event.Event{Name: "task.create", Org: "orgA", Subject: "secretA2",
+		Payload: json.RawMessage(`{"secret":"A2"}`)})
+	waitFor(t, func() bool { return h.lastSeq() == 3 })
+	negB2 := openStream(t, srv.URL+"/events?user=b", http.Header{"Last-Event-ID": {"0"}})
+	// Drain up to the orgB event; assert the orgA secret never appears.
+	got := negB2.readFrame(t)
+	got += negB2.tryReadFrame()
+	if strings.Contains(got, "secretA2") {
+		t.Fatalf("non-member of orgA received orgA event via replay:\n%q", got)
+	}
+	if !strings.Contains(got, "secretB") {
+		t.Fatalf("member of orgB should replay orgB event, got:\n%q", got)
+	}
+	negB2.close()
+
+	// SendToUser chat delta targeted at user b must reach b live and not leak
+	// to a live, and must not be recorded into the shared ring (so replay
+	// yields nothing).
+	posB2 := openStream(t, srv.URL+"/events?user=b", nil)
+	negA2 := openStream(t, srv.URL+"/events?user=a", nil)
+	waitFor(t, func() bool { return h.ClientCount() >= 2 })
+	h.SendToUser("b", EventChatDelta, []byte(`{"delta":"hello b"}`))
+	fb2 := posB2.readFrame(t)
+	if !strings.Contains(fb2, EventChatDelta) || !strings.Contains(fb2, "hello b") {
+		t.Fatalf("target user should receive chat delta, got:\n%q", fb2)
+	}
+	if got := negA2.tryReadFrame(); got != "" {
+		t.Fatalf("chat delta leaked to non-target user (live):\n%q", got)
+	}
+	posB2.close()
+	negA2.close()
+
+	// Reconnect user b from id 0 after the chat delta: the orgB event replays
+	// legitimately, but the user-targeted chat delta must NOT replay
+	// (SendToUser no longer records into the shared ring).
+	negB3 := openStream(t, srv.URL+"/events?user=b", http.Header{"Last-Event-ID": {"0"}})
+	got3 := negB3.readFrame(t)
+	got3 += negB3.tryReadFrame()
+	if strings.Contains(got3, "hello b") {
+		t.Fatalf("user-targeted chat delta was recorded into the shared ring and replayed:\n%q", got3)
+	}
+	negB3.close()
 }
 
 // --- test helpers ---
@@ -263,6 +403,35 @@ func (s *stream) readFrame(t *testing.T) string {
 }
 
 func (s *stream) close() { s.closer() }
+
+// tryReadFrame attempts to read one frame with a short timeout and returns ""
+// (no error) if nothing arrives — used to assert a client must NOT receive an
+// event (WU-521 cross-delivery absence). Returns the frame text when one does
+// arrive within the window.
+func (s *stream) tryReadFrame() string {
+	out := make(chan string, 1)
+	go func() {
+		var b strings.Builder
+		for {
+			line, err := s.body.ReadString('\n')
+			b.WriteString(line)
+			if err != nil {
+				out <- b.String()
+				return
+			}
+			if line == "\n" { // blank line terminates a frame
+				out <- b.String()
+				return
+			}
+		}
+	}()
+	select {
+	case s := <-out:
+		return s
+	case <-time.After(150 * time.Millisecond):
+		return ""
+	}
+}
 
 // waitFor polls cond up to ~2s.
 func waitFor(t *testing.T, cond func() bool) {

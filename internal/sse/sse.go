@@ -59,6 +59,17 @@ func SessionUserResolver(r *http.Request) (string, bool) {
 	return sess.UserID, true
 }
 
+// MembershipResolver reports the set of org ids a user belongs to (WU-521).
+// It is the principal's tenant scoping: an SSE event is delivered only to
+// clients whose user is a member of the event's org. The production resolver
+// queries the memberships table via sqlc; tests inject a stub.
+type MembershipResolver func(userID string) []string
+
+// DefaultMembershipResolver is the fail-closed default: no resolver means no
+// memberships, so org-scoped events reach no one. Production always wires a
+// DB-backed resolver via WithMembershipResolver.
+func DefaultMembershipResolver(userID string) []string { return nil }
+
 // eventNameFor maps an action event name to the SSE event name the browser
 // listens for. Unmapped actions fall back to a generic "message" event so new
 // actions still stream without a code change here.
@@ -82,16 +93,23 @@ func hasPrefix(s, p string) bool { return len(s) >= len(p) && s[:len(p)] == p }
 // client is one live SSE connection for a user.
 type client struct {
 	userID string
+	orgs   map[string]struct{} // orgs the user is a member of (tenant scoping)
 	ch     chan sseMessage
 }
 
-// sseMessage is a framed, ready-to-write event plus its monotonic id.
-// Heartbeats are not modelled here — they are ticker-driven comment lines
-// written directly by the handler (writeComment).
+// sseMessage is a framed, ready-to-write event plus its monotonic id and its
+// delivery scope. Heartbeats are not modelled here — they are ticker-driven
+// comment lines written directly by the handler (writeComment).
+//
+// Scope: org != "" is an org-scoped bus event (deliver only to members of org);
+// targetUser != "" is a user-targeted message (deliver only to that user).
+// Both empty = platform-wide event (deliver to every authenticated client).
 type sseMessage struct {
-	id   uint64
-	name string
-	data []byte
+	id         uint64
+	name       string
+	data       []byte
+	org        string
+	targetUser string
 }
 
 // Hub fans bus events to connected clients. Construct with New; call Run once
@@ -99,6 +117,7 @@ type sseMessage struct {
 type Hub struct {
 	bus      *event.Bus
 	resolve  UserResolver
+	orgs     MembershipResolver
 	buffer   int
 	interval time.Duration
 
@@ -120,11 +139,20 @@ func WithHeartbeat(d time.Duration) Option { return func(h *Hub) { h.interval = 
 // WithClientBuffer overrides the per-client channel buffer.
 func WithClientBuffer(n int) Option { return func(h *Hub) { h.buffer = n } }
 
+// WithMembershipResolver wires the tenant-scoping resolver (WU-521). It
+// reports the org ids a user belongs to; without it, org-scoped events are
+// delivered to no one (fail closed). The production wiring passes a sqlc
+// query over the memberships table.
+func WithMembershipResolver(f MembershipResolver) Option {
+	return func(h *Hub) { h.orgs = f }
+}
+
 // New builds a Hub over bus using resolve to authenticate connections.
 func New(bus *event.Bus, resolve UserResolver, opts ...Option) *Hub {
 	h := &Hub{
 		bus:      bus,
 		resolve:  resolve,
+		orgs:     DefaultMembershipResolver,
 		buffer:   32,
 		interval: HeartbeatInterval,
 		subs:     map[*client]struct{}{},
@@ -154,20 +182,24 @@ func (h *Hub) Run(ctx context.Context) {
 }
 
 // dispatch frames a bus event, records it for replay, and delivers it to
-// clients. For Phase 0 every authenticated client receives every event (there
-// are no orgs/memberships yet — WU-104); the audience narrows to org members in
-// later WUs. Delivery is per-client non-blocking: a stalled client drops the
-// event (bus-level slow-consumer protection already covered the publisher).
+// clients whose principal is in the event's audience (WU-521): for an
+// org-scoped event (ev.Org != ""), only members of that org; for a
+// platform-wide event (ev.Org == ""), every authenticated client. Delivery is
+// per-client non-blocking: a stalled client drops the event (bus-level
+// slow-consumer protection already covered the publisher).
 func (h *Hub) dispatch(ev event.Event) {
 	id := h.seq.Add(1)
 	name := eventNameFor(ev.Name)
 	data := marshalData(ev)
-	msg := sseMessage{id: id, name: name, data: data}
+	msg := sseMessage{id: id, name: name, data: data, org: ev.Org}
 	h.record(msg)
 
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for c := range h.subs {
+		if !h.deliverable(c, msg) {
+			continue
+		}
 		select {
 		case c.ch <- msg:
 		default:
@@ -175,6 +207,21 @@ func (h *Hub) dispatch(ev event.Event) {
 			// reconnect; the ring buffer covers brief gaps.
 		}
 	}
+}
+
+// deliverable reports whether msg is in client c's audience (WU-521):
+//   - targetUser set → only that user.
+//   - org set → only members of that org.
+//   - neither → platform-wide, every authenticated client.
+func (h *Hub) deliverable(c *client, m sseMessage) bool {
+	if m.targetUser != "" {
+		return c.userID == m.targetUser
+	}
+	if m.org != "" {
+		_, ok := c.orgs[m.org]
+		return ok
+	}
+	return true
 }
 
 // sseData is the JSON body of a data: line.
@@ -213,15 +260,17 @@ func (h *Hub) record(msg sseMessage) {
 }
 
 // replaySince returns buffered messages with id strictly greater than lastID,
-// in order. Best-effort: if lastID is older than the buffer's oldest entry the
-// client has missed events beyond the buffer and should refetch (it still gets
-// whatever remains).
-func (h *Hub) replaySince(lastID uint64) []sseMessage {
+// in order, restricted to the audience of the client's principal (WU-521): the
+// same predicate as live delivery — org-scoped events only to members, user-
+// targeted only to that user, platform-wide to everyone. Best-effort: if
+// lastID is older than the buffer's oldest entry the client has missed events
+// beyond the buffer and should refetch (it still gets whatever remains).
+func (h *Hub) replaySince(lastID uint64, c *client) []sseMessage {
 	h.ringMu.Lock()
 	defer h.ringMu.Unlock()
 	out := make([]sseMessage, 0, len(h.ring))
 	for _, m := range h.ring {
-		if m.id > lastID {
+		if m.id > lastID && h.deliverable(c, m) {
 			out = append(out, m)
 		}
 	}
@@ -252,13 +301,20 @@ func (h *Hub) Handler(w http.ResponseWriter, r *http.Request) {
 	// blocks waiting for the response to begin.
 	flusher.Flush()
 
-	c := &client{userID: userID, ch: make(chan sseMessage, h.buffer)}
+	// Resolve the client's org memberships once (snapshot) for tenant scoping
+	// (WU-521). A membership change mid-stream is picked up on reconnect.
+	orgs := map[string]struct{}{}
+	for _, o := range h.orgs(userID) {
+		orgs[o] = struct{}{}
+	}
+	c := &client{userID: userID, orgs: orgs, ch: make(chan sseMessage, h.buffer)}
 	h.add(c)
 	defer h.remove(c)
 
-	// Best-effort replay from the ring buffer before live streaming.
+	// Best-effort replay from the ring buffer before live streaming, filtered
+	// to the client's audience (same predicate as live delivery — WU-521).
 	if last, ok := parseLastEventID(r); ok {
-		for _, m := range h.replaySince(last) {
+		for _, m := range h.replaySince(last, c) {
 			if err := writeMessage(w, m); err != nil {
 				return
 			}
@@ -318,16 +374,17 @@ func (h *Hub) ClientCount() int {
 
 // SendToUser delivers a named event with raw data payload to every live client
 // for userID (WU-308: chat deltas target the initiating user only, not the
-// whole org). It frames the message, records it for replay, and non-blocking
-// delivers to matching clients. userID "" delivers to nobody (no anonymous
+// whole org). It frames the message as user-targeted and non-blocking delivers
+// to matching clients. Per WU-521 it does NOT record into the shared replay
+// ring — user-targeted chat deltas must never replay to other users, and the
+// ring is per-hub not per-audience. userID "" delivers to nobody (no anonymous
 // audience).
 func (h *Hub) SendToUser(userID, name string, data []byte) {
 	if userID == "" {
 		return
 	}
 	id := h.seq.Add(1)
-	msg := sseMessage{id: id, name: name, data: data}
-	h.record(msg)
+	msg := sseMessage{id: id, name: name, data: data, targetUser: userID}
 
 	h.mu.RLock()
 	defer h.mu.RUnlock()
