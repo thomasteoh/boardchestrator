@@ -17,7 +17,7 @@ jobs:
           git diff --exit-code -- '*_templ.go' || { echo "templ output out of date"; exit 1; }
       - name: gofmt
         run: |
-          ! gofmt -d -l . | awk '{print} END{exit NR>0}'
+          gofmt -d -l . | awk '{print} END{exit NR>0}'
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
