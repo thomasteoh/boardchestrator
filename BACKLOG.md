@@ -773,3 +773,27 @@ Deps: none.
 - QUESTIONS.md Q3 (SQLite driver) has no `**Answer:**` line; an assumption was recorded and is non-blocking. Close it for the record.
 - The Dockerfile installs `ca-certificates` **and** copies `/etc/ssl/certs/ca-certificates.crt` from the builder — redundant; and the build carries no `-trimpath` or version ldflags, so `bc` reports no version.
 AC: CHANGELOG covers WU-509 – WU-518 and the Phase 6 fixes; README links resolve on GitHub (CI link-check if cheap); the `public/` line is corrected; Q3 answered; Dockerfile deduplicated and stamped with a version.
+
+### WU-547 · Migrate to golangci-lint v2 — `ready`
+Deps: none (CI unblocked by pinning in the meantime).
+`.github/workflows/lint.yml` used `version: latest` for `golangci-lint-action`. When golangci-lint v2 shipped, `latest` floated onto it and v2 **rejects this repo's v1-format `.golangci.yml` outright**:
+```
+Error: can't load config: unsupported version of the configuration: ""
+```
+CI went red with no code change — a floating tool dependency, exactly the failure the Makefile's pinned `SQLC_VERSION`/`TEMPL_VERSION` comments exist to prevent. Pinned to `v1.64.8` (the version `make check` uses locally, verified exit 0 on this tree) as the immediate unblock; this WU is the real migration.
+
+Measured cost before starting (golangci-lint v2.12.2, config produced by `golangci-lint migrate`): **22 findings — 21 gosec, 1 prealloc; 13 in tests, 9 in production code.** By rule: G124×10, G703×3, G704×2, G122×2, G705×1, G120×1, G118×1, G117×1.
+
+Note `migrate` drops `errcheck`/`gosimple`/`govet`/`ineffassign`/`staticcheck`/`unused` from `linters.enable` — not a loss: v2 enables them by default and `gosimple` was folded into `staticcheck`. Verify the effective linter set with `golangci-lint linters` before and after rather than assuming.
+
+**Several production findings corroborate the Phase 6 review independently — triage these as findings, not as noise:**
+- `internal/auth/middleware.go:191,204` — G124 insecure cookie. This is the **WU-526** `Insecure: true` defect; gosec finds it without being told.
+- `internal/auth/github.go:59,64` — G704 SSRF via taint. This is **WU-526**'s `client_secret`-in-URL token exchange.
+- `internal/action/skills.go:200` — G117: marshaled struct field `AuthToken` (JSON key `auth_token`) matches a secret pattern. **New lead** — this is exactly the **WU-522** pattern (a credential reaching a marshaled action result and therefore the audit log, event bus, and webhooks). Chase it under WU-522's "sweep for other handlers returning credentials" before closing that WU.
+- `internal/storage/storage.go:312` — G120 unbounded form parsing → memory exhaustion; same class as **WU-541**.
+- `internal/web/static.go:133` — G703 path traversal via taint on `http.ServeFileFS`.
+- `internal/web/web.go:1170` — G705 XSS via taint on the CSV export write.
+- `internal/server/server.go:633` — G118 goroutine using `context.Background()` where a request-scoped context is available.
+
+The test-file findings (G124 on `http.Cookie` in httptest requests, G122/G703 on `filepath.Walk` helpers) are the expected false-positive class and should be handled with a scoped `exclusions.rules` block for `_test.go`, **not** by disabling the rules globally.
+AC: `.golangci.yml` is v2-format (`version: "2"`) and `golangci-lint-action` is bumped to a version supporting v2; the effective linter set is unchanged or wider, evidenced by `golangci-lint linters` output in the PR; each production finding above is either fixed or suppressed with a per-line justification comment (no blanket rule disables); test-file false positives are excluded by path rule; the pinned version in `lint.yml` moves to the v2 pin in the same commit; `make check` and CI use the **same** pinned version so they cannot drift again (see WU-545).
