@@ -1,20 +1,54 @@
+version: "2"
+
 run:
-  timeout: 5m
   modules-download-mode: readonly
 
 linters:
+  # v2 enables errcheck, govet, ineffassign, staticcheck and unused by
+  # default, and folded gosimple into staticcheck — so the v1 config's
+  # explicit list of those is not lost by omitting them here. Only the
+  # additions beyond the default set are listed. Verify with
+  # `golangci-lint linters` if this list is ever trimmed again.
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
     - gosec
     - misspell
     - prealloc
     - unconvert
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+    rules:
+      # Test-harness false positives, scoped to _test.go by rule id rather
+      # than disabling gosec for tests wholesale:
+      #   G124 — httptest requests build http.Cookie without Secure/SameSite;
+      #          these never touch a browser.
+      #   G703 — os.WriteFile/ServeFileFS under t.TempDir() paths.
+      #   G122 — fixture helpers walking a temp tree with filepath.WalkDir.
+      - path: _test\.go
+        linters:
+          - gosec
+        text: "(G124|G703|G122):"
+      # Preallocation is noise in table-test setup.
+      - path: _test\.go
+        linters:
+          - prealloc
 
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

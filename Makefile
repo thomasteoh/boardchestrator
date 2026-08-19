@@ -2,7 +2,12 @@
 
 GO := go
 GOFMT := gofmt
-GOLANGCI_LINT := $(shell go env GOPATH)/bin/golangci-lint
+# golangci-lint is pinned like sqlc/templ below: CI (.github/workflows/lint.yml)
+# and `make check` must run the SAME version or the gate silently drifts
+# (WU-545). v2 requires `version: "2"` in .golangci.yml -- never float this to
+# latest, that is what broke CI when v2 shipped.
+GOLANGCI_VERSION := v2.12.2
+GOLANGCI_LINT := $(GO) run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)
 
 # Pinned codegen tool versions so `make gen` works identically on a clean
 # machine (fetched via `go run mod@version`; nothing global to install).

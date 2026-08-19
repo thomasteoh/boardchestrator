@@ -1167,7 +1167,12 @@ func handleDistributionsCSV(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="distributions.csv"`)
-	_, _ = w.Write([]byte(dd.CSV))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// gosec G705 flags this as an XSS sink. It is a CSV download, not an HTML
+	// response: Content-Type is text/csv, Content-Disposition is attachment,
+	// and nosniff above stops content-type sniffing. dd.CSV is built by
+	// buildDistData, not echoed from the request.
+	_, _ = w.Write([]byte(dd.CSV)) //nolint:gosec // CSV attachment, not an HTML context
 }
 
 // serveEmbedded copies an embedded static file to the response, reporting a

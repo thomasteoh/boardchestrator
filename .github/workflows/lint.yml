@@ -19,11 +19,10 @@ jobs:
         run: |
           gofmt -d -l . | awk '{print} END{exit NR>0}'
       - name: golangci-lint
-        # Pinned, not `latest`. golangci-lint v2 requires `version: "2"` in
-        # .golangci.yml and rejects this repo's v1-format config outright
-        # ("unsupported version of the configuration"), so `latest` broke CI
-        # the moment v2 shipped. Same reasoning as the pinned sqlc/templ
-        # versions in the Makefile. Migrating to v2 is WU-547.
-        uses: golangci/golangci-lint-action@v6
+        # Pinned, never `latest`: a floating version is what broke this job
+        # when golangci-lint v2 shipped and rejected the old v1-format
+        # config. Action v7+ is golangci-lint-v2-only; v9 requires >= v2.1.0.
+        # Keep this version in step with the Makefile (WU-545).
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v1.64.8
+          version: v2.12.2
