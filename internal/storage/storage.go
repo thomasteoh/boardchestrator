@@ -309,7 +309,10 @@ func stripEventAttrs(data []byte) []byte {
 
 // ReadUpload parses a multipart form upload and returns the filename and data.
 func ReadUpload(r *http.Request, maxSize int64) (filename string, data []byte, err error) {
-	if err := r.ParseMultipartForm(maxSize); err != nil {
+	// gosec G120: maxSize bounds the in-memory portion, but the request body
+	// itself is not capped — wrapping r.Body in http.MaxBytesReader is the real
+	// fix and is tracked by WU-541 alongside the other unbounded reads.
+	if err := r.ParseMultipartForm(maxSize); err != nil { //nolint:gosec // body cap tracked by WU-541
 		return "", nil, fmt.Errorf("storage: parse multipart: %w", err)
 	}
 	f, h, err := r.FormFile("file")

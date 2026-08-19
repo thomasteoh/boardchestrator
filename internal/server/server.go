@@ -638,7 +638,7 @@ func (s *Server) Start(ctx context.Context) error {
 					if !ok {
 						return
 					}
-					if err := ix.IndexEvent(context.Background(), ev.Name, ev.Payload); err != nil {
+					if err := ix.IndexEvent(ctx, ev.Name, ev.Payload); err != nil {
 						slog.Error("search indexer", "event", ev.Name, "error", err)
 					}
 				case <-ctx.Done():

@@ -56,12 +56,17 @@ func (p *GitHubProvider) Exchange(ctx context.Context, code, state string) (*Git
 		"https://github.com/login/oauth/access_token?client_id=%s&client_secret=%s&code=%s",
 		p.cfg.ClientID, p.cfg.ClientSecret, code,
 	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, nil)
+	// gosec G704 flags tokenURL as attacker-influenced. The scheme and host are
+	// a hardcoded literal (github.com); only query parameters are interpolated,
+	// so the request target cannot be redirected. NOTE: the genuine defect here
+	// is that client_secret travels in the query string at all — see WU-526,
+	// which moves these credentials into a POST body.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, nil) //nolint:gosec // hardcoded host; credential-in-URL tracked by WU-526
 	if err != nil {
 		return nil, fmt.Errorf("github: token request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // same hardcoded-host request as above; see WU-526
 	if err != nil {
 		return nil, fmt.Errorf("github: token exchange: %w", err)
 	}

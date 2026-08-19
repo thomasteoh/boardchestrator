@@ -130,5 +130,9 @@ func serveAsset(w http.ResponseWriter, r *http.Request, fsys fs.FS, name string)
 	// Content-Type from the real extension regardless of the requested URL.
 	r2 := r.Clone(r.Context())
 	r2.URL.Path = "/" + name
-	http.ServeFileFS(w, r2, fsys, name)
+	// gosec G703: name is never raw request input. Callers pass either a value
+	// from assets.logical (a build-time map) or a path already rejected unless
+	// it equals path.Clean(rel), has no "../" or leading "/", and is a key in
+	// assets.urls. fsys is an embed.FS, which cannot escape its tree regardless.
+	http.ServeFileFS(w, r2, fsys, name) //nolint:gosec // map-gated and path-validated; embed.FS cannot escape
 }

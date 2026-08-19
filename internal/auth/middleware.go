@@ -188,7 +188,10 @@ func (c SessionConfig) CSRF() func(http.Handler) http.Handler {
 // (SPEC §7, §15): __Host- prefix, Secure, HttpOnly, SameSite=Lax, Path=/, no
 // Domain. Secure is dropped only when Insecure is set (test seam).
 func (c SessionConfig) SetCookie(w http.ResponseWriter, raw string, expires time.Time) {
-	http.SetCookie(w, &http.Cookie{
+	// gosec G124: Secure is conditional on c.Insecure, which gosec cannot
+	// prove false. The construction here is correct — the defect is the
+	// production caller that sets Insecure: true (server.go), fixed by WU-526.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure gated on c.Insecure; caller bug tracked by WU-526
 		Name:     CookieName,
 		Value:    raw,
 		Path:     "/",
@@ -201,7 +204,7 @@ func (c SessionConfig) SetCookie(w http.ResponseWriter, raw string, expires time
 
 // ClearCookie expires the session cookie on the client.
 func (c SessionConfig) ClearCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // mirrors SetCookie above; see WU-526
 		Name:     CookieName,
 		Value:    "",
 		Path:     "/",

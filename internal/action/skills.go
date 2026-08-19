@@ -197,7 +197,11 @@ func encryptMcpEndpoints(ac ActionCtx, eps []McpEndpoint) (string, error) {
 	if len(eps) == 0 {
 		return "", nil
 	}
-	b, err := json.Marshal(eps)
+	// gosec G117 flags McpEndpoint.AuthToken reaching json.Marshal. This is
+	// the marshal step immediately before encryption below; the plaintext JSON
+	// is returned only when no secret key is configured, which config.Load
+	// forbids in production (BC_SECRET_KEY is required).
+	b, err := json.Marshal(eps) //nolint:gosec // marshalled solely as input to Seal below
 	if err != nil {
 		return "", fmt.Errorf("encrypt endpoints: marshal: %w", err)
 	}

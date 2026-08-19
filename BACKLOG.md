@@ -774,7 +774,7 @@ Deps: none.
 - The Dockerfile installs `ca-certificates` **and** copies `/etc/ssl/certs/ca-certificates.crt` from the builder — redundant; and the build carries no `-trimpath` or version ldflags, so `bc` reports no version.
 AC: CHANGELOG covers WU-509 – WU-518 and the Phase 6 fixes; README links resolve on GitHub (CI link-check if cheap); the `public/` line is corrected; Q3 answered; Dockerfile deduplicated and stamped with a version.
 
-### WU-547 · Migrate to golangci-lint v2 — `ready`
+### WU-547 · Migrate to golangci-lint v2 — `done (2026-08-19)`
 Deps: none (CI unblocked by pinning in the meantime).
 `.github/workflows/lint.yml` used `version: latest` for `golangci-lint-action`. When golangci-lint v2 shipped, `latest` floated onto it and v2 **rejects this repo's v1-format `.golangci.yml` outright**:
 ```
@@ -797,3 +797,10 @@ Note `migrate` drops `errcheck`/`gosimple`/`govet`/`ineffassign`/`staticcheck`/`
 
 The test-file findings (G124 on `http.Cookie` in httptest requests, G122/G703 on `filepath.Walk` helpers) are the expected false-positive class and should be handled with a scoped `exclusions.rules` block for `_test.go`, **not** by disabling the rules globally.
 AC: `.golangci.yml` is v2-format (`version: "2"`) and `golangci-lint-action` is bumped to a version supporting v2; the effective linter set is unchanged or wider, evidenced by `golangci-lint linters` output in the PR; each production finding above is either fixed or suppressed with a per-line justification comment (no blanket rule disables); test-file false positives are excluded by path rule; the pinned version in `lint.yml` moves to the v2 pin in the same commit; `make check` and CI use the **same** pinned version so they cannot drift again (see WU-545).
+Result: **all AC met.** `.golangci.yml` migrated to `version: "2"` via `golangci-lint migrate`; action bumped `v6` → **v9** (v7+ is v2-only; v9 needs golangci-lint ≥ v2.1.0) and pinned to **v2.12.2** — deliberately not `latest`, which is what broke CI in the first place. The Makefile now runs the *same* pinned version via `go run …@$(GOLANGCI_VERSION)`, matching the sqlc/templ pattern, so `make check` and CI cannot drift.
+Linter coverage verified, not assumed: v1 enabled {errcheck, gosec, gosimple, govet, ineffassign, misspell, prealloc, staticcheck, unconvert, unused}; v2 enables the same set minus `gosimple`. Confirmed by probe that `gosimple` was folded into `staticcheck` — an S1002 violation is now reported as `staticcheck`, so nothing is lost.
+Findings 22 → **0**. The 13 test-harness false positives (G124 on httptest cookies, G703/G122 on temp-dir fixtures, one prealloc) are excluded by `_test.go` path rules scoped **by rule id**, not by disabling gosec for tests. The 9 production findings were triaged individually:
+- **Fixed (2):** `server.go` search-indexer goroutine used `context.Background()` while the request-scoped `ctx` was in the same `select` — indexing was uncancellable at shutdown (G118). `web.go` CSV export gained `X-Content-Type-Options: nosniff` (G705).
+- **Suppressed as tracked defects (5):** G124 ×2 (`middleware.go`) and G704 ×2 (`github.go`) → **WU-526**; G120 (`storage.go` unbounded body) → **WU-541**. These `//nolint` comments are IOUs naming their owning WU, not dismissals — the underlying bugs are real.
+- **Suppressed as genuine false positives (2):** G117 (`skills.go`, marshal feeding directly into `Seal`) and G703 (`static.go`, name is map-gated and `path.Clean`-validated on an `embed.FS`).
+Full-pass: `golangci-lint v2.12.2` 0 issues; `gofmt -l` clean; `go build ./...` and `go vet ./...` exit 0; `go test -race ./...` PASS (all packages).
