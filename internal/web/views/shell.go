@@ -36,6 +36,13 @@ type Shell struct {
 	// Active is the Href of the current primary-nav item ("" for none);
 	// matching links render aria-current="page".
 	Active string
+	// Description is the meta/Open Graph description for the page ("" for
+	// none). Populated for public/landing pages so social previews and
+	// search results have a real description instead of a blank card.
+	Description string
+	// Path is the canonical request path (e.g. "/" or "/boards"). Used for
+	// the canonical URL and Open Graph url meta tags.
+	Path string
 }
 
 // ShellAssets are the resolved (content-hashed) URLs of the shell's static
