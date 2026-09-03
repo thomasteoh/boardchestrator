@@ -975,3 +975,37 @@ a {
   font-weight: 600;
 }
 .bc-wiki-nav-api { margin-top: 1rem; }
+/* ===== Dynamic status / step / approval / thread colour semantics ===== */
+
+/* Run & task statuses — semantic tokens adapt to both themes. */
+.bc-status-queued { color: var(--bc-text-muted); }
+.bc-status-running { color: var(--bc-accent); }
+.bc-status-awaiting_approval { color: var(--bc-warning); }
+.bc-status-finished { color: var(--bc-success); }
+.bc-status-cancelled { color: var(--bc-text-muted); }
+.bc-status-failed { color: var(--bc-danger); }
+
+/* Run step kinds — left accent bar. */
+.bc-step-tool { border-left: 3px solid var(--bc-accent); }
+.bc-step-read { border-left: 3px solid var(--bc-success); }
+.bc-step-search { border-left: 3px solid var(--bc-accent); }
+.bc-step-agent { border-left: 3px solid var(--bc-text-muted); }
+.bc-step-user { border-left: 3px solid var(--bc-warning); }
+.bc-step-done { border-left: 3px solid var(--bc-success); }
+.bc-step-error { border-left: 3px solid var(--bc-danger); }
+
+/* Approval statuses. */
+.bc-approval-pending { border-color: var(--bc-warning); }
+.bc-approval-approved { border-color: var(--bc-success); }
+.bc-approval-rejected { border-color: var(--bc-danger); }
+.bc-approval-error { border-color: var(--bc-danger); }
+.bc-approval-status.bc-approval-pending { color: var(--bc-warning); }
+.bc-approval-status.bc-approval-approved { color: var(--bc-success); }
+.bc-approval-status.bc-approval-rejected { color: var(--bc-danger); }
+
+/* Thread runs (task agent thread) reuse run statuses; the card border
+   echoes the status colour so a failed run reads instantly. */
+.bc-thread-run.bc-thread-running { border-left: 3px solid var(--bc-accent); }
+.bc-thread-run.bc-thread-finished { border-left: 3px solid var(--bc-success); }
+.bc-thread-run.bc-thread-failed { border-left: 3px solid var(--bc-danger); }
+.bc-thread-run.bc-thread-awaiting_approval { border-left: 3px solid var(--bc-warning); }
