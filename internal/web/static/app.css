@@ -43,6 +43,8 @@
   --bc-space-8: 2rem;
   --bc-radius: 8px;
   --bc-radius-sm: 4px;
+  --bc-radius-md: 10px;
+  --bc-surface-hover: #eef0f4;
 
   /* layout */
   --bc-header-h: 3.25rem;
@@ -65,6 +67,8 @@
   --bc-accent: #5b8ff5;
   --bc-accent-contrast: #ffffff;
   --bc-accent-soft: #23324d;
+  --bc-radius-md: 10px;
+  --bc-surface-hover: #2a323e;
   --bc-danger: #ef5350;
   --bc-success: #66bb6a;
   --bc-warning: #ffb74d;
@@ -86,6 +90,8 @@
     --bc-accent: #5b8ff5;
     --bc-accent-contrast: #ffffff;
     --bc-accent-soft: #23324d;
+    --bc-radius-md: 10px;
+    --bc-surface-hover: #2a323e;
     --bc-danger: #ef5350;
     --bc-success: #66bb6a;
     --bc-warning: #ffb74d;
@@ -687,7 +693,7 @@ a {
 }
 
 .bc-btn-secondary:hover {
-  background: var(--bc-surface-hover, var(--bc-bg));
+  background: var(--bc-surface-hover);
 }
 
 .bc-btn-danger {
@@ -881,7 +887,7 @@ a {
 .bc-feature-card {
   background: var(--bc-surface);
   border: 1px solid var(--bc-border);
-  border-radius: var(--bc-radius-md, 10px);
+  border-radius: var(--bc-radius-md);
   box-shadow: var(--bc-shadow, none);
   padding: 1.5rem;
 }
@@ -948,7 +954,7 @@ a {
 .bc-prose ul, .bc-prose ol { margin: 0 0 0.75rem 1.4rem; }
 .bc-prose li { margin: 0.25rem 0; }
 .bc-prose code {
-  background: var(--bc-surface-hover, var(--bc-bg));
+  background: var(--bc-surface-hover);
   border: 1px solid var(--bc-border);
   border-radius: 4px;
   padding: 0.1em 0.3em;
