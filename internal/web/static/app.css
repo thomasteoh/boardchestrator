@@ -975,3 +975,19 @@ a {
   font-weight: 600;
 }
 .bc-wiki-nav-api { margin-top: 1rem; }
+
+/* ===== Settings & shared utility classes (legacy migration) ===== */
+.bc-settings-page { display: flex; flex-direction: column; gap: var(--bc-space-3); max-width: 56rem; }
+.bc-field-group { display: flex; flex-direction: column; gap: var(--bc-space-2); }
+.bc-muted { color: var(--bc-text-muted); }
+.bc-hidden { display: none !important; }
+.bc-table {
+  width: 100%; border-collapse: collapse; font-size: var(--bc-text-sm);
+}
+.bc-table th, .bc-table td {
+  text-align: left; padding: var(--bc-space-2) var(--bc-space-3);
+  border-bottom: 1px solid var(--bc-border);
+}
+.bc-table th { font-weight: 600; color: var(--bc-text-muted); }
+.bc-table tbody tr:hover { background: var(--bc-bg); }
+.bc-empty-state { color: var(--bc-text-muted); padding: var(--bc-space-4) 0; text-align: center; }
