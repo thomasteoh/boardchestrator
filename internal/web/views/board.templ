@@ -54,10 +54,11 @@ templ BoardPage(s Shell, projectID string, columns []ColumnView, swimlanes []Swi
 
 					<div class="bc-col-cards" id="col-cards-{ col.ID }">
 						for _, c := range col.Cards {
-							<div class="bc-card" data-sort-key={ c.ID }>
+							<div class="bc-card" role="link" tabindex="0" data-sort-key={ c.ID }>
 								<a
 									href={ templ.URL("/app/project/"+projectID+"/task/"+c.ID) }
 									class="bc-card-link"
+									tabindex="-1"
 								>
 									<div class="bc-card-key">{ c.Key }</div>
 									<div class="bc-card-title">{ c.Title }</div>
@@ -231,7 +232,7 @@ templ BoardColumnsPartial(projectID string, columns []ColumnView, swimlanes []Sw
 
 			<div class="bc-col-cards" id="col-cards-{ col.ID }">
 				for _, c := range col.Cards {
-					<div class="bc-card" data-sort-key={ c.ID }>
+					<div class="bc-card" tabindex="0" data-sort-key={ c.ID }>
 						<a
 							href={ templ.URL("/app/project/"+projectID+"/task/"+c.ID) }
 							class="bc-card-link"
