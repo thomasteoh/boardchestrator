@@ -74,7 +74,7 @@ templ ChatPage(s Shell, scopes []ChatScope, agents []ChatAgent, sessions []ChatS
 				<button class="bc-btn-primary" type="button" x-on:click="newSession">New chat</button>
 
 				<!-- Session list -->
-				<div class="bc-chat-sessions">
+				<div class="bc-chat-sessions" id="chat-sessions">
 					for _, sess := range sessions {
 						<button
 							class="bc-chat-session"
@@ -107,6 +107,20 @@ templ ChatPage(s Shell, scopes []ChatScope, agents []ChatAgent, sessions []ChatS
 				</form>
 			</section>
 		</div>
+	}
+}
+
+// ChatSessionsPartial renders the session list fragment for the currently
+// selected scope. It is swapped into #chat-sessions by loadSessions() when the
+// scope selector changes. Note: templ cannot parse a for loop wrapped by a
+// top-level div, so the partial emits the buttons at the top level and
+// loadSessions swaps the existing div's innerHTML.
+templ ChatSessionsPartial(sessions []ChatSessionRow) {
+	for _, sess := range sessions {
+		<button class="bc-chat-session" type="button" x-on:click="openSession('{ sess.ID }')">
+			{ sess.Name }<br/>
+			<small>{ sess.UpdatedAt }</small>
+		</button>
 	}
 }
 
