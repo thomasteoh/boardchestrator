@@ -1359,3 +1359,25 @@ a {
   .bc-wiki { grid-template-columns: 14rem 1fr; }
   .bc-wiki-edit { grid-template-columns: 1fr 1fr; }
 }
+/* ---------- Chat message roles (bc-chat-msg-system / -tool) ----------
+ * chat.templ emits bc-chat-msg bc-chat-msg-{m.Role}; the -user and
+ * -assistant variants live on fix/chat-styling. These two rarer roles had
+ * no styling at all, so system and tool messages rendered as bare text
+ * instead of distinct bubbles.
+ */
+
+.bc-chat-msg-system {
+  align-self: stretch;
+  background: var(--bc-surface-hover, var(--bc-surface));
+  border: 1px dashed var(--bc-border);
+  color: var(--bc-text-muted);
+  font-size: var(--bc-text-sm);
+}
+
+.bc-chat-msg-tool {
+  align-self: stretch;
+  background: var(--bc-surface-hover, var(--bc-surface));
+  border: 1px solid var(--bc-border);
+  font-family: var(--bc-font-mono, ui-monospace, monospace);
+  font-size: var(--bc-text-sm);
+}
