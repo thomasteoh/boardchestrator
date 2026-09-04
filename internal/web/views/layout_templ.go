@@ -324,7 +324,7 @@ func navLinks(active string, mobileOnly bool) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, " <span id=\"notif-badge\" class=\"bc-notif-badge\" x-text=\"unreadCount > 0 ? unreadCount : ''\" style=\"display:none\">0</span>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, " <span id=\"notif-badge\" class=\"bc-notif-badge\" x-show=\"unreadCount > 0\" x-text=\"unreadCount > 0 ? unreadCount : ''\">0</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
