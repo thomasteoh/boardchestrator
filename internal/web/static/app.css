@@ -1389,3 +1389,45 @@ a {
 }
 .bc-table tbody tr:hover { background: var(--bc-bg); }
 .bc-empty-state { color: var(--bc-text-muted); padding: var(--bc-space-4) 0; text-align: center; }
+/* ---------- Misc component classes ----------
+ * bc-drawer-btn (mobile nav toggle), bc-run-steps-title (run detail steps
+ * heading) and bc-step-resp (step response pre) were referenced but never
+ * styled. bc-drawer-btn should only be visible on mobile (the drawer is a
+ * small-screen affordance); the steps title and response pre use tokens.
+ */
+
+/* Mobile drawer toggle: only shown below the sidebar breakpoint. The header
+ * nav is the desktop affordance; the drawer button belongs to small screens. */
+.bc-drawer-btn {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .bc-drawer-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.bc-run-steps-title {
+  margin: var(--bc-space-4) 0 var(--bc-space-2);
+  font-size: var(--bc-text-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--bc-text-muted);
+}
+
+.bc-step-resp {
+  margin: var(--bc-space-2) 0 0;
+  padding: var(--bc-space-3);
+  background: var(--bc-surface);
+  border: 1px solid var(--bc-border);
+  border-radius: var(--bc-radius-sm);
+  font-family: var(--bc-font-mono);
+  font-size: var(--bc-text-sm);
+  color: var(--bc-text);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
