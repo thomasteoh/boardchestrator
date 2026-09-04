@@ -12,6 +12,16 @@ templ Base(s Shell) {
 			<title>{ s.Title } · Boardchestrator</title>
 			<link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
 			<link rel="manifest" href="/manifest.json"/>
+			<link rel="canonical" href="https://boardchestrator.com{ s.Path }"/>
+			if s.Description != "" {
+				<meta name="description" content={ s.Description }/>
+				<meta property="og:title" content={ s.Title }/>
+				<meta property="og:description" content={ s.Description }/>
+				<meta property="og:type" content="website"/>
+				<meta property="og:url" content="https://boardchestrator.com{ s.Path }"/>
+				<meta property="og:site_name" content="Boardchestrator"/>
+				<meta name="twitter:card" content="summary"/>
+			}
 			<link rel="stylesheet" href={ templ.URL(s.Assets.AppCSS) }/>
 			// Nonced theme bootstrap: applies the persisted theme before first
 			// paint so a dark-theme user never sees a light flash. The only

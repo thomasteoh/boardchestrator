@@ -48,6 +48,7 @@ func RenderErrorPage(w http.ResponseWriter, r *http.Request, status int, title, 
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
 	s := shellData(r, "Home", "")
+	s.Description = "Boardchestrator is the operating system for your agents — visual task boards, autonomous agents, a project wiki and universal MCP tool integration in one self-hosted workspace."
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if auth.IsAuthenticated(r.Context()) {
 		http.Redirect(w, r, "/app", http.StatusSeeOther)
@@ -67,6 +68,7 @@ func shellData(r *http.Request, title, active string) views.Shell {
 		Title: title,
 		Nonce: auth.Nonce(r.Context()),
 		CSRF:  auth.CSRFFrom(r.Context()),
+		Path:  r.URL.Path,
 		Assets: views.ShellAssets{
 			AppCSS:   AssetURL("app.css"),
 			HTMX:     AssetURL("vendor/htmx.min.js"),
