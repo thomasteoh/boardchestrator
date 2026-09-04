@@ -451,6 +451,24 @@ document.addEventListener("alpine:init", function () {
             }
           }
         });
+
+        // Enter on a focused card (not grabbing) opens the task link. The card
+        // div is the single tab stop (role="link" tabindex="0"); the inner <a>
+        // is tabindex=-1 so it isn't a second stop, and Space grabs / arrows
+        // move / Enter drops when grabbing (handled above). This handler covers
+        // the non-grabbing Enter-to-open case.
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.altKey && !grabActive) {
+            var focused = document.activeElement;
+            if (focused && focused.classList.contains("bc-card")) {
+              var link = focused.querySelector(".bc-card-link");
+              if (link && link.href) {
+                e.preventDefault();
+                window.location.href = link.href;
+              }
+            }
+          }
+        });
       },
       prevCol: function () {
         if (this.focusCol > 0) {
