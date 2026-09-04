@@ -99,7 +99,14 @@ func handleChatPage(w http.ResponseWriter, r *http.Request) {
 	if len(chatAgents) > 0 {
 		activeAgent = chatAgents[0].ID
 	}
-	if err := views.ChatPage(s, scopes, chatAgents, sessionRows, active, activeAgent).Render(ctx, w); err != nil {
+	// Pre-select the most recent session (sessionRows[0]) so the composer is
+	// usable immediately — the Alpine component's send() returns early while
+	// chatID is empty. The template passes this as data-chat-id.
+	activeSessionID := ""
+	if len(sessionRows) > 0 {
+		activeSessionID = sessionRows[0].ID
+	}
+	if err := views.ChatPage(s, scopes, chatAgents, sessionRows, active, activeAgent, activeSessionID).Render(ctx, w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }

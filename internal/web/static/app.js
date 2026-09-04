@@ -534,6 +534,9 @@ document.addEventListener("alpine:init", function () {
         this.scopeOrg = el.dataset.scopeOrg || "";
         this.scopeTeam = el.dataset.scopeTeam || "";
         this.scopeProject = el.dataset.scopeProject || "";
+        // Pre-select the first (most recent) session so the composer is usable
+        // immediately; send() returns early while chatID is empty.
+        this.chatID = el.dataset.chatId || "";
 
         // Streamed assistant deltas append to the transcript.
         var self = this;

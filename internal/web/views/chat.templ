@@ -40,9 +40,9 @@ type ChatMessageRow struct {
 
 // ChatPage is the /chat page: scope selector, agent picker, session list,
 // transcript, message input, and inline propose→approve action cards.
-templ ChatPage(s Shell, scopes []ChatScope, agents []ChatAgent, sessions []ChatSessionRow, active ChatScope, activeAgent string) {
+templ ChatPage(s Shell, scopes []ChatScope, agents []ChatAgent, sessions []ChatSessionRow, active ChatScope, activeAgent string, activeSessionID string) {
 	@Base(s) {
-		<div class="bc-chat" x-data="chat" data-agent={ activeAgent } data-scope-kind={ active.Kind } data-scope-org={ active.OrgID } data-scope-team={ active.TeamID } data-scope-project={ active.ProjectID }>
+		<div class="bc-chat" x-data="chat" data-agent={ activeAgent } data-scope-kind={ active.Kind } data-scope-org={ active.OrgID } data-scope-team={ active.TeamID } data-scope-project={ active.ProjectID } data-chat-id={ activeSessionID }>
 			<aside class="bc-chat-sidebar" aria-label="Chat controls">
 				<!-- Scope selector: project (default) / team / org -->
 				<div class="bc-chat-field">
