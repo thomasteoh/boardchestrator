@@ -11,32 +11,32 @@ type APIKeyRow struct {
 
 templ APIKeysPage(s Shell, orgID string, keys []APIKeyRow) {
 	@Base(s) {
-		<div class="settings-page">
+		<div class="bc-settings-page">
 			<h2>API Keys</h2>
-			<p class="text-dimmed">Keys let you authenticate API requests with a Bearer token. The secret is shown once on creation.</p>
+			<p class="bc-muted">Keys let you authenticate API requests with a Bearer token. The secret is shown once on creation.</p>
 
-			<button class="btn primary" onclick="showApiKeyForm()">Create API Key</button>
+			<button class="bc-btn bc-btn-primary" onclick="showApiKeyForm()">Create API Key</button>
 
-			<div id="apikey-form" style="display:none; margin-top: 1rem;">
+			<div id="apikey-form" class="bc-hidden" style="margin-top: 1rem;">
 				<form hx-post="/api/action/apikey.create" hx-headers={ hxHeaders(s.CSRF) } hx-target="#apikey-result" hx-swap="innerHTML">
 					<input type="hidden" name="org_id" value={orgID} />
-					<div class="field">
+					<div class="bc-field-group">
 						<label>Name</label>
-						<input type="text" name="name" required placeholder="e.g. CI deploy key" />
+						<input type="text" name="name" required placeholder="e.g. CI deploy key" class="bc-input" />
 					</div>
-					<div class="field">
+					<div class="bc-field-group">
 						<label>Scope (optional)</label>
-						<input type="text" name="scope" placeholder="task.*, project.read" />
+						<input type="text" name="scope" placeholder="task.*, project.read" class="bc-input" />
 					</div>
-					<button type="submit" class="btn primary">Create</button>
-					<button type="button" class="btn" onclick="hideApiKeyForm()">Cancel</button>
+					<button type="submit" class="bc-btn bc-btn-primary">Create</button>
+					<button type="button" class="bc-btn" onclick="hideApiKeyForm()">Cancel</button>
 				</form>
 			</div>
 
-			<div id="apikey-result" style="margin-top: 1rem;"></div>
+			<div id="apikey-result" class="bc-hint" style="margin-top: 1rem;"></div>
 
 			<h3 style="margin-top: 2rem;">Active Keys</h3>
-			<table class="keys-table">
+			<table class="bc-table">
 				<thead>
 					<tr>
 						<th>Name</th>
@@ -49,7 +49,7 @@ templ APIKeysPage(s Shell, orgID string, keys []APIKeyRow) {
 				</thead>
 				<tbody>
 					if len(keys) == 0 {
-						<tr><td colspan="6" class="empty">No API keys yet.</td></tr>
+						<tr><td colspan="6" class="bc-empty-state">No API keys yet.</td></tr>
 					}
 					for _, k := range keys {
 						<tr>
@@ -59,12 +59,12 @@ templ APIKeysPage(s Shell, orgID string, keys []APIKeyRow) {
 							<td>{k.CreatedAt}</td>
 							<td>{k.LastUsed}</td>
 							<td>
-								<button class="btn small danger"
+								<button class="bc-btn bc-btn-sm bc-btn-danger"
 									hx-post="/api/action/apikey.revoke"
 									hx-headers={ hxHeaders(s.CSRF) }
 									hx-vals={ `{"id":"` + k.ID + `","org_id":"` + orgID + `"}` }
 									hx-confirm="Revoke this key?"
-								>Revoke</button>
+									>Revoke</button>
 							</td>
 						</tr>
 					}

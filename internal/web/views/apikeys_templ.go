@@ -50,7 +50,7 @@ func APIKeysPage(s Shell, orgID string, keys []APIKeyRow) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"settings-page\"><h2>API Keys</h2><p class=\"text-dimmed\">Keys let you authenticate API requests with a Bearer token. The secret is shown once on creation.</p><button class=\"btn primary\" onclick=\"showApiKeyForm()\">Create API Key</button><div id=\"apikey-form\" style=\"display:none; margin-top: 1rem;\"><form hx-post=\"/api/action/apikey.create\" hx-headers=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"bc-settings-page\"><h2>API Keys</h2><p class=\"bc-muted\">Keys let you authenticate API requests with a Bearer token. The secret is shown once on creation.</p><button class=\"bc-btn bc-btn-primary\" onclick=\"showApiKeyForm()\">Create API Key</button><div id=\"apikey-form\" class=\"bc-hidden\" style=\"margin-top: 1rem;\"><form hx-post=\"/api/action/apikey.create\" hx-headers=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -76,12 +76,12 @@ func APIKeysPage(s Shell, orgID string, keys []APIKeyRow) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div class=\"field\"><label>Name</label> <input type=\"text\" name=\"name\" required placeholder=\"e.g. CI deploy key\"></div><div class=\"field\"><label>Scope (optional)</label> <input type=\"text\" name=\"scope\" placeholder=\"task.*, project.read\"></div><button type=\"submit\" class=\"btn primary\">Create</button> <button type=\"button\" class=\"btn\" onclick=\"hideApiKeyForm()\">Cancel</button></form></div><div id=\"apikey-result\" style=\"margin-top: 1rem;\"></div><h3 style=\"margin-top: 2rem;\">Active Keys</h3><table class=\"keys-table\"><thead><tr><th>Name</th><th>Prefix</th><th>Scope</th><th>Created</th><th>Last Used</th><th></th></tr></thead> <tbody>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div class=\"bc-field-group\"><label>Name</label> <input type=\"text\" name=\"name\" required placeholder=\"e.g. CI deploy key\" class=\"bc-input\"></div><div class=\"bc-field-group\"><label>Scope (optional)</label> <input type=\"text\" name=\"scope\" placeholder=\"task.*, project.read\" class=\"bc-input\"></div><button type=\"submit\" class=\"bc-btn bc-btn-primary\">Create</button> <button type=\"button\" class=\"bc-btn\" onclick=\"hideApiKeyForm()\">Cancel</button></form></div><div id=\"apikey-result\" class=\"bc-hint\" style=\"margin-top: 1rem;\"></div><h3 style=\"margin-top: 2rem;\">Active Keys</h3><table class=\"bc-table\"><thead><tr><th>Name</th><th>Prefix</th><th>Scope</th><th>Created</th><th>Last Used</th><th></th></tr></thead> <tbody>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(keys) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<tr><td colspan=\"6\" class=\"empty\">No API keys yet.</td></tr>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<tr><td colspan=\"6\" class=\"bc-empty-state\">No API keys yet.</td></tr>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -152,7 +152,7 @@ func APIKeysPage(s Shell, orgID string, keys []APIKeyRow) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</td><td><button class=\"btn small danger\" hx-post=\"/api/action/apikey.revoke\" hx-headers=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</td><td><button class=\"bc-btn bc-btn-sm bc-btn-danger\" hx-post=\"/api/action/apikey.revoke\" hx-headers=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

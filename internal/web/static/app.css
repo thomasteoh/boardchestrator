@@ -1143,6 +1143,12 @@ a {
   border-radius: 999px; font-size: 0.75rem; font-weight: 500;
   background: var(--bc-accent-soft); color: var(--bc-accent);
 }
+
+/* ===== Settings & shared utility classes (legacy migration) ===== */
+.bc-settings-page { display: flex; flex-direction: column; gap: var(--bc-space-3); max-width: 56rem; }
+.bc-field-group { display: flex; flex-direction: column; gap: var(--bc-space-2); }
+.bc-muted { color: var(--bc-text-muted); }
+.bc-hidden { display: none !important; }
 .bc-table {
   width: 100%; border-collapse: collapse; font-size: var(--bc-text-sm);
 }
@@ -1381,3 +1387,5 @@ a {
   font-family: var(--bc-font-mono, ui-monospace, monospace);
   font-size: var(--bc-text-sm);
 }
+.bc-table tbody tr:hover { background: var(--bc-bg); }
+.bc-empty-state { color: var(--bc-text-muted); padding: var(--bc-space-4) 0; text-align: center; }
