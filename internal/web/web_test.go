@@ -97,7 +97,7 @@ func TestManifestServed(t *testing.T) {
 	if !strings.Contains(json, `"theme_color": "#2f6fed"`) {
 		t.Error("manifest missing theme_color")
 	}
-	if !strings.Contains(json, `"background_color": "#1a1a1a"`) {
+	if !strings.Contains(json, `"background_color": "#f6f7f9"`) {
 		t.Error("manifest missing background_color")
 	}
 	if !strings.Contains(json, `"start_url": "/"`) {
