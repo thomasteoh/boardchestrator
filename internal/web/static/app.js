@@ -539,12 +539,28 @@ document.addEventListener("alpine:init", function () {
         });
       },
 
-      // Load sessions for the currently selected scope.
+      // Load sessions for the currently selected scope. The scope selector
+      // (x-on:change="loadSessions") calls this; it reads the selected option's
+      // data-* attributes (the initial render only knows the default scope) and
+      // fetches the session-list partial for that scope, swapping it into the
+      // sidebar so the list reflects the new scope without a full page reload.
       loadSessions: function () {
-        // chat.session.list scopes through the action; the page handler already
-        // rendered the default scope's sessions. Full re-render on scope change
-        // is handled by the server partial (future WU); for now no-op beyond
-        // the selection state.
+        var sel = this.$el.querySelector("#chat-scope");
+        var opt = sel && sel.selectedOptions[0];
+        var kind = opt ? opt.value : this.scopeKind;
+        var org = opt ? (opt.dataset.org || "") : this.scopeOrg;
+        var team = opt ? (opt.dataset.team || "") : this.scopeTeam;
+        var proj = opt ? (opt.dataset.project || "") : this.scopeProject;
+        var params = new URLSearchParams({
+          kind: kind,
+          org_id: org,
+          project_id: proj,
+          team_id: team
+        });
+        htmx.ajax("GET", "/app/chat/sessions-partial?" + params.toString(), {
+          target: "#chat-sessions",
+          swap: "innerHTML"
+        });
       },
 
       newSession: function () {

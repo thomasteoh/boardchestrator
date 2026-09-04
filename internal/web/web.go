@@ -900,6 +900,55 @@ func handleCommentsPartial(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleChatSessionsPartial renders the session list fragment for the chat
+// scope selected in the sidebar (WU-308). It is swapped by loadSessions() when
+// the scope/agent selector changes. The scope is read from query params; the
+// org scope comes from the authenticated user so a cross-org scope yields no
+// rows.
+func handleChatSessionsPartial(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	sess, ok := auth.SessionFrom(r.Context())
+	if !ok || sess.UserID == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	db := disp.DB()
+	if db == nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	q := sqlc.New(db)
+	orgID := r.URL.Query().Get("org_id")
+	projectID := r.URL.Query().Get("project_id")
+	kind := r.URL.Query().Get("kind")
+	var sessions []sqlc.ChatSession
+	var err error
+	switch kind {
+	case "org":
+		sessions, err = q.ListChatSessionsByOrg(r.Context(), sqlc.ListChatSessionsByOrgParams{
+			OrgID: orgID,
+			Limit: 50,
+		})
+	default: // project
+		sessions, err = q.ListChatSessionsByProject(r.Context(), sqlc.ListChatSessionsByProjectParams{
+			OrgID:     orgID,
+			ProjectID: sql.NullString{String: projectID, Valid: projectID != ""},
+			Limit:     50,
+		})
+	}
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	rows := make([]views.ChatSessionRow, 0, len(sessions))
+	for _, s := range sessions {
+		rows = append(rows, views.ChatSessionRow{ID: s.ID, Name: s.Name, UpdatedAt: s.UpdatedAt})
+	}
+	if err := views.ChatSessionsPartial(rows).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
 // handleNotifUnreadCount returns the unread notification count for the current
 // user as JSON. Used by the notification badge SSE refresh. Falls back to 0
 // when unauthenticated or no dispatcher/DB is wired (WU-510: stub → real).
@@ -1329,6 +1378,7 @@ func Routes(r chi.Router) {
 	r.Get("/app/org/{orgID}/project/{projectID}/triggers", handleScheduledTriggers)
 	// Chat routes (WU-308)
 	r.Get("/app/chat", handleChatPage)
+	r.Get("/app/chat/sessions-partial", handleChatSessionsPartial)
 	r.Get("/app/chat/{chatID}/history", handleChatHistoryPartial)
 	r.Post("/api/action/chat.session.create", handleAction)
 	r.Post("/api/action/chat.send", handleAction)
