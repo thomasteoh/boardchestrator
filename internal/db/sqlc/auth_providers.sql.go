@@ -24,8 +24,8 @@ func (q *Queries) CountIdentitiesByProvider(ctx context.Context, provider string
 const createAuthProvider = `-- name: CreateAuthProvider :exec
 INSERT INTO auth_providers (id, org_id, kind, preset, display_name, enabled, managed_by, issuer,
                             client_id, client_secret_enc, scopes, claim_map_json,
-                            trust_email, allow_signup, allowed_tenants_json, position)
-VALUES (?, NULL, ?, ?, ?, ?, 'ui', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            trust_email, allow_signup, allowed_tenants_json, position, idp_logout)
+VALUES (?, NULL, ?, ?, ?, ?, 'ui', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateAuthProviderParams struct {
@@ -43,6 +43,7 @@ type CreateAuthProviderParams struct {
 	AllowSignup        int64
 	AllowedTenantsJson string
 	Position           int64
+	IdpLogout          int64
 }
 
 func (q *Queries) CreateAuthProvider(ctx context.Context, arg CreateAuthProviderParams) error {
@@ -61,6 +62,7 @@ func (q *Queries) CreateAuthProvider(ctx context.Context, arg CreateAuthProvider
 		arg.AllowSignup,
 		arg.AllowedTenantsJson,
 		arg.Position,
+		arg.IdpLogout,
 	)
 	return err
 }
@@ -90,7 +92,7 @@ func (q *Queries) DisableEnvAuthProvider(ctx context.Context, id string) error {
 }
 
 const getAuthProvider = `-- name: GetAuthProvider :one
-SELECT id, org_id, kind, preset, display_name, enabled, managed_by, issuer, client_id, client_secret_enc, scopes, claim_map_json, trust_email, allow_signup, allowed_tenants_json, saml_metadata_url, saml_metadata_xml, sp_key_enc, sp_cert, position, created_at, updated_at FROM auth_providers
+SELECT id, org_id, kind, preset, display_name, enabled, managed_by, issuer, client_id, client_secret_enc, scopes, claim_map_json, trust_email, allow_signup, allowed_tenants_json, saml_metadata_url, saml_metadata_xml, sp_key_enc, sp_cert, position, created_at, updated_at, idp_logout FROM auth_providers
 WHERE id = ?
 `
 
@@ -120,12 +122,13 @@ func (q *Queries) GetAuthProvider(ctx context.Context, id string) (AuthProvider,
 		&i.Position,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IdpLogout,
 	)
 	return i, err
 }
 
 const listAuthProviders = `-- name: ListAuthProviders :many
-SELECT id, org_id, kind, preset, display_name, enabled, managed_by, issuer, client_id, client_secret_enc, scopes, claim_map_json, trust_email, allow_signup, allowed_tenants_json, saml_metadata_url, saml_metadata_xml, sp_key_enc, sp_cert, position, created_at, updated_at FROM auth_providers
+SELECT id, org_id, kind, preset, display_name, enabled, managed_by, issuer, client_id, client_secret_enc, scopes, claim_map_json, trust_email, allow_signup, allowed_tenants_json, saml_metadata_url, saml_metadata_xml, sp_key_enc, sp_cert, position, created_at, updated_at, idp_logout FROM auth_providers
 ORDER BY position, id
 `
 
@@ -161,6 +164,7 @@ func (q *Queries) ListAuthProviders(ctx context.Context) ([]AuthProvider, error)
 			&i.Position,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IdpLogout,
 		); err != nil {
 			return nil, err
 		}
@@ -177,7 +181,7 @@ func (q *Queries) ListAuthProviders(ctx context.Context) ([]AuthProvider, error)
 
 const listEnabledAuthProviders = `-- name: ListEnabledAuthProviders :many
 
-SELECT id, org_id, kind, preset, display_name, enabled, managed_by, issuer, client_id, client_secret_enc, scopes, claim_map_json, trust_email, allow_signup, allowed_tenants_json, saml_metadata_url, saml_metadata_xml, sp_key_enc, sp_cert, position, created_at, updated_at FROM auth_providers
+SELECT id, org_id, kind, preset, display_name, enabled, managed_by, issuer, client_id, client_secret_enc, scopes, claim_map_json, trust_email, allow_signup, allowed_tenants_json, saml_metadata_url, saml_metadata_xml, sp_key_enc, sp_cert, position, created_at, updated_at, idp_logout FROM auth_providers
 WHERE enabled = 1
 ORDER BY position, id
 `
@@ -217,6 +221,7 @@ func (q *Queries) ListEnabledAuthProviders(ctx context.Context) ([]AuthProvider,
 			&i.Position,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IdpLogout,
 		); err != nil {
 			return nil, err
 		}
@@ -236,7 +241,7 @@ const listPlatformAuthProviders = `-- name: ListPlatformAuthProviders :many
 SELECT p.id, p.kind, p.preset, p.display_name, p.enabled, p.managed_by, p.issuer,
        p.client_id, CAST(p.client_secret_enc <> '' AS INTEGER) AS has_secret,
        p.scopes, p.claim_map_json, p.trust_email, p.allow_signup,
-       p.allowed_tenants_json, p.position, p.created_at, p.updated_at,
+       p.allowed_tenants_json, p.position, p.created_at, p.updated_at, p.idp_logout,
        CAST((SELECT COUNT(*) FROM identities i WHERE i.provider = p.id) AS INTEGER) AS identity_count
 FROM auth_providers p
 WHERE p.org_id IS NULL
@@ -261,6 +266,7 @@ type ListPlatformAuthProvidersRow struct {
 	Position           int64
 	CreatedAt          string
 	UpdatedAt          string
+	IdpLogout          int64
 	IdentityCount      int64
 }
 
@@ -296,6 +302,7 @@ func (q *Queries) ListPlatformAuthProviders(ctx context.Context) ([]ListPlatform
 			&i.Position,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IdpLogout,
 			&i.IdentityCount,
 		); err != nil {
 			return nil, err
@@ -355,6 +362,7 @@ SET preset               = ?,
     allow_signup         = ?,
     allowed_tenants_json = ?,
     position             = ?,
+    idp_logout           = ?,
     updated_at           = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ? AND org_id IS NULL AND managed_by = 'ui'
 `
@@ -371,6 +379,7 @@ type UpdateAuthProviderParams struct {
 	AllowSignup        int64
 	AllowedTenantsJson string
 	Position           int64
+	IdpLogout          int64
 	ID                 string
 }
 
@@ -389,6 +398,7 @@ func (q *Queries) UpdateAuthProvider(ctx context.Context, arg UpdateAuthProvider
 		arg.AllowSignup,
 		arg.AllowedTenantsJson,
 		arg.Position,
+		arg.IdpLogout,
 		arg.ID,
 	)
 	if err != nil {

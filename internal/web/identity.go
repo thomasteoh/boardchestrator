@@ -358,7 +358,7 @@ func handleIdPNew(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, views.IdPAdminBase, http.StatusSeeOther)
 		return
 	}
-	f := buildIdPForm(p, formValues{trust: p.TrustEmail, enabled: true}, false)
+	f := buildIdPForm(p, formValues{trust: p.TrustEmail, enabled: true, idpLogout: p.SupportsLogout}, false)
 	renderIdPForm(w, r, http.StatusOK, f)
 }
 
@@ -386,7 +386,7 @@ func handleIdPEdit(w http.ResponseWriter, r *http.Request) {
 	f := buildIdPForm(p, formValues{
 		id: v.ID, displayName: v.DisplayName, params: v.Params, clientID: v.ClientID,
 		scopes: v.Scopes, claims: v.ClaimMap, trust: v.TrustEmail, signup: v.AllowSignup,
-		tenants: tenants, position: strconv.FormatInt(v.Position, 10), enabled: v.Enabled,
+		idpLogout: v.IdPLogout, tenants: tenants, position: strconv.FormatInt(v.Position, 10), enabled: v.Enabled,
 	}, true)
 	f.SecretSet = v.SecretSet
 	f.ReadOnly = v.ManagedBy == "env"
@@ -501,7 +501,7 @@ func handleIdPDiscover(w http.ResponseWriter, r *http.Request) {
 type formValues struct {
 	id, preset, displayName, clientID, secret, scopes, tenants, position string
 	params, claims                                                       map[string]string
-	trust, signup, enabled                                               bool
+	trust, signup, enabled, idpLogout                                    bool
 }
 
 func readFormValues(r *http.Request, editID string) formValues {
@@ -513,7 +513,7 @@ func readFormValues(r *http.Request, editID string) formValues {
 		tenants: f.Get("allowed_tenants"), position: strings.TrimSpace(f.Get("position")),
 		params: map[string]string{}, claims: map[string]string{},
 		trust: f.Get("trust_email") == "1", signup: f.Get("allow_signup") == "1",
-		enabled: f.Get("enabled") == "1",
+		enabled: f.Get("enabled") == "1", idpLogout: f.Get("idp_logout") == "1",
 	}
 	if editID != "" {
 		fv.id = editID
@@ -536,11 +536,11 @@ func readFormValues(r *http.Request, editID string) formValues {
 var errFormPosition = errors.New("position must be a whole number")
 
 func (fv formValues) input(editing bool) (idp.ProviderInput, error) {
-	trust, signup := fv.trust, fv.signup
+	trust, signup, logout := fv.trust, fv.signup, fv.idpLogout
 	in := idp.ProviderInput{
 		ID: fv.id, Preset: fv.preset, DisplayName: fv.displayName, Params: fv.params,
 		ClientID: fv.clientID, ClientSecret: fv.secret, Scopes: fv.scopes, ClaimMap: fv.claims,
-		TrustEmail: &trust, AllowSignup: &signup,
+		TrustEmail: &trust, AllowSignup: &signup, IdPLogout: &logout,
 	}
 	in.AllowedTenants = strings.FieldsFunc(fv.tenants, func(r rune) bool {
 		return r == '\n' || r == '\r' || r == ',' || r == ' ' || r == '\t'
@@ -572,6 +572,7 @@ func buildIdPForm(p idp.Preset, fv formValues, editing bool) views.IdPForm {
 		Scopes: fv.scopes, DefaultScopes: strings.Join(p.Scopes, " "),
 		TrustEmail: fv.trust, AllowSignup: fv.signup, AllowedTenants: fv.tenants,
 		Position: fv.position, Enabled: fv.enabled, ShowTenants: p.ID == "microsoft",
+		IdPLogout: fv.idpLogout,
 	}
 	if f.DisplayName == "" && editing {
 		f.DisplayName = p.DisplayName
@@ -581,6 +582,8 @@ func buildIdPForm(p idp.Preset, fv formValues, editing bool) views.IdPForm {
 		cbID = "your-id"
 	}
 	f.CallbackURL = idp.CallbackURL(base, cbID)
+	f.PostLogoutURL = auth.PostLogoutRedirectURL(base)
+	f.BackChannelURL = auth.BackChannelLogoutURL(base, cbID)
 	for _, pp := range p.Params {
 		f.Params = append(f.Params, views.IdPParamField{
 			Name: pp.Name, Label: pp.Label, Help: pp.Help, Value: fv.params[pp.Name],

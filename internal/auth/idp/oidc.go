@@ -41,6 +41,9 @@ type OIDCConfig struct {
 	// token's own tid. AllowedTenants, when non-empty, restricts tid.
 	EntraMultiTenant bool
 	AllowedTenants   []string
+	// IdPLogout: logout continues to the provider's end_session_endpoint
+	// when discovery publishes one (SPEC §7.6).
+	IdPLogout bool
 	// Client is the IdP HTTP client; nil = NewIdPClient(nil).
 	Client *http.Client
 }
@@ -236,6 +239,7 @@ func (c *OIDCConnector) Complete(ctx context.Context, r *http.Request, flow *aut
 	}
 	if cm.Groups != "" {
 		a.Groups = ClaimGroups(claims, cm.Groups)
+		a.GroupsClaim = cm.Groups
 	}
 	return a, nil
 }

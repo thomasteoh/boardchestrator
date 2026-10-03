@@ -53,7 +53,7 @@ WHERE id = ? AND managed_by = 'env' AND enabled = 1;
 SELECT p.id, p.kind, p.preset, p.display_name, p.enabled, p.managed_by, p.issuer,
        p.client_id, CAST(p.client_secret_enc <> '' AS INTEGER) AS has_secret,
        p.scopes, p.claim_map_json, p.trust_email, p.allow_signup,
-       p.allowed_tenants_json, p.position, p.created_at, p.updated_at,
+       p.allowed_tenants_json, p.position, p.created_at, p.updated_at, p.idp_logout,
        CAST((SELECT COUNT(*) FROM identities i WHERE i.provider = p.id) AS INTEGER) AS identity_count
 FROM auth_providers p
 WHERE p.org_id IS NULL
@@ -70,8 +70,8 @@ WHERE org_id IS NULL;
 -- name: CreateAuthProvider :exec
 INSERT INTO auth_providers (id, org_id, kind, preset, display_name, enabled, managed_by, issuer,
                             client_id, client_secret_enc, scopes, claim_map_json,
-                            trust_email, allow_signup, allowed_tenants_json, position)
-VALUES (?, NULL, ?, ?, ?, ?, 'ui', ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                            trust_email, allow_signup, allowed_tenants_json, position, idp_logout)
+VALUES (?, NULL, ?, ?, ?, ?, 'ui', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateAuthProvider :execrows
 -- client_secret_enc is passed through unchanged by callers that keep the
@@ -88,6 +88,7 @@ SET preset               = ?,
     allow_signup         = ?,
     allowed_tenants_json = ?,
     position             = ?,
+    idp_logout           = ?,
     updated_at           = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ? AND org_id IS NULL AND managed_by = 'ui';
 

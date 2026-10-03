@@ -13,8 +13,8 @@ import (
 const createOrgAuthProvider = `-- name: CreateOrgAuthProvider :exec
 INSERT INTO auth_providers (id, org_id, kind, preset, display_name, enabled, managed_by, issuer,
                             client_id, client_secret_enc, scopes, claim_map_json,
-                            trust_email, allow_signup, allowed_tenants_json, position)
-VALUES (?, ?, ?, ?, ?, ?, 'ui', ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                            trust_email, allow_signup, allowed_tenants_json, position, idp_logout)
+VALUES (?, ?, ?, ?, ?, ?, 'ui', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
 `
 
 type CreateOrgAuthProviderParams struct {
@@ -32,6 +32,7 @@ type CreateOrgAuthProviderParams struct {
 	TrustEmail         int64
 	AllowedTenantsJson string
 	Position           int64
+	IdpLogout          int64
 }
 
 func (q *Queries) CreateOrgAuthProvider(ctx context.Context, arg CreateOrgAuthProviderParams) error {
@@ -50,6 +51,7 @@ func (q *Queries) CreateOrgAuthProvider(ctx context.Context, arg CreateOrgAuthPr
 		arg.TrustEmail,
 		arg.AllowedTenantsJson,
 		arg.Position,
+		arg.IdpLogout,
 	)
 	return err
 }
@@ -87,7 +89,7 @@ func (q *Queries) FindProjectOrg(ctx context.Context, id string) (string, error)
 }
 
 const getOrgAuthProvider = `-- name: GetOrgAuthProvider :one
-SELECT id, org_id, kind, preset, display_name, enabled, managed_by, issuer, client_id, client_secret_enc, scopes, claim_map_json, trust_email, allow_signup, allowed_tenants_json, saml_metadata_url, saml_metadata_xml, sp_key_enc, sp_cert, position, created_at, updated_at FROM auth_providers
+SELECT id, org_id, kind, preset, display_name, enabled, managed_by, issuer, client_id, client_secret_enc, scopes, claim_map_json, trust_email, allow_signup, allowed_tenants_json, saml_metadata_url, saml_metadata_xml, sp_key_enc, sp_cert, position, created_at, updated_at, idp_logout FROM auth_providers
 WHERE id = ? AND org_id = ?
 `
 
@@ -122,6 +124,7 @@ func (q *Queries) GetOrgAuthProvider(ctx context.Context, arg GetOrgAuthProvider
 		&i.Position,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IdpLogout,
 	)
 	return i, err
 }
@@ -180,7 +183,7 @@ const listOrgAuthProviders = `-- name: ListOrgAuthProviders :many
 SELECT p.id, p.kind, p.preset, p.display_name, p.enabled, p.managed_by, p.issuer,
        p.client_id, CAST(p.client_secret_enc <> '' AS INTEGER) AS has_secret,
        p.scopes, p.claim_map_json, p.trust_email, p.allow_signup,
-       p.allowed_tenants_json, p.position, p.created_at, p.updated_at,
+       p.allowed_tenants_json, p.position, p.created_at, p.updated_at, p.idp_logout,
        CAST((SELECT COUNT(*) FROM identities i WHERE i.provider = p.id) AS INTEGER) AS identity_count
 FROM auth_providers p
 WHERE p.org_id = ?
@@ -205,6 +208,7 @@ type ListOrgAuthProvidersRow struct {
 	Position           int64
 	CreatedAt          string
 	UpdatedAt          string
+	IdpLogout          int64
 	IdentityCount      int64
 }
 
@@ -240,6 +244,7 @@ func (q *Queries) ListOrgAuthProviders(ctx context.Context, orgID sql.NullString
 			&i.Position,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IdpLogout,
 			&i.IdentityCount,
 		); err != nil {
 			return nil, err
@@ -318,6 +323,7 @@ SET preset               = ?,
     allow_signup         = 0,
     allowed_tenants_json = ?,
     position             = ?,
+    idp_logout           = ?,
     updated_at           = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ? AND org_id = ? AND managed_by = 'ui'
 `
@@ -333,6 +339,7 @@ type UpdateOrgAuthProviderParams struct {
 	TrustEmail         int64
 	AllowedTenantsJson string
 	Position           int64
+	IdpLogout          int64
 	ID                 string
 	OrgID              sql.NullString
 }
@@ -350,6 +357,7 @@ func (q *Queries) UpdateOrgAuthProvider(ctx context.Context, arg UpdateOrgAuthPr
 		arg.TrustEmail,
 		arg.AllowedTenantsJson,
 		arg.Position,
+		arg.IdpLogout,
 		arg.ID,
 		arg.OrgID,
 	)

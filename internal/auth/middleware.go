@@ -108,6 +108,12 @@ type SessionConfig struct {
 func (c SessionConfig) Session() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// CSRF-exempt routes authenticate by other means and never see
+			// the session (SPEC §7.11).
+			if IsCSRFExempt(r.Method, r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			ctx := r.Context()
 			if ck, err := r.Cookie(CookieName); err == nil {
 				sess, lookErr := c.Store.Lookup(ctx, ck.Value)
@@ -156,7 +162,7 @@ func forbidden(w http.ResponseWriter, r *http.Request, title, message string) {
 func (c SessionConfig) CSRF() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if safeMethod(r.Method) {
+			if safeMethod(r.Method) || IsCSRFExempt(r.Method, r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}

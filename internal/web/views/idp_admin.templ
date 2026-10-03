@@ -80,7 +80,13 @@ type IdPForm struct {
 	// CallbackURL is the redirect URI to register at the IdP; on create it
 	// carries a placeholder id.
 	CallbackURL string
-	Error       string
+	// PostLogoutURL and BackChannelURL are the sign-out URIs to register
+	// (OIDC only, WU-609); BackChannelURL carries the same placeholder.
+	PostLogoutURL  string
+	BackChannelURL string
+	// IdPLogout: "Sign out of the identity provider too".
+	IdPLogout bool
+	Error     string
 	// Base is the URL prefix the form posts under ("" = IdPAdminBase); the
 	// org SSO page uses its own (WU-607).
 	Base string
@@ -256,6 +262,12 @@ templ IdPFormBody(csrf string, f IdPForm) {
 	<div class="bc-callout">
 		<p><strong>Callback URL</strong> to register with { f.PresetName }:</p>
 		<p><code class="bc-copyable">{ f.CallbackURL }</code></p>
+		if f.isOIDC() {
+			<p><strong>Post-logout redirect URI</strong>, if { f.PresetName } asks for allowed sign-out redirects:</p>
+			<p><code class="bc-copyable">{ f.PostLogoutURL }</code></p>
+			<p><strong>Back-channel logout URI</strong>, if { f.PresetName } supports back-channel logout:</p>
+			<p><code class="bc-copyable">{ f.BackChannelURL }</code></p>
+		}
 		if !f.Editing {
 			<p class="bc-hint">Replace <code>your-id</code> with the provider ID you choose below.</p>
 		}
@@ -360,6 +372,13 @@ templ IdPFormBody(csrf string, f IdPForm) {
 					<input class="bc-checkbox" type="checkbox" name="allow_signup" value="1" checked?={ f.AllowSignup }/>
 					Let anyone who signs in through this provider create an account
 				</label>
+			}
+			if f.isOIDC() {
+				<label class="bc-check">
+					<input class="bc-checkbox" type="checkbox" name="idp_logout" value="1" checked?={ f.IdPLogout }/>
+					Sign out of the identity provider too
+				</label>
+				<span class="bc-hint">When someone signs out here, also end their session at { f.PresetName }, if it publishes a sign-out endpoint. Otherwise only this site's session ends.</span>
 			}
 			<label>
 				Position

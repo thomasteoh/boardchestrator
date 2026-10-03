@@ -35,3 +35,27 @@ WHERE expires_at <= ?;
 -- session.revoke: a user can only revoke their own sessions.
 DELETE FROM sessions
 WHERE token_hash = ? AND user_id = ?;
+
+-- name: GetSessionLogoutInfo :one
+-- RP-initiated logout (SPEC s7.6): the provider a session signed in through
+-- and its sealed ID token (the id_token_hint).
+SELECT provider_id, id_token_enc
+FROM sessions
+WHERE token_hash = ?;
+
+-- name: DeleteSessionsByIdPSID :execrows
+-- Back-channel logout by IdP session id (SPEC s7.6). Callers never pass an
+-- empty sid.
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_sid = ?;
+
+-- name: DeleteSessionsByIdPSIDSubject :execrows
+-- Back-channel logout naming both sid and sub: the sessions must match both.
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_sid = ? AND idp_subject = ?;
+
+-- name: DeleteSessionsByIdPSubject :execrows
+-- Back-channel logout by subject: every session of that IdP user. Callers
+-- never pass an empty subject.
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_subject = ?;

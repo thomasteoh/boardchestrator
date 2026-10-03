@@ -133,6 +133,10 @@ type ProviderInput struct {
 	AllowSignup    *bool             `json:"allow_signup,omitempty"`
 	AllowedTenants []string          `json:"allowed_tenants,omitempty"`
 	Position       *int64            `json:"position,omitempty"`
+	// IdPLogout: on sign-out, also end the session at the identity provider
+	// when it publishes an end_session_endpoint (SPEC §7.6). Default: the
+	// preset's SupportsLogout. Always off for GitHub.
+	IdPLogout *bool `json:"idp_logout,omitempty"`
 	// Enabled applies to idp.create only (default true); use
 	// idp.enable/idp.disable afterwards.
 	Enabled *bool `json:"enabled,omitempty"`
@@ -157,6 +161,7 @@ type ProviderView struct {
 	AllowSignup    bool              `json:"allow_signup"`
 	AllowedTenants []string          `json:"allowed_tenants"`
 	Position       int64             `json:"position"`
+	IdPLogout      bool              `json:"idp_logout"`
 	IdentityCount  int64             `json:"identity_count"`
 	CreatedAt      string            `json:"created_at"`
 	UpdatedAt      string            `json:"updated_at"`
@@ -169,7 +174,7 @@ func viewOf(r sqlc.ListPlatformAuthProvidersRow) ProviderView {
 		ClientID: r.ClientID, SecretSet: r.HasSecret == 1, Scopes: r.Scopes,
 		ClaimMap: map[string]string{}, TrustEmail: r.TrustEmail == 1,
 		AllowSignup: r.AllowSignup == 1, AllowedTenants: []string{},
-		Position: r.Position, IdentityCount: r.IdentityCount,
+		Position: r.Position, IdPLogout: r.IdpLogout == 1, IdentityCount: r.IdentityCount,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 	_ = json.Unmarshal([]byte(r.ClaimMapJson), &v.ClaimMap)
@@ -231,7 +236,7 @@ func platformRow(ctx context.Context, q *action.Queries, id string) (sqlc.AuthPr
 type normalised struct {
 	kind, preset, displayName, issuer, clientID, scopes string
 	claimMapJSON, tenantsJSON                           string
-	trust, signup                                       int64
+	trust, signup, idpLogout                            int64
 }
 
 // normalise validates in against its preset. existing is the stored row on
@@ -355,6 +360,15 @@ func normalise(in ProviderInput, existing *sqlc.AuthProvider) (normalised, error
 		signup = *in.AllowSignup
 	}
 	n.trust, n.signup = b2i(trust), b2i(signup)
+
+	logout := p.SupportsLogout
+	if existing != nil {
+		logout = existing.IdpLogout == 1
+	}
+	if in.IdPLogout != nil {
+		logout = *in.IdPLogout
+	}
+	n.idpLogout = b2i(logout && p.Kind == KindOIDC)
 	return n, nil
 }
 
@@ -451,7 +465,7 @@ func handleCreate(ctx context.Context, ac action.ActionCtx, in json.RawMessage) 
 		ID: input.ID, Kind: n.kind, Preset: n.preset, DisplayName: n.displayName,
 		Enabled: b2i(enabled), Issuer: n.issuer, ClientID: n.clientID, ClientSecretEnc: secretEnc,
 		Scopes: n.scopes, ClaimMapJson: n.claimMapJSON, TrustEmail: n.trust, AllowSignup: n.signup,
-		AllowedTenantsJson: n.tenantsJSON, Position: pos,
+		AllowedTenantsJson: n.tenantsJSON, Position: pos, IdpLogout: n.idpLogout,
 	}); err != nil {
 		return nil, fmt.Errorf("idp.create: %w", err)
 	}
@@ -488,7 +502,7 @@ func handleUpdate(ctx context.Context, ac action.ActionCtx, in json.RawMessage) 
 		Preset: n.preset, DisplayName: n.displayName, Issuer: n.issuer, ClientID: n.clientID,
 		ClientSecretEnc: secretEnc, Scopes: n.scopes, ClaimMapJson: n.claimMapJSON,
 		TrustEmail: n.trust, AllowSignup: n.signup, AllowedTenantsJson: n.tenantsJSON,
-		Position: pos, ID: row.ID,
+		Position: pos, IdpLogout: n.idpLogout, ID: row.ID,
 	}); err != nil {
 		return nil, fmt.Errorf("idp.update: %w", err)
 	}

@@ -8,7 +8,7 @@
 SELECT p.id, p.kind, p.preset, p.display_name, p.enabled, p.managed_by, p.issuer,
        p.client_id, CAST(p.client_secret_enc <> '' AS INTEGER) AS has_secret,
        p.scopes, p.claim_map_json, p.trust_email, p.allow_signup,
-       p.allowed_tenants_json, p.position, p.created_at, p.updated_at,
+       p.allowed_tenants_json, p.position, p.created_at, p.updated_at, p.idp_logout,
        CAST((SELECT COUNT(*) FROM identities i WHERE i.provider = p.id) AS INTEGER) AS identity_count
 FROM auth_providers p
 WHERE p.org_id = ?
@@ -30,8 +30,8 @@ WHERE org_id = ?;
 -- name: CreateOrgAuthProvider :exec
 INSERT INTO auth_providers (id, org_id, kind, preset, display_name, enabled, managed_by, issuer,
                             client_id, client_secret_enc, scopes, claim_map_json,
-                            trust_email, allow_signup, allowed_tenants_json, position)
-VALUES (?, ?, ?, ?, ?, ?, 'ui', ?, ?, ?, ?, ?, ?, 0, ?, ?);
+                            trust_email, allow_signup, allowed_tenants_json, position, idp_logout)
+VALUES (?, ?, ?, ?, ?, ?, 'ui', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?);
 
 -- name: UpdateOrgAuthProvider :execrows
 -- allow_signup is always 0 for org-owned providers.
@@ -47,6 +47,7 @@ SET preset               = ?,
     allow_signup         = 0,
     allowed_tenants_json = ?,
     position             = ?,
+    idp_logout           = ?,
     updated_at           = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ? AND org_id = ? AND managed_by = 'ui';
 

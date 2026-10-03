@@ -217,7 +217,7 @@ func handleOrgCreate(ctx context.Context, ac action.ActionCtx, in json.RawMessag
 		ID: pin.ID, OrgID: orgNull(ac.Org), Kind: n.kind, Preset: n.preset, DisplayName: n.displayName,
 		Enabled: b2i(enabled), Issuer: n.issuer, ClientID: n.clientID, ClientSecretEnc: secretEnc,
 		Scopes: n.scopes, ClaimMapJson: n.claimMapJSON, TrustEmail: n.trust,
-		AllowedTenantsJson: n.tenantsJSON, Position: pos,
+		AllowedTenantsJson: n.tenantsJSON, Position: pos, IdpLogout: n.idpLogout,
 	}); err != nil {
 		return nil, fmt.Errorf("org.idp.create: %w", err)
 	}
@@ -260,7 +260,7 @@ func handleOrgUpdate(ctx context.Context, ac action.ActionCtx, in json.RawMessag
 	if _, err := ac.Tx.UpdateOrgAuthProvider(ctx, sqlc.UpdateOrgAuthProviderParams{
 		Preset: n.preset, DisplayName: n.displayName, Issuer: n.issuer, ClientID: n.clientID,
 		ClientSecretEnc: secretEnc, Scopes: n.scopes, ClaimMapJson: n.claimMapJSON,
-		TrustEmail: n.trust, AllowedTenantsJson: n.tenantsJSON, Position: pos,
+		TrustEmail: n.trust, AllowedTenantsJson: n.tenantsJSON, Position: pos, IdpLogout: n.idpLogout,
 		ID: row.ID, OrgID: orgNull(ac.Org),
 	}); err != nil {
 		return nil, fmt.Errorf("org.idp.update: %w", err)

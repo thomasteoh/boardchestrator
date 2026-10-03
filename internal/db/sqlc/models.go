@@ -105,6 +105,7 @@ type AuthProvider struct {
 	Position           int64
 	CreatedAt          string
 	UpdatedAt          string
+	IdpLogout          int64
 }
 
 type BoardColumn struct {

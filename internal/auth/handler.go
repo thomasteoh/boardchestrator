@@ -63,13 +63,16 @@ func LoginURLFor(returnTo string) string {
 }
 
 // Handler serves the login routes (SPEC §7.2): GET /auth/{providerID},
-// GET /auth/{providerID}/callback and POST /auth/logout.
+// GET /auth/{providerID}/callback, POST /auth/logout and the OIDC
+// back-channel logout endpoint (logout.go).
 type Handler struct {
 	Providers ConnectorSource
 	Flows     *FlowSealer
 	Sessions  *SessionStore
 	Resolver  *Resolver
 	BaseURL   string
+	// Replay remembers back-channel logout token ids (jti).
+	Replay *ReplayCache
 	// RequestID returns the request id for log correlation (server wires
 	// server.RequestID); nil logs without one.
 	RequestID func(context.Context) string
@@ -119,6 +122,7 @@ func NewHandler(cfg HandlerConfig) (*Handler, error) {
 			},
 		},
 		BaseURL:   strings.TrimRight(cfg.BaseURL, "/"),
+		Replay:    NewReplayCache(0),
 		RequestID: cfg.RequestID,
 	}
 	return h, nil
@@ -128,6 +132,7 @@ func NewHandler(cfg HandlerConfig) (*Handler, error) {
 func (h *Handler) Routes(r chi.Router) {
 	r.Get(SetupURL, h.Setup)
 	r.Post("/auth/logout", h.Logout)
+	r.Post(BackChannelLogoutPattern, h.BackChannelLogout)
 	r.Post(SignInMethodsURL+"/link/{providerID}", h.BeginLink)
 	r.Get("/auth/{providerID}", h.Begin)
 	r.Get("/auth/{providerID}/callback", h.Callback)
@@ -315,28 +320,6 @@ func (h *Handler) finishLink(w http.ResponseWriter, r *http.Request, id string, 
 		notice = "already_linked"
 	}
 	http.Redirect(w, r, h.BaseURL+SignInMethodsURL+"?notice="+notice, http.StatusSeeOther)
-}
-
-// Logout revokes the current session and clears its cookie (local logout;
-// IdP logout is WU-609). It sits behind the global CSRF middleware.
-func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
-	if ck, err := r.Cookie(CookieName); err == nil && ck.Value != "" {
-		if err := h.Sessions.Revoke(r.Context(), ck.Value); err != nil {
-			clearSessionCookie(w)
-			h.fail(w, r, http.StatusInternalServerError, "", "logout", err)
-			return
-		}
-		// Audit only a real sign-out: the session middleware resolved this
-		// cookie to a live session.
-		if sess, ok := SessionFrom(r.Context()); ok && sess.UserID != "" && sess.TokenHash == hashToken(ck.Value) {
-			h.audit(r, "user", sess.UserID, "auth.logout", sess.ProviderID, map[string]string{
-				"provider": sess.ProviderID, "method": sess.AuthMethod,
-			})
-		}
-	}
-	clearSessionCookie(w)
-	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, SignedOutURL, http.StatusSeeOther)
 }
 
 // fail logs err with a fresh reference code and renders the generic failure

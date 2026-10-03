@@ -68,6 +68,66 @@ func (q *Queries) DeleteSession(ctx context.Context, tokenHash string) error {
 	return err
 }
 
+const deleteSessionsByIdPSID = `-- name: DeleteSessionsByIdPSID :execrows
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_sid = ?
+`
+
+type DeleteSessionsByIdPSIDParams struct {
+	ProviderID string
+	IdpSid     string
+}
+
+// Back-channel logout by IdP session id (SPEC s7.6). Callers never pass an
+// empty sid.
+func (q *Queries) DeleteSessionsByIdPSID(ctx context.Context, arg DeleteSessionsByIdPSIDParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSessionsByIdPSID, arg.ProviderID, arg.IdpSid)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteSessionsByIdPSIDSubject = `-- name: DeleteSessionsByIdPSIDSubject :execrows
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_sid = ? AND idp_subject = ?
+`
+
+type DeleteSessionsByIdPSIDSubjectParams struct {
+	ProviderID string
+	IdpSid     string
+	IdpSubject string
+}
+
+// Back-channel logout naming both sid and sub: the sessions must match both.
+func (q *Queries) DeleteSessionsByIdPSIDSubject(ctx context.Context, arg DeleteSessionsByIdPSIDSubjectParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSessionsByIdPSIDSubject, arg.ProviderID, arg.IdpSid, arg.IdpSubject)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteSessionsByIdPSubject = `-- name: DeleteSessionsByIdPSubject :execrows
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_subject = ?
+`
+
+type DeleteSessionsByIdPSubjectParams struct {
+	ProviderID string
+	IdpSubject string
+}
+
+// Back-channel logout by subject: every session of that IdP user. Callers
+// never pass an empty subject.
+func (q *Queries) DeleteSessionsByIdPSubject(ctx context.Context, arg DeleteSessionsByIdPSubjectParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSessionsByIdPSubject, arg.ProviderID, arg.IdpSubject)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteUserSession = `-- name: DeleteUserSession :execrows
 DELETE FROM sessions
 WHERE token_hash = ? AND user_id = ?
@@ -123,6 +183,26 @@ func (q *Queries) GetSession(ctx context.Context, tokenHash string) (GetSessionR
 		&i.ProviderID,
 		&i.AuthMethod,
 	)
+	return i, err
+}
+
+const getSessionLogoutInfo = `-- name: GetSessionLogoutInfo :one
+SELECT provider_id, id_token_enc
+FROM sessions
+WHERE token_hash = ?
+`
+
+type GetSessionLogoutInfoRow struct {
+	ProviderID string
+	IDTokenEnc string
+}
+
+// RP-initiated logout (SPEC s7.6): the provider a session signed in through
+// and its sealed ID token (the id_token_hint).
+func (q *Queries) GetSessionLogoutInfo(ctx context.Context, tokenHash string) (GetSessionLogoutInfoRow, error) {
+	row := q.db.QueryRowContext(ctx, getSessionLogoutInfo, tokenHash)
+	var i GetSessionLogoutInfoRow
+	err := row.Scan(&i.ProviderID, &i.IDTokenEnc)
 	return i, err
 }
 

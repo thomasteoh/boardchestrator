@@ -263,7 +263,7 @@ func (r *Registry) oidcConfig(row sqlc.AuthProvider, secret string, policy auth.
 	cfg := OIDCConfig{
 		ID: row.ID, Issuer: row.Issuer, ClientID: row.ClientID, ClientSecret: secret,
 		RedirectURL: CallbackURL(r.opts.BaseURL, row.ID), Scopes: scopes, Claims: claims,
-		Policy: policy, Client: r.opts.Client,
+		Policy: policy, Client: r.opts.Client, IdPLogout: row.IdpLogout == 1,
 	}
 	if row.Preset == "microsoft" {
 		if _, multi := entraTenant(row.Issuer); multi {

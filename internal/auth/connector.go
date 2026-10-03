@@ -40,9 +40,13 @@ type Assertion struct {
 	Name          string
 	Picture       string
 	Groups        []string
-	SID           string
-	IDTokenRaw    string
-	RawClaims     map[string]any
+	// GroupsClaim is the claim path Groups was read from ("" = the provider
+	// maps no groups claim). Group sync uses it to tell an absent claim from
+	// an empty one (SPEC §7.5).
+	GroupsClaim string
+	SID         string
+	IDTokenRaw  string
+	RawClaims   map[string]any
 	// AccessToken is the provider's OAuth access token, kept only where a
 	// feature reuses it (GitHub, WU-406); it is stored encrypted.
 	AccessToken string

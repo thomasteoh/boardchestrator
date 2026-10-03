@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/thomasteoh/boardchestrator/internal/action"
+	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/auth/idp"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
@@ -130,6 +131,7 @@ func orgIdPForm(r *http.Request, orgID string, p idp.Preset, fv formValues, edit
 		f.IDPrefix = prefix
 		if !editing {
 			f.CallbackURL = idp.CallbackURL(identityCfg().baseURL, prefix+"your-id")
+			f.BackChannelURL = auth.BackChannelLogoutURL(identityCfg().baseURL, prefix+"your-id")
 		}
 	}
 	return f
@@ -175,7 +177,7 @@ func handleOrgIdPNew(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, views.OrgSSOURL(url.PathEscape(orgID)), http.StatusSeeOther) //nolint:gosec // G710: same-origin fixed path
 		return
 	}
-	fv := formValues{trust: p.TrustEmail, enabled: true}
+	fv := formValues{trust: p.TrustEmail, enabled: true, idpLogout: p.SupportsLogout}
 	if prefix, err := idp.OrgProviderPrefix(r.Context(), sqlc.New(disp.DB()), orgID); err == nil {
 		fv.id = prefix
 	}
@@ -204,7 +206,7 @@ func handleOrgIdPEdit(w http.ResponseWriter, r *http.Request) {
 	p, _ := idp.LookupPreset(v.Preset)
 	f := orgIdPForm(r, orgID, p, formValues{
 		id: v.ID, displayName: v.DisplayName, params: v.Params, clientID: v.ClientID,
-		scopes: v.Scopes, claims: v.ClaimMap, trust: v.TrustEmail,
+		scopes: v.Scopes, claims: v.ClaimMap, trust: v.TrustEmail, idpLogout: v.IdPLogout,
 		tenants: strings.Join(v.AllowedTenants, "\n"), position: strconv.FormatInt(v.Position, 10), enabled: v.Enabled,
 	}, true)
 	f.SecretSet = v.SecretSet
@@ -377,6 +379,9 @@ func renderDiscover(w http.ResponseWriter, r *http.Request, out any, err error) 
 			if e[1] != "" {
 				d.Endpoints = append(d.Endpoints, e)
 			}
+		}
+		if res.BackchannelLogout {
+			d.Endpoints = append(d.Endpoints, [2]string{"Back-channel sign-out", "Supported"})
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

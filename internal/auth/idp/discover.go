@@ -37,7 +37,9 @@ type DiscoverResult struct {
 	UserinfoEndpoint      string `json:"userinfo_endpoint,omitempty"`
 	JWKSURI               string `json:"jwks_uri,omitempty"`
 	EndSessionEndpoint    string `json:"end_session_endpoint,omitempty"`
-	Ref                   string `json:"ref,omitempty"`
+	// BackchannelLogout: the provider advertises OIDC back-channel logout.
+	BackchannelLogout bool   `json:"backchannel_logout_supported,omitempty"`
+	Ref               string `json:"ref,omitempty"`
 }
 
 // discoveryDoc is the subset of the OIDC discovery document we report.
@@ -48,6 +50,7 @@ type discoveryDoc struct {
 	UserinfoEndpoint      string `json:"userinfo_endpoint"`
 	JWKSURI               string `json:"jwks_uri"`
 	EndSessionEndpoint    string `json:"end_session_endpoint"`
+	BackchannelLogout     bool   `json:"backchannel_logout_supported"`
 }
 
 // discoveryClient fetches discovery documents for the admin "Test discovery"
@@ -233,7 +236,7 @@ func discover(ctx context.Context, client *http.Client, issuer, presetID string)
 		OK: true, Issuer: issuer,
 		AuthorizationEndpoint: doc.AuthorizationEndpoint, TokenEndpoint: doc.TokenEndpoint,
 		UserinfoEndpoint: doc.UserinfoEndpoint, JWKSURI: doc.JWKSURI,
-		EndSessionEndpoint: doc.EndSessionEndpoint,
+		EndSessionEndpoint: doc.EndSessionEndpoint, BackchannelLogout: doc.BackchannelLogout,
 	}, nil
 }
 

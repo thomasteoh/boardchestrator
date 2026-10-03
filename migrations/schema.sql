@@ -770,7 +770,8 @@ CREATE TABLE auth_providers (
     sp_cert              TEXT NOT NULL DEFAULT '',
     position             INTEGER NOT NULL DEFAULT 0,
     created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    updated_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    idp_logout           INTEGER NOT NULL DEFAULT 1 -- 0038
 );
 
 CREATE INDEX idx_auth_providers_org ON auth_providers (org_id);
