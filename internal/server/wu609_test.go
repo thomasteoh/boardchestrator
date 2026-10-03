@@ -110,7 +110,7 @@ func TestRPInitiatedLogout(t *testing.T) {
 func TestRPInitiatedLogoutFallsBackToLocal(t *testing.T) {
 	cases := []struct {
 		name  string
-		setup func(h *smHarness)            // before sign-in
+		setup func(h *smHarness)             // before sign-in
 		after func(h *smHarness, raw string) // after sign-in, before logout
 	}{
 		{name: "end_session unsupported", setup: func(h *smHarness) { h.corp.SetEndSessionSupported(false) }},
