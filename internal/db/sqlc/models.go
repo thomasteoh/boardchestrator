@@ -464,6 +464,49 @@ type ScheduledTrigger struct {
 	UpdatedAt string
 }
 
+type ScimGroup struct {
+	ID          string
+	OrgID       string
+	ExternalID  string
+	DisplayName string
+	CreatedAt   string
+	UpdatedAt   string
+}
+
+type ScimGroupMember struct {
+	GroupID string
+	UserID  string
+	OrgID   string
+}
+
+type ScimToken struct {
+	ID         string
+	OrgID      string
+	Name       string
+	Prefix     string
+	TokenHash  string
+	CreatedBy  string
+	ExpiresAt  sql.NullString
+	LastUsedAt sql.NullString
+	RevokedAt  sql.NullString
+	CreatedAt  string
+}
+
+type ScimUser struct {
+	ID          string
+	OrgID       string
+	UserID      string
+	ExternalID  string
+	UserName    string
+	Email       string
+	GivenName   string
+	FamilyName  string
+	DisplayName string
+	Active      int64
+	CreatedAt   string
+	UpdatedAt   string
+}
+
 type Session struct {
 	TokenHash  string
 	UserID     string

@@ -215,8 +215,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 		return nil, err
 	}
 
-	// Serialise output once for idempotent storage and the event payload.
-	payload, err := marshalResult(out)
+	// Serialise output once for idempotent storage, the event payload and
+	// the audit row. A result carrying a one-time secret stores, emits and
+	// audits only its redacted form; the caller alone receives the secret.
+	stored := out
+	if r, ok := out.(SecretResult); ok {
+		stored = r.Redacted()
+	}
+	payload, err := marshalResult(stored)
 	if err != nil {
 		return nil, fmt.Errorf("action: marshal result of %q: %w", name, err)
 	}
@@ -239,7 +245,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 		Name:    name,
 		Org:     ac.Org,
 		Actor:   actor,
-		Subject: subjectOf(out),
+		Subject: subjectOf(stored),
 		Payload: evPayload,
 	})
 
@@ -250,7 +256,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 			ActorType: actor.Type,
 			ActorID:   actor.ID,
 			Action:    name,
-			Subject:   subjectOf(out),
+			Subject:   subjectOf(stored),
 			Detail:    payload,
 			IP:        actor.IP,
 		}); err != nil {

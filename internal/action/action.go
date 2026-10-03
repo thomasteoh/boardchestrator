@@ -187,6 +187,15 @@ type Definition struct {
 	PrivateResult bool
 }
 
+// SecretResult is a handler result that carries a secret shown to the
+// caller exactly once (a freshly minted token). Dispatch returns the full
+// result to the caller but stores, emits and audits only Redacted(): the
+// secret never reaches idempotency_keys, the event bus (SSE, webhooks) or
+// audit_log. An idempotent replay therefore returns the redacted form.
+type SecretResult interface {
+	Redacted() any
+}
+
 var (
 	registryMu sync.RWMutex
 	registry   = map[string]Definition{}
