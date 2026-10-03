@@ -194,7 +194,9 @@ func (s *FlowSealer) SetCookie(w http.ResponseWriter, f *Flow) error {
 	if err != nil {
 		return err
 	}
-	http.SetCookie(w, &http.Cookie{
+	// gosec G124: SameSite is None only for SAML flows, which SPEC §7.2
+	// requires (the ACS is a cross-site POST); Secure and HttpOnly are fixed.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: SameSite=None for SAML flows by design, see above
 		Name:     FlowCookieName,
 		Value:    v,
 		Path:     "/",
@@ -214,7 +216,9 @@ func ClearFlowCookie(w http.ResponseWriter) {
 // clearFlowCookie expires the flow cookie with the given SameSite mode (the
 // SAML ACS answers a cross-site POST, so it clears with None).
 func clearFlowCookie(w http.ResponseWriter, mode http.SameSite) {
-	http.SetCookie(w, &http.Cookie{
+	// An expiring cookie; mode is Lax or (at the SAML ACS) None.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: deletion cookie, SameSite=None only at the SAML ACS
+
 		Name:     FlowCookieName,
 		Value:    "",
 		Path:     "/",

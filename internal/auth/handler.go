@@ -315,7 +315,7 @@ func (h *Handler) completeLogin(w http.ResponseWriter, r *http.Request, c Connec
 	}
 	// Re-validated: the cookie is sealed, but the check is cheap and keeps
 	// the redirect target provably same-origin.
-	http.Redirect(w, r, h.BaseURL+dest, http.StatusSeeOther)
+	http.Redirect(w, r, h.BaseURL+dest, http.StatusSeeOther) //nolint:gosec // G710: BaseURL + a SafeReturnTo path, see above
 }
 
 // finishLink ends a link flow back on the Sign-in methods page. The session

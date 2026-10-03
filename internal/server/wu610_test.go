@@ -498,8 +498,7 @@ func TestSAMLIdPInitiatedLogout(t *testing.T) {
 			t.Errorf("bad redirect logout %d: %d", i, r.StatusCode)
 		}
 		form := url.Values{"SAMLRequest": {ip.LogoutRequestPost(o)}}
-		pr, _ := http.PostForm(slo, form)
-		if pr.StatusCode != http.StatusBadRequest {
+		if pr := browserPost(t, slo, form); pr.StatusCode != http.StatusBadRequest {
 			t.Errorf("bad POST logout %d: %d", i, pr.StatusCode)
 		}
 	}
@@ -544,12 +543,9 @@ func TestSAMLIdPInitiatedLogout(t *testing.T) {
 	}
 	// POST binding (CSRF-exempt, no token), NameID only: every session of
 	// that NameID goes.
-	pr, err := http.PostForm(slo, url.Values{"SAMLRequest": {ip.LogoutRequestPost(samltest.LogoutOptions{SLO: slo, NameID: "bob-p"})}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pr.StatusCode != http.StatusOK { // followed to the IdP's /slo
-		t.Fatalf("POST logout: %d", pr.StatusCode)
+	pr := browserPost(t, slo, url.Values{"SAMLRequest": {ip.LogoutRequestPost(samltest.LogoutOptions{SLO: slo, NameID: "bob-p"})}})
+	if pr.StatusCode != http.StatusSeeOther || !strings.HasPrefix(pr.Header.Get("Location"), ip.SLOURL()+"?") {
+		t.Fatalf("POST logout: %d %s", pr.StatusCode, pr.Header.Get("Location"))
 	}
 	if h.n(`SELECT COUNT(*) FROM sessions WHERE provider_id='corp-saml'`) != 0 {
 		t.Fatal("NameID logout left sessions")
@@ -851,4 +847,17 @@ func TestSAMLOrgMetadataSSRFGuard(t *testing.T) {
 	if r.StatusCode != http.StatusBadGateway {
 		t.Fatalf("loopback metadata fetched for an org provider: %d", r.StatusCode)
 	}
+}
+
+// browserPost posts a form with a fresh browser (no cookies, no redirects).
+func browserPost(t *testing.T, u string, form url.Values) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, u, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := oidctest.NewBrowser(t).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	return resp
 }

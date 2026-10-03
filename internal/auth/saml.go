@@ -139,7 +139,7 @@ func (h *Handler) SAMLACS(w http.ResponseWriter, r *http.Request) {
 	}
 	a.ProviderID = id
 	if flow.Intent == IntentLink {
-		h.samlLinkBounce(w, r, id, flow, a)
+		h.samlLinkBounce(w, r, c, id, flow, a)
 		return
 	}
 	h.completeLogin(w, r, c, id, flow, a)
@@ -155,7 +155,7 @@ type pendingSAMLLink struct {
 	Exp             int64  `json:"exp"`
 }
 
-func (h *Handler) samlLinkBounce(w http.ResponseWriter, r *http.Request, id string, flow *Flow, a *Assertion) {
+func (h *Handler) samlLinkBounce(w http.ResponseWriter, r *http.Request, c Connector, id string, flow *Flow, a *Assertion) {
 	v, err := h.Flows.sealAs(samlLinkCookie, pendingSAMLLink{
 		ProviderID: id, Subject: a.Subject, Email: a.Email, Name: a.Name,
 		LinkSessionHash: flow.LinkSessionHash, Exp: h.Flows.now().Add(samlLinkTTL).Unix(),
@@ -168,7 +168,9 @@ func (h *Handler) samlLinkBounce(w http.ResponseWriter, r *http.Request, id stri
 		Name: samlLinkCookie, Value: v, Path: "/", MaxAge: int(samlLinkTTL / time.Second),
 		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, h.BaseURL+"/auth/saml/"+id+"/link", http.StatusSeeOther)
+	// The id named an enabled provider (registry lookup) and ids are
+	// [a-z0-9-]; the host is BaseURL.
+	http.Redirect(w, r, h.BaseURL+"/auth/saml/"+c.ID()+"/link", http.StatusSeeOther) //nolint:gosec // G710: same-origin path, see above
 }
 
 // SAMLLinkFinish is GET /auth/saml/{providerID}/link: the second half of a
@@ -233,7 +235,9 @@ func (h *Handler) SAMLMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/samlmetadata+xml")
 	w.Header().Set("Cache-Control", "no-cache")
-	_, _ = w.Write(md)
+	// XML we generate from the provider's configuration (entity id, URLs,
+	// certificate), served as metadata, not HTML.
+	_, _ = w.Write(md) //nolint:gosec // G705: generated SAML metadata, not HTML, see above
 }
 
 // SAMLCertificate is GET /auth/saml/{providerID}/certificate: the SP
@@ -246,8 +250,9 @@ func (h *Handler) SAMLCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-pem-file")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+id+`-sp.crt"`)
-	_, _ = w.Write(c.SPCertificatePEM())
+	w.Header().Set("Content-Disposition", `attachment; filename="`+c.ID()+`-sp.crt"`)
+	// A PEM certificate from the provider row, served as a download.
+	_, _ = w.Write(c.SPCertificatePEM()) //nolint:gosec // G705: PEM attachment, not HTML, see above
 }
 
 // SAMLSLO is /auth/saml/{providerID}/slo (GET for HTTP-Redirect, POST for
