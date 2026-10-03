@@ -30,7 +30,9 @@ func APIKeyAuthMiddleware(d *sql.DB) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			// SCIM requests carry a SCIM token, which the SCIM handler
+			// authenticates itself (SPEC §7.8).
+			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") || isSCIMPath(r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -79,4 +81,10 @@ func APIKeyAuthMiddleware(d *sql.DB) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// isSCIMPath reports whether path is under /scim/v2 (internal/auth/scim
+// serves it).
+func isSCIMPath(path string) bool {
+	return path == "/scim/v2" || strings.HasPrefix(path, "/scim/v2/")
 }

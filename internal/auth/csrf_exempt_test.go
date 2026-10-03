@@ -19,6 +19,11 @@ func TestCSRFExemptionListExact(t *testing.T) {
 		{Method: http.MethodPost, Pattern: "/auth/oidc/{providerID}/backchannel-logout"},
 		{Method: http.MethodPost, Pattern: "/auth/saml/{providerID}/acs"},
 		{Method: http.MethodPost, Pattern: "/auth/saml/{providerID}/slo"},
+		{Method: http.MethodGet, Pattern: "/scim/v2/*"},
+		{Method: http.MethodPost, Pattern: "/scim/v2/*"},
+		{Method: http.MethodPut, Pattern: "/scim/v2/*"},
+		{Method: http.MethodPatch, Pattern: "/scim/v2/*"},
+		{Method: http.MethodDelete, Pattern: "/scim/v2/*"},
 	}
 	if got := auth.CSRFExemptions(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("CSRF exemptions = %+v, want %+v", got, want)
@@ -57,6 +62,16 @@ func TestIsCSRFExempt(t *testing.T) {
 		{http.MethodPost, "/auth/corp/callback", false},
 		{http.MethodPost, "/api/action/task.create", false},
 		{http.MethodPost, "/", false},
+		{http.MethodPost, "/scim/v2/Users", true},
+		{http.MethodPatch, "/scim/v2/Users/abc", true},
+		{http.MethodPut, "/scim/v2/Groups/abc", true},
+		{http.MethodDelete, "/scim/v2/Groups/abc", true},
+		{http.MethodGet, "/scim/v2/ServiceProviderConfig", true},
+		{http.MethodPost, "/scim/v2", true},
+		{http.MethodHead, "/scim/v2/Users", false},
+		{http.MethodPost, "/scim/v1/Users", false},
+		{http.MethodPost, "/scim/v2x/Users", false},
+		{http.MethodPost, "/api/scim/v2/Users", false},
 	} {
 		if got := auth.IsCSRFExempt(tc.method, tc.path); got != tc.want {
 			t.Errorf("IsCSRFExempt(%s %s) = %v, want %v", tc.method, tc.path, got, tc.want)

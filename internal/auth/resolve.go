@@ -211,8 +211,11 @@ func (rv *Resolver) resolveTx(ctx context.Context, q *sqlc.Queries, req LoginReq
 		res.UserID, res.Created, res.Linked = out.userID, out.method != "", out.method == ""
 		res.SignupMethod = out.method
 		if out.method == "" {
-			if err := writeAudit(ctx, q, out.userID, "identity.linked_by_email", a.ProviderID, req.IP, now,
-				map[string]string{"provider": a.ProviderID}); err != nil {
+			detail := map[string]string{"provider": a.ProviderID}
+			if out.linkVia != "" {
+				detail["via"] = out.linkVia
+			}
+			if err := writeAudit(ctx, q, out.userID, "identity.linked_by_email", a.ProviderID, req.IP, now, detail); err != nil {
 				return nil, err
 			}
 		} else {
@@ -371,7 +374,8 @@ func (rv *Resolver) linkTx(ctx context.Context, q *sqlc.Queries, req LoginReques
 // unseenOutcome is what linkOrSignUp decided for an unseen identity: link to
 // userID (method "") or sign up a new userID by method.
 type unseenOutcome struct {
-	userID string
+	userID  string
+	linkVia string // "scim" for a SCIM-provisioned link (audit detail)
 	method string
 	detail map[string]string // auth.signup audit detail
 }
@@ -395,6 +399,19 @@ func (rv *Resolver) linkOrSignUp(ctx context.Context, q *sqlc.Queries, req Login
 			return unseenOutcome{}, fmt.Errorf("auth: verified domain: %w", err)
 		}
 		trusted = org == req.Policy.OrgID
+	}
+	if !trusted && req.Policy.OrgID != "" {
+		// A person the org provisioned by SCIM on its own verified domain
+		// signs in through the org's IdP: the org already vouched for the
+		// address when it provisioned it (WU-611, Q14), so link even when
+		// the IdP is not trusted for email or did not mark it verified.
+		uid, err := scimLinkTarget(ctx, q, req.Policy.OrgID, a.Email)
+		if err != nil {
+			return unseenOutcome{}, err
+		}
+		if uid != "" {
+			return unseenOutcome{userID: uid, linkVia: "scim"}, nil
+		}
 	}
 	if trusted {
 		existing, err := q.FindUserByEmailAnyState(ctx, a.Email)
@@ -495,6 +512,43 @@ func jitApplies(ctx context.Context, q *sqlc.Queries, orgID, email string) (bool
 	return org == orgID, nil
 }
 
+// scimLinkTarget returns the user to link a sign-in through orgID's own
+// provider to by email: one with an active SCIM user in orgID, on a domain
+// orgID verified ("" for none).
+func scimLinkTarget(ctx context.Context, q *sqlc.Queries, orgID, email string) (string, error) {
+	if email == "" {
+		return "", nil
+	}
+	org, err := action.VerifiedOrgForEmail(ctx, q, email)
+	if err != nil {
+		return "", fmt.Errorf("auth: verified domain: %w", err)
+	}
+	if org != orgID {
+		return "", nil
+	}
+	u, err := q.FindUserByEmailFold(ctx, email)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("auth: find user by email: %w", err)
+	}
+	if u.DeletedAt.Valid || u.ID == formerMemberUserID {
+		return "", nil
+	}
+	su, err := q.GetSCIMUserByUser(ctx, sqlc.GetSCIMUserByUserParams{OrgID: orgID, UserID: u.ID})
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("auth: scim user: %w", err)
+	}
+	if su.Active != 1 {
+		return "", nil
+	}
+	return u.ID, nil
+}
+
 // orgProvisioning runs for every login through an org-owned provider
 // (SPEC §7.5), after the user is known: group sync first (when the org has
 // it on), then JIT, which gives a user on a verified domain who still holds
@@ -512,6 +566,19 @@ func (rv *Resolver) orgProvisioning(ctx context.Context, q *sqlc.Queries, req Lo
 	}
 	if err != nil {
 		return fmt.Errorf("auth: org sso settings: %w", err)
+	}
+	// A user the org provisions by SCIM is the SCIM client's to manage
+	// (Q14): their idp memberships follow their SCIM groups, so sign-in
+	// group sync would fight it, and a deactivated SCIM user must not get
+	// a JIT membership back by signing in.
+	su, err := q.GetSCIMUserByUser(ctx, sqlc.GetSCIMUserByUserParams{OrgID: orgID, UserID: res.UserID})
+	switch {
+	case err == nil:
+		slog.Info("auth: sign-in provisioning skipped: the user is provisioned by SCIM",
+			"org", orgID, "provider", a.ProviderID, "user", res.UserID, "active", su.Active == 1)
+		return nil
+	case !errors.Is(err, sql.ErrNoRows):
+		return fmt.Errorf("auth: scim user: %w", err)
 	}
 	if st.GroupSync == 1 {
 		if err := rv.groupSync(ctx, q, req, res, st.GroupClaim, now); err != nil {

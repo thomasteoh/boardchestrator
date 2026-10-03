@@ -28,6 +28,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/agentrt"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/auth/idp"
+	"github.com/thomasteoh/boardchestrator/internal/auth/scim"
 	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/event"
@@ -210,6 +211,12 @@ func (s *Server) setupRoutes() {
 	web.Routes(s.mux)
 	if s.db != nil {
 		s.setupAuthRoutes()
+		// SCIM 2.0 provisioning (SPEC §7.8): bearer SCIM tokens, no session,
+		// CSRF-exempt (auth.SCIMPattern), its own per-token rate limit.
+		scim.New(scim.Options{
+			DB: s.db, BaseURL: s.cfg.BaseURL, Events: s.EventSink(),
+			PerMinute: s.cfg.SCIMRateLimit.PerMinute, Burst: s.cfg.SCIMRateLimit.Burst,
+		}).Mount(s.mux)
 	}
 }
 

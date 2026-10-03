@@ -17,7 +17,7 @@ type CSRFExemption struct {
 // other means and never reads the session cookie: the session middleware
 // skips these paths too, so SessionFrom is always empty in their handlers.
 // Later WUs append their own entries here (and to the test asserting the
-// list): SCIM (WU-611), passkey login finish (WU-612).
+// list): passkey login finish (WU-612).
 var csrfExemptions = [...]CSRFExemption{
 	// OIDC Back-Channel Logout 1.0: a server-to-server POST from the IdP,
 	// authenticated by the signed logout_token (WU-609).
@@ -28,7 +28,19 @@ var csrfExemptions = [...]CSRFExemption{
 	// SAML SLO, HTTP-POST binding: a signed LogoutRequest or LogoutResponse
 	// from the IdP (WU-610).
 	{Method: http.MethodPost, Pattern: SAMLSLOPattern},
+	// SCIM 2.0 provisioning: server-to-server calls from the org's IdP,
+	// authenticated by a bearer SCIM token (WU-611). Every method the SCIM
+	// handler serves, including the safe ones, so the session middleware
+	// never resolves a cookie there either.
+	{Method: http.MethodGet, Pattern: SCIMPattern},
+	{Method: http.MethodPost, Pattern: SCIMPattern},
+	{Method: http.MethodPut, Pattern: SCIMPattern},
+	{Method: http.MethodPatch, Pattern: SCIMPattern},
+	{Method: http.MethodDelete, Pattern: SCIMPattern},
 }
+
+// SCIMPattern matches everything under the SCIM base path /scim/v2.
+const SCIMPattern = "/scim/v2/*"
 
 // CSRFExemptions returns a copy of the exemption list.
 func CSRFExemptions() []CSRFExemption {

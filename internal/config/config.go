@@ -56,6 +56,9 @@ type Config struct {
 	// 20/min burst 10 when zero). Not loaded from the environment: tests
 	// that sign in many times from one address raise it.
 	SignInRateLimit RateLimit `env:"-"`
+	// SCIMRateLimit overrides the per-token SCIM rate limit (SPEC §7.11,
+	// 600/min when zero). Not loaded from the environment (tests).
+	SCIMRateLimit RateLimit `env:"-"`
 }
 
 // RateLimit is a token-bucket rate: PerMinute refill, Burst capacity.
