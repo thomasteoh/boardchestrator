@@ -20,8 +20,8 @@ WHERE id = ?;
 -- id (the WHERE on the conflict update), so callers check managed_by first.
 INSERT INTO auth_providers (id, kind, preset, display_name, enabled, managed_by, issuer,
                             client_id, client_secret_enc, scopes, claim_map_json,
-                            trust_email, allow_signup, position, updated_at)
-VALUES (?, ?, ?, ?, 1, 'env', ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                            trust_email, allow_signup, position, idp_logout, updated_at)
+VALUES (?, ?, ?, ?, 1, 'env', ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ON CONFLICT (id) DO UPDATE SET
     kind              = excluded.kind,
     preset            = excluded.preset,
@@ -35,6 +35,7 @@ ON CONFLICT (id) DO UPDATE SET
     trust_email       = excluded.trust_email,
     allow_signup      = excluded.allow_signup,
     position          = excluded.position,
+    idp_logout        = excluded.idp_logout,
     updated_at        = excluded.updated_at
 WHERE auth_providers.managed_by = 'env';
 

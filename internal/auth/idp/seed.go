@@ -80,6 +80,7 @@ func SeedFromConfig(ctx context.Context, d *sql.DB, encKey []byte, cfg *config.C
 			ID: "google", Kind: KindOIDC, Preset: "google", DisplayName: g.DisplayName,
 			Issuer: issuer, ClientID: cfg.GoogleClientID, Scopes: strings.Join(g.Scopes, " "),
 			ClaimMapJson: "{}", TrustEmail: 1, AllowSignup: b2i(cfg.AllowSignup), Position: positionGoogle,
+			IdpLogout: b2i(g.SupportsLogout),
 		}, cfg.GoogleClientSecret)
 	}
 	if cfg.GitHubClientID != "" {
@@ -175,6 +176,7 @@ func envOIDCParams(p config.OIDCEnvProvider, signupDefault bool) (sqlc.UpsertEnv
 		ID: p.ID, Kind: KindOIDC, Preset: preset.ID, DisplayName: name, Issuer: issuer,
 		ClientID: p.ClientID, Scopes: strings.Join(scopes, " "), ClaimMapJson: claimMap,
 		TrustEmail: b2i(trust), AllowSignup: b2i(signup), Position: positionOIDC,
+		IdpLogout: b2i(preset.SupportsLogout),
 	}, nil
 }
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -510,18 +511,9 @@ func (rv *Resolver) orgProvisioning(ctx context.Context, q *sqlc.Queries, req Lo
 		return fmt.Errorf("auth: org sso settings: %w", err)
 	}
 	if st.GroupSync == 1 {
-		groups := a.Groups
-		if st.GroupClaim != "" {
-			groups = ClaimGroups(a.RawClaims, st.GroupClaim)
+		if err := rv.groupSync(ctx, q, req, res, st.GroupClaim, now); err != nil {
+			return err
 		}
-		sr, err := action.ReconcileIdPMemberships(ctx, q, action.SyncInput{
-			OrgID: orgID, UserID: res.UserID, ProviderID: a.ProviderID, Groups: groups,
-			Actor: action.Actor{Type: action.ActorUser, ID: res.UserID}, IP: req.IP, Now: rv.Sessions.now(),
-		})
-		if err != nil {
-			return fmt.Errorf("auth: group sync: %w", err)
-		}
-		res.Synced = &sr
 	}
 	ok, err := jitApplies(ctx, q, orgID, a.Email)
 	if err != nil || !ok {
@@ -561,6 +553,74 @@ func (rv *Resolver) orgProvisioning(ctx context.Context, q *sqlc.Queries, req Lo
 		return fmt.Errorf("auth: audit membership.jit: %w", err)
 	}
 	return nil
+}
+
+// Group sync skip reasons (Q12).
+const syncSkippedOverage = "groups_overage"
+
+// groupSync reconciles the user's idp memberships from the assertion's
+// groups (SPEC §7.5), unless the assertion cannot be trusted to list them:
+// a group claim that is absent (as opposed to present and empty) skips
+// reconciliation, so a misconfigured IdP never strips access, and so does
+// Entra's groups overage (too many groups to fit in the token: the claim is
+// replaced by a _claim_names reference or hasgroups), which is also audited
+// as membership.sync_skipped.
+func (rv *Resolver) groupSync(ctx context.Context, q *sqlc.Queries, req LoginRequest, res *LoginResult, groupClaim, now string) error {
+	a, orgID := req.Assertion, req.Policy.OrgID
+	path, groups := a.GroupsClaim, a.Groups
+	if groupClaim != "" {
+		path, groups = groupClaim, ClaimGroups(a.RawClaims, groupClaim)
+	}
+	if groupsOverage(a.RawClaims, path) {
+		slog.Warn("auth: group sync skipped: the identity provider sent a groups overage instead of the groups",
+			"org", orgID, "provider", a.ProviderID, "user", res.UserID)
+		dj, err := json.Marshal(map[string]string{"provider": a.ProviderID, "reason": syncSkippedOverage})
+		if err != nil {
+			return fmt.Errorf("auth: audit detail: %w", err)
+		}
+		if err := q.CreateAuditLog(ctx, sqlc.CreateAuditLogParams{
+			ID: newID(), OrgID: sql.NullString{String: orgID, Valid: true}, ActorType: "user", ActorID: res.UserID,
+			Action: "membership.sync_skipped", Subject: res.UserID, DetailJson: string(dj), Ip: req.IP, CreatedAt: now,
+		}); err != nil {
+			return fmt.Errorf("auth: audit membership.sync_skipped: %w", err)
+		}
+		return nil
+	}
+	if _, present := LookupClaim(a.RawClaims, path); !present {
+		slog.Info("auth: group sync skipped: the group claim is absent from the assertion",
+			"org", orgID, "provider", a.ProviderID, "claim", path, "user", res.UserID)
+		return nil
+	}
+	sr, err := action.ReconcileIdPMemberships(ctx, q, action.SyncInput{
+		OrgID: orgID, UserID: res.UserID, ProviderID: a.ProviderID, Groups: groups,
+		Actor: action.Actor{Type: action.ActorUser, ID: res.UserID}, IP: req.IP, Now: rv.Sessions.now(),
+	})
+	if err != nil {
+		return fmt.Errorf("auth: group sync: %w", err)
+	}
+	res.Synced = &sr
+	return nil
+}
+
+// groupsOverage detects Entra's groups overage: the token names a claim
+// source for the groups (or the group claim path) under _claim_names, or
+// carries hasgroups: true, instead of listing them.
+func groupsOverage(claims map[string]any, path string) bool {
+	if names, ok := claims["_claim_names"].(map[string]any); ok {
+		if _, ok := names["groups"]; ok {
+			return true
+		}
+		if _, ok := names[path]; ok && path != "" {
+			return true
+		}
+	}
+	switch v := claims["hasgroups"].(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(v, "true")
+	}
+	return false
 }
 
 // ensurePlatformAdmin grants a BC_ADMIN_EMAILS user an Org Owner membership in

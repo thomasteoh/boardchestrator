@@ -1,7 +1,8 @@
 // Package oidctest is an in-process fake OpenID Connect provider for tests
 // (SPEC §7). It serves discovery, JWKS, /authorize (auto-approving), /token
 // (PKCE-checked, RS256-signed ID tokens honouring the authorize nonce),
-// /userinfo and /end_session, and can be told to misbehave: wrong aud or iss,
+// /userinfo and /end_session, mints back-channel logout tokens
+// (LogoutToken), and can be told to misbehave: wrong aud or iss,
 // wrong or missing nonce, expired tokens, unsigned alg:none tokens, and
 // arbitrary claim overrides.
 //
@@ -105,6 +106,8 @@ type Server struct {
 	tokenLg     []TokenRequest
 	endSession  []url.Values
 	requirePKCE bool
+	// noEndSession hides end_session_endpoint from discovery.
+	noEndSession bool
 }
 
 // Keys are generated once per test binary: RSA generation dominates test time
@@ -221,9 +224,21 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// SetEndSessionSupported toggles whether discovery advertises
+// end_session_endpoint (default on). Connectors cache discovery, so set it
+// before the first login through a fresh provider.
+func (s *Server) SetEndSessionSupported(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.noEndSession = !on
+}
+
 func (s *Server) discovery(w http.ResponseWriter, _ *http.Request) {
 	iss := s.Issuer()
-	writeJSON(w, http.StatusOK, map[string]any{
+	s.mu.Lock()
+	noEnd := s.noEndSession
+	s.mu.Unlock()
+	doc := map[string]any{
 		"issuer":                                iss,
 		"authorization_endpoint":                iss + "/authorize",
 		"token_endpoint":                        iss + "/token",
@@ -237,7 +252,13 @@ func (s *Server) discovery(w http.ResponseWriter, _ *http.Request) {
 		"scopes_supported":                      []string{"openid", "email", "profile"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
 		"claims_supported":                      []string{"sub", "email", "email_verified", "name", "picture", "groups", "sid"},
-	})
+		"backchannel_logout_supported":          true,
+		"backchannel_logout_session_supported":  true,
+	}
+	if noEnd {
+		delete(doc, "end_session_endpoint")
+	}
+	writeJSON(w, http.StatusOK, doc)
 }
 
 func (s *Server) jwks(w http.ResponseWriter, _ *http.Request) {
@@ -445,6 +466,108 @@ func (s *Server) mintIDToken(g codeGrant, m Misbehaviour) (string, error) {
 	}
 }
 
+// BackChannelLogoutEvent is the events member of a logout token.
+const BackChannelLogoutEvent = "http://schemas.openid.net/event/backchannel-logout"
+
+// LogoutTokenOptions shapes a back-channel logout token (OIDC Back-Channel
+// Logout 1.0). The zero value plus a Subject or SID is a valid token: iss,
+// aud, iat now, exp in two minutes, a fresh jti, the logout event, typ
+// logout+jwt, signed with the JWKS key.
+type LogoutTokenOptions struct {
+	Subject, SID string
+	// JTI defaults to a random value; OmitJTI leaves it out.
+	JTI     string
+	OmitJTI bool
+	// IssuedAt defaults to now; OmitExp leaves exp out.
+	IssuedAt time.Time
+	OmitExp  bool
+	Expired  bool // exp a minute in the past
+	// Nonce adds a nonce claim (forbidden in logout tokens).
+	Nonce         string
+	WrongAudience bool
+	WrongIssuer   bool
+	OmitEvents    bool
+	// EventsArray sends events as an array of names instead of an object.
+	EventsArray bool
+	WrongKey    bool
+	AlgNone     bool
+	// Typ is the JOSE typ header ("" = logout+jwt; "-" = no typ).
+	Typ string
+	// Claims override or add claims last (nil value deletes).
+	Claims map[string]any
+}
+
+// LogoutToken mints a back-channel logout token.
+func (s *Server) LogoutToken(o LogoutTokenOptions) (string, error) {
+	iat := o.IssuedAt
+	if iat.IsZero() {
+		iat = time.Now()
+	}
+	c := map[string]any{
+		"iss":    s.Issuer(),
+		"aud":    s.ClientID,
+		"iat":    iat.Unix(),
+		"exp":    iat.Add(2 * time.Minute).Unix(),
+		"events": map[string]any{BackChannelLogoutEvent: map[string]any{}},
+	}
+	if o.Subject != "" {
+		c["sub"] = o.Subject
+	}
+	if o.SID != "" {
+		c["sid"] = o.SID
+	}
+	switch {
+	case o.OmitJTI:
+	case o.JTI != "":
+		c["jti"] = o.JTI
+	default:
+		c["jti"] = randToken()
+	}
+	if o.OmitExp {
+		delete(c, "exp")
+	}
+	if o.Expired {
+		c["exp"] = time.Now().Add(-time.Minute).Unix()
+	}
+	if o.Nonce != "" {
+		c["nonce"] = o.Nonce
+	}
+	if o.WrongAudience {
+		c["aud"] = "someone-else"
+	}
+	if o.WrongIssuer {
+		c["iss"] = s.Issuer() + "/evil"
+	}
+	if o.OmitEvents {
+		delete(c, "events")
+	}
+	if o.EventsArray {
+		c["events"] = []string{BackChannelLogoutEvent}
+	}
+	for k, v := range o.Claims {
+		if v == nil {
+			delete(c, k)
+		} else {
+			c[k] = v
+		}
+	}
+	typ := o.Typ
+	switch typ {
+	case "":
+		typ = "logout+jwt"
+	case "-":
+		typ = ""
+	}
+	switch {
+	case o.AlgNone:
+		return UnsignedJWT(c)
+	case o.WrongKey:
+		return signJWTTyp(s.rogueKey, s.kid, typ, c)
+	default:
+		return signJWTTyp(s.key, s.kid, typ, c)
+	}
+}
+
 // Sign returns claims as an RS256 JWT signed with the IdP's JWKS key, for
 // tests that need hand-built tokens (e.g. back-channel logout tokens).
 func (s *Server) Sign(claims map[string]any) (string, error) {
@@ -452,7 +575,16 @@ func (s *Server) Sign(claims map[string]any) (string, error) {
 }
 
 func signJWT(key *rsa.PrivateKey, kid string, claims map[string]any) (string, error) {
-	h, err := json.Marshal(map[string]string{"alg": "RS256", "typ": "JWT", "kid": kid})
+	return signJWTTyp(key, kid, "JWT", claims)
+}
+
+// signJWTTyp signs with the given typ header ("" omits it).
+func signJWTTyp(key *rsa.PrivateKey, kid, typ string, claims map[string]any) (string, error) {
+	hdr := map[string]string{"alg": "RS256", "kid": kid}
+	if typ != "" {
+		hdr["typ"] = typ
+	}
+	h, err := json.Marshal(hdr)
 	if err != nil {
 		return "", err
 	}

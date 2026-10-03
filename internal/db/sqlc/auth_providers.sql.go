@@ -410,8 +410,8 @@ func (q *Queries) UpdateAuthProvider(ctx context.Context, arg UpdateAuthProvider
 const upsertEnvAuthProvider = `-- name: UpsertEnvAuthProvider :exec
 INSERT INTO auth_providers (id, kind, preset, display_name, enabled, managed_by, issuer,
                             client_id, client_secret_enc, scopes, claim_map_json,
-                            trust_email, allow_signup, position, updated_at)
-VALUES (?, ?, ?, ?, 1, 'env', ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                            trust_email, allow_signup, position, idp_logout, updated_at)
+VALUES (?, ?, ?, ?, 1, 'env', ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ON CONFLICT (id) DO UPDATE SET
     kind              = excluded.kind,
     preset            = excluded.preset,
@@ -425,6 +425,7 @@ ON CONFLICT (id) DO UPDATE SET
     trust_email       = excluded.trust_email,
     allow_signup      = excluded.allow_signup,
     position          = excluded.position,
+    idp_logout        = excluded.idp_logout,
     updated_at        = excluded.updated_at
 WHERE auth_providers.managed_by = 'env'
 `
@@ -442,6 +443,7 @@ type UpsertEnvAuthProviderParams struct {
 	TrustEmail      int64
 	AllowSignup     int64
 	Position        int64
+	IdpLogout       int64
 }
 
 // Seeds an env-managed row. Never overwrites a UI-managed row with the same
@@ -460,6 +462,7 @@ func (q *Queries) UpsertEnvAuthProvider(ctx context.Context, arg UpsertEnvAuthPr
 		arg.TrustEmail,
 		arg.AllowSignup,
 		arg.Position,
+		arg.IdpLogout,
 	)
 	return err
 }

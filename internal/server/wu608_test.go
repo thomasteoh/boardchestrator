@@ -25,6 +25,9 @@ const (
 	roleViewerSys = "33333333333333333333333333333333"
 )
 
+// noGroups sends the groups claim present but empty.
+var noGroups = map[string]any{"groups": []string{}}
+
 // membership returns "role/source" for user at resource in org ("" = none).
 func (h *smHarness) membership(org, userID, rt, rid string) string {
 	h.t.Helper()
@@ -442,8 +445,9 @@ func TestGroupSync(t *testing.T) {
 	signInAs(acme, "acme-sso", oidctest.User{Subject: "s-helen", Email: "helen@corp.example", EmailVerified: true, Groups: []string{"ops"}})
 	check("left eng", map[string]string{"org": "", "team": roleViewerSys + "/idp", "project": "r-member/manual", "b-org": roleViewerSys + "/manual"})
 
-	// No groups: every idp membership goes; manual ones survive.
-	signInAs(acme, "acme-sso", oidctest.User{Subject: "s-helen", Email: "helen@corp.example", EmailVerified: true})
+	// No groups (claim present, empty): every idp membership goes; manual
+	// ones survive. An absent claim skips sync instead (WU-609, Q12).
+	signInAs(acme, "acme-sso", oidctest.User{Subject: "s-helen", Email: "helen@corp.example", EmailVerified: true, Extra: noGroups})
 	check("no groups", map[string]string{"org": "", "team": "", "project": "r-member/manual", "b-org": roleViewerSys + "/manual"})
 
 	// Org-b syncs independently through its own provider: its mapping adds
@@ -452,7 +456,7 @@ func TestGroupSync(t *testing.T) {
 	signInAs(acme, "acme-sso", oidctest.User{Subject: "s-helen", Email: "helen@corp.example", EmailVerified: true, Groups: []string{"eng"}})
 	signInAs(beta, "beta-sso", oidctest.User{Subject: "s-helen-b", Email: "helen@corp.example", EmailVerified: true, Groups: []string{"eng", "ops"}})
 	check("org-b sync", map[string]string{"org": "r-member/idp", "b-org": roleViewerSys + "/manual", "b-team": roleMemberSys + "/idp"})
-	signInAs(beta, "beta-sso", oidctest.User{Subject: "s-helen-b", Email: "helen@corp.example", EmailVerified: true})
+	signInAs(beta, "beta-sso", oidctest.User{Subject: "s-helen-b", Email: "helen@corp.example", EmailVerified: true, Extra: noGroups})
 	check("org-b cleared", map[string]string{"org": "r-member/idp", "b-team": ""})
 
 	// A platform provider never syncs: Helen via google keeps everything.
@@ -498,7 +502,7 @@ func TestGroupSyncWithJIT(t *testing.T) {
 	if h.membership("org-acme", kim, "org", "org-acme") != roleViewerSys+"/jit" || h.membership("org-acme", kim, "team", "t-ops") != roleTeamAdmin+"/idp" {
 		t.Fatalf("JIT + sync: %q %q", h.membership("org-acme", kim, "org", "org-acme"), h.membership("org-acme", kim, "team", "t-ops"))
 	}
-	acme.SetUser(oidctest.User{Subject: "s-kim", Email: "kim@corp.example", EmailVerified: true})
+	acme.SetUser(oidctest.User{Subject: "s-kim", Email: "kim@corp.example", EmailVerified: true, Extra: noGroups})
 	if end := h.signIn(oidctest.NewBrowser(t), "acme-sso"); end.Status != http.StatusOK {
 		t.Fatalf("sign-in: %d", end.Status)
 	}
