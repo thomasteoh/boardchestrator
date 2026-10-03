@@ -1477,6 +1477,10 @@ func Routes(r chi.Router) {
 	r.Post("/app/org/{orgID}/settings/sso/providers/{id}/disable", handleOrgIdPVerb("disable"))
 	r.Post("/app/org/{orgID}/settings/sso/providers/{id}/delete", handleOrgIdPVerb("delete"))
 	r.Post("/app/org/{orgID}/settings/sso/enforcement", handleOrgSSOEnforce)
+	// Org SSO: JIT provisioning and group mappings (WU-608).
+	r.Post("/app/org/{orgID}/settings/sso/provisioning", handleOrgProvisioning)
+	r.Post("/app/org/{orgID}/settings/sso/mappings", handleOrgMappingCreate)
+	r.Post("/app/org/{orgID}/settings/sso/mappings/{id}/delete", handleOrgMappingDelete)
 	r.Get(views.IdPAdminBase, handleIdPList)
 	r.Post(views.IdPAdminBase, handleIdPCreate)
 	r.Get(views.IdPAdminBase+"/new", handleIdPNew)

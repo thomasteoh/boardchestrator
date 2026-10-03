@@ -58,7 +58,8 @@ func orgSSORedirect(w http.ResponseWriter, r *http.Request, orgID, kind, code st
 	http.Redirect(w, r, views.OrgSSOURL(url.PathEscape(orgID))+"?"+kind+"="+code, http.StatusSeeOther) //nolint:gosec // G710: same-origin fixed path, see above
 }
 
-// orgSSOSections builds the Identity provider and Enforcement sections.
+// orgSSOSections builds the Identity provider, Enforcement and Provisioning
+// sections.
 func orgSSOSections(r *http.Request, actor action.Actor, orgID string, d *views.OrgSSOData) error {
 	out, err := orgDispatch(r, actor, orgID, idp.ActionOrgList, struct{}{})
 	if err != nil {
@@ -98,6 +99,12 @@ func orgSSOSections(r *http.Request, actor action.Actor, orgID string, d *views.
 		en.CanEnable = true
 	}
 	d.Enforcement = views.OrgEnforcementSection(en)
+
+	pd, err := provisioningSection(r, actor, orgID, csrf, st, provs)
+	if err != nil {
+		return err
+	}
+	d.Provisioning = views.OrgProvisioningSection(pd)
 	return nil
 }
 

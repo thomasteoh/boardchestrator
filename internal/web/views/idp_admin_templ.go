@@ -1285,7 +1285,7 @@ func IdPFormBody(csrf string, f IdPForm) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if f.OrgOwned {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "<p class=\"bc-alert bc-alert-warning\">When trusted, a first sign-in through this provider is linked to an existing account with the same verified email, but only for addresses on this organisation's verified domains. Addresses on other domains are never linked. New people join through an invitation.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "<p class=\"bc-alert bc-alert-warning\">When trusted, a first sign-in through this provider is linked to an existing account with the same verified email, but only for addresses on this organisation's verified domains. Addresses on other domains are never linked. New people join through an invitation, or on their first sign-in when just-in-time provisioning is on.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

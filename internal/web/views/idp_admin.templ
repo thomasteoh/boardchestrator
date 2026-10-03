@@ -350,7 +350,7 @@ templ IdPFormBody(csrf string, f IdPForm) {
 			</label>
 			if f.OrgOwned {
 				<p class="bc-alert bc-alert-warning">
-					When trusted, a first sign-in through this provider is linked to an existing account with the same verified email, but only for addresses on this organisation's verified domains. Addresses on other domains are never linked. New people join through an invitation.
+					When trusted, a first sign-in through this provider is linked to an existing account with the same verified email, but only for addresses on this organisation's verified domains. Addresses on other domains are never linked. New people join through an invitation, or on their first sign-in when just-in-time provisioning is on.
 				</p>
 			} else {
 				<p class="bc-alert bc-alert-warning">
