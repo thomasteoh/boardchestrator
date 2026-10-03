@@ -60,7 +60,9 @@ func (i Impact) String() string {
 type ScopeKind int
 
 const (
-	// ScopePlatform is a platform-level action with no tenant id.
+	// ScopePlatform is a platform-administration action. It takes no tenant
+	// id (Dispatch refuses one) and its permission is always checked against
+	// the platform org's grants, never a caller-supplied org (Q10).
 	ScopePlatform ScopeKind = iota
 	// ScopeOrg requires an org id.
 	ScopeOrg
@@ -68,6 +70,11 @@ const (
 	ScopeTeam
 	// ScopeProject requires org + project ids.
 	ScopeProject
+	// ScopeSelf is a per-user action on the caller's own rows (theme,
+	// notifications, sessions, ...). It needs no grant, takes no tenant id,
+	// and only a user actor may dispatch it; the handler must scope every
+	// read and write to ac.Actor.ID (use SelfUserID for a user_id input).
+	ScopeSelf
 )
 
 // String renders a ScopeKind.
@@ -81,6 +88,8 @@ func (s ScopeKind) String() string {
 		return "team"
 	case ScopeProject:
 		return "project"
+	case ScopeSelf:
+		return "self"
 	default:
 		return fmt.Sprintf("scope(%d)", int(s))
 	}

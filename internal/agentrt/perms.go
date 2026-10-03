@@ -101,6 +101,11 @@ func (c agentPermChecker) Allow(ctx context.Context, ac action.ActionCtx, def ac
 		// calls; the engine only dispatches as the agent. Allow reads.
 		return def.Impact == action.ImpactRead, nil
 	}
+	// Agents are org principals: platform administration and per-user
+	// (self) actions are never theirs to run, whatever their grants (Q10).
+	if def.Scope == action.ScopePlatform || def.Scope == action.ScopeSelf {
+		return false, nil
+	}
 	q := sqlc.New(c.db)
 	agent, err := q.FindAgentByID(ctx, ac.Actor.ID)
 	if err != nil {

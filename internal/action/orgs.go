@@ -328,7 +328,27 @@ func NewDBScopeResolver(d *sql.DB) *DBScopeResolver {
 func (r *DBScopeResolver) Resolve(ctx context.Context, ac ActionCtx, def Definition) error {
 	switch def.Scope {
 	case ScopePlatform:
-		return nil // no scope to check
+		// Dispatch already refuses this (checkScopeShape); repeated here so the
+		// resolver is safe on its own (Q10).
+		if ac.Org != "" || ac.Team != "" || ac.Proj != "" {
+			return fmt.Errorf("platform action %s takes no org, team or project id", def.Name)
+		}
+		return nil
+	case ScopeSelf:
+		if ac.Org != "" || ac.Team != "" || ac.Proj != "" {
+			return fmt.Errorf("self action %s takes no org, team or project id", def.Name)
+		}
+		if ac.Actor.Type != ActorUser {
+			return fmt.Errorf("self action %s needs a user actor", def.Name)
+		}
+		user, err := r.q.GetUser(ctx, ac.Actor.ID)
+		if err != nil {
+			return fmt.Errorf("user %s not found: %w", ac.Actor.ID, err)
+		}
+		if user.DeletedAt.Valid {
+			return fmt.Errorf("user %s is deleted", ac.Actor.ID)
+		}
+		return nil
 	case ScopeOrg:
 		if ac.Org == "" {
 			return fmt.Errorf("missing org_id for org-scoped action")

@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -1003,9 +1002,7 @@ func handleNotifications(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleNotifMarkRead marks one notification read for the session user.
-// Direct sqlc handler (user-scoped from session) — the notif.mark_read action
-// is ungrantable to regular users (ScopePlatform + notif.* perm only on
-// platform admin), so the UI uses the direct path like unread-count.
+// It dispatches notif.mark_read (ScopeSelf: no grant, scoped to the caller).
 func handleNotifMarkRead(w http.ResponseWriter, r *http.Request) {
 	if disp == nil {
 		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
@@ -1039,12 +1036,9 @@ func handleNotifMarkRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing id", http.StatusBadRequest)
 		return
 	}
-	q := sqlc.New(disp.DB())
-	if err := q.MarkNotificationRead(r.Context(), sqlc.MarkNotificationReadParams{
-		ReadAt: timestampNow(),
-		ID:     id,
-		UserID: sess.UserID,
-	}); err != nil {
+	raw, _ := json.Marshal(map[string]string{"id": id})
+	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: r.RemoteAddr}
+	if _, err := disp.Dispatch(r.Context(), actor, "notif.mark_read", raw, action.Opts{}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1063,20 +1057,13 @@ func handleNotifMarkAllRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	q := sqlc.New(disp.DB())
-	if err := q.MarkAllNotificationsRead(r.Context(), sqlc.MarkAllNotificationsReadParams{
-		ReadAt: timestampNow(),
-		UserID: sess.UserID,
-	}); err != nil {
+	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: r.RemoteAddr}
+	if _, err := disp.Dispatch(r.Context(), actor, "notif.mark_all_read", json.RawMessage(`{}`), action.Opts{}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
-}
-
-func timestampNow() string {
-	return time.Now().UTC().Format(time.RFC3339)
 }
 
 // handleSprintList renders the sprints list page for a project.

@@ -1,10 +1,14 @@
 package web
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
+	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
@@ -68,7 +72,8 @@ func handleSessionsList(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleSessionRevoke handles session revoke action.
+// handleSessionRevoke revokes one of the session user's own sessions through
+// the session.revoke action (ScopeSelf: the delete is scoped to the caller).
 func handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 	sess, ok := auth.SessionFrom(r.Context())
 	if !ok || sess.UserID == "" {
@@ -79,13 +84,28 @@ func handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		TokenHash string `json:"token_hash"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form body", http.StatusBadRequest)
+			return
+		}
+		input.TokenHash = r.PostFormValue("token_hash")
+	} else if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 
-	q := sqlc.New(disp.DB())
-	if err := q.DeleteSession(r.Context(), input.TokenHash); err != nil {
+	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: r.RemoteAddr}
+	if _, err := disp.Dispatch(r.Context(), actor, "session.revoke", raw, action.Opts{}); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
 		slog.Error("revoke session", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return

@@ -20,7 +20,7 @@ func TestNotifMarkRead(t *testing.T) {
 	Register(Definition{
 		Name:   "notif.mark_read",
 		Impact: ImpactLow,
-		Scope:  ScopePlatform,
+		Scope:  ScopeSelf,
 		Handle: handleMarkRead,
 	})
 
@@ -44,7 +44,7 @@ func TestNotifMarkRead(t *testing.T) {
 
 	in := map[string]any{"id": "n1", "user_id": "u1"}
 	raw, _ := json.Marshal(in)
-	_, err = d.Dispatch(ctx, userActor(), "notif.mark_read", raw, Opts{Org: "o1"})
+	_, err = d.Dispatch(ctx, userActor(), "notif.mark_read", raw, Opts{})
 	if err != nil {
 		t.Fatalf("notif.mark_read: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestNotifMarkAllRead(t *testing.T) {
 	Register(Definition{
 		Name:   "notif.mark_all_read",
 		Impact: ImpactLow,
-		Scope:  ScopePlatform,
+		Scope:  ScopeSelf,
 		Handle: handleMarkAllRead,
 	})
 
@@ -82,7 +82,7 @@ func TestNotifMarkAllRead(t *testing.T) {
 
 	in := map[string]any{"user_id": "u1"}
 	raw, _ := json.Marshal(in)
-	_, err = d.Dispatch(ctx, userActor(), "notif.mark_all_read", raw, Opts{Org: "o1"})
+	_, err = d.Dispatch(ctx, userActor(), "notif.mark_all_read", raw, Opts{})
 	if err != nil {
 		t.Fatalf("notif.mark_all_read: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestNotifUnreadCount(t *testing.T) {
 	Register(Definition{
 		Name:   "notif.unread_count",
 		Impact: ImpactRead,
-		Scope:  ScopePlatform,
+		Scope:  ScopeSelf,
 		Handle: handleNotifUnreadCount,
 	})
 
@@ -118,7 +118,7 @@ func TestNotifUnreadCount(t *testing.T) {
 
 	in := map[string]any{"user_id": "u1"}
 	raw, _ := json.Marshal(in)
-	out, err := d.Dispatch(ctx, userActor(), "notif.unread_count", raw, Opts{Org: "o1"})
+	out, err := d.Dispatch(ctx, userActor(), "notif.unread_count", raw, Opts{})
 	if err != nil {
 		t.Fatalf("notif.unread_count: %v", err)
 	}

@@ -25,7 +25,7 @@ func init() {
 		Name:       "github.connect",
 		Impact:     ImpactLow,
 		Permission: "github.connect",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleGithubConnect,
 	})
@@ -33,7 +33,7 @@ func init() {
 		Name:       "github.disconnect",
 		Impact:     ImpactLow,
 		Permission: "github.disconnect",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleGithubDisconnect,
 	})
@@ -41,7 +41,7 @@ func init() {
 		Name:       "github.status",
 		Impact:     ImpactRead,
 		Permission: "github.status",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleGithubStatus,
 	})

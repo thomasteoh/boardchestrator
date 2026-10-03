@@ -127,6 +127,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownAction, name)
 	}
+	if err := checkScopeShape(def, actor, opts); err != nil {
+		return nil, err
+	}
 
 	ac := ActionCtx{
 		Actor:     actor,
@@ -222,7 +225,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 
 	// 10. Emit event carrying the actor (SPEC §4). Subject best-effort.
 	evPayload := payload
-	if def.PrivateResult {
+	// Self-scope results are one user's own data, and tenant-less events
+	// reach every signed-in SSE client.
+	if def.PrivateResult || def.Scope == ScopeSelf {
 		evPayload = nil
 	}
 	d.events.Emit(ctx, Event{

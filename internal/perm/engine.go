@@ -259,6 +259,20 @@ func (a *CheckerAdapter) Allow(ctx context.Context, ac action.ActionCtx, def act
 	if ac.Actor.Type == action.ActorService {
 		return true, nil
 	}
+	switch def.Scope {
+	case action.ScopeSelf:
+		// No grant needed: the action only touches the caller's own rows, and
+		// Dispatch has already required a user actor with no tenant id.
+		return ac.Actor.Type == action.ActorUser, nil
+	case action.ScopePlatform:
+		// Always evaluated against the platform org, never a caller-supplied
+		// org/team/project (Q10). Agents are org principals and never hold
+		// platform grants.
+		if ac.Actor.Type == action.ActorAgent {
+			return false, nil
+		}
+		return a.inner.Allow(ctx, ac.Actor.ID, "", "", "", def.Permission)
+	}
 	// Agent actors resolve via role-grants ∩ attached-skills intersection
 	// (SPEC §6); user/apikey actors via the standard membership walk.
 	if ac.Actor.Type == action.ActorAgent {

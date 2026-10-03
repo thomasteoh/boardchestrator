@@ -68,7 +68,7 @@ func init() {
 		Name:       "invite.accept",
 		Impact:     ImpactLow,
 		Permission: "",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleInviteAccept,
 	})

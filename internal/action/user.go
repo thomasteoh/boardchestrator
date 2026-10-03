@@ -2,6 +2,7 @@ package action
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -28,7 +29,7 @@ func init() {
 		Name:       "user.theme.update",
 		Impact:     ImpactLow,
 		Permission: "user.theme.update",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleUserThemeUpdate,
 	})
@@ -36,7 +37,7 @@ func init() {
 		Name:       "user.timezone.update",
 		Impact:     ImpactLow,
 		Permission: "user.timezone.update",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleUserTimezoneUpdate,
 	})
@@ -44,7 +45,7 @@ func init() {
 		Name:       "session.revoke",
 		Impact:     ImpactLow,
 		Permission: "session.revoke",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleSessionRevoke,
 	})
@@ -86,8 +87,19 @@ func handleSessionRevoke(ctx context.Context, ac ActionCtx, in json.RawMessage) 
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("session.revoke: %w", err)
 	}
-	if err := ac.Tx.DeleteSession(ctx, input.TokenHash); err != nil {
+	if input.TokenHash == "" {
+		return nil, fmt.Errorf("%w: token_hash required", ErrInvalidInput)
+	}
+	n, err := ac.Tx.DeleteUserSession(ctx, sqlc.DeleteUserSessionParams{
+		TokenHash: input.TokenHash,
+		UserID:    ac.Actor.ID,
+	})
+	if err != nil {
 		return nil, fmt.Errorf("session.revoke: %w", err)
+	}
+	if n == 0 {
+		// Another user's session (or none): indistinguishable to the caller.
+		return nil, fmt.Errorf("session.revoke: %w", sql.ErrNoRows)
 	}
 	return map[string]string{"status": "ok"}, nil
 }

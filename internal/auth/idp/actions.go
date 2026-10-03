@@ -77,7 +77,8 @@ func init() {
 // platformOnly refuses calls that carry a tenant scope. Platform-scope
 // permission is meant to come from the platform org; a caller-supplied org id
 // would otherwise be checked against that org's grants, where an org Owner
-// holds "*".
+// holds "*". Dispatch now refuses a tenant id on every platform-scope action
+// (WU-603a); this stays as defence in depth until WU-607 adds org-owned rows.
 func platformOnly(h action.HandlerFunc) action.HandlerFunc {
 	return func(ctx context.Context, ac action.ActionCtx, in json.RawMessage) (any, error) {
 		if ac.Org != "" || ac.Team != "" || ac.Proj != "" {

@@ -29,7 +29,7 @@ func init() {
 		Name:       "user.export",
 		Impact:     ImpactLow,
 		Permission: "user.export",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleUserExport,
 	})
@@ -88,6 +88,11 @@ func handleUserExport(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("user.export: %w", err)
 	}
+	userID, err := SelfUserID(ac, input.UserID)
+	if err != nil {
+		return nil, err
+	}
+	input.UserID = userID
 
 	q := sqlc.New(ac.DB)
 

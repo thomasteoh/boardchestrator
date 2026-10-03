@@ -311,10 +311,11 @@ func TestIdPActionsPermission(t *testing.T) {
 			if !errors.Is(err, action.ErrForbidden) {
 				t.Errorf("%s as %s (org %q): err = %v, want ErrForbidden", name, c.as, c.opts.Org, err)
 			}
-			// With an org id, the org's "*" grant passes the permission
-			// check; the platform-only guard must still refuse.
-			if c.as == orgOwnerID && c.opts.Org != "" && (err == nil || !strings.Contains(err.Error(), "organisation")) {
-				t.Errorf("%s as %s with org: not refused by the platform guard: %v", name, c.as, err)
+			// With an org id, Dispatch refuses the platform action before the
+			// permission check could consult the org's "*" grant (WU-603a);
+			// TestPlatformOnlyGuard covers the handler-level guard.
+			if c.as == orgOwnerID && c.opts.Org != "" && (err == nil || !strings.Contains(err.Error(), "takes no org")) {
+				t.Errorf("%s as %s with org: not refused by the platform-scope check: %v", name, c.as, err)
 			}
 		}
 	}

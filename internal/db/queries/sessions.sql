@@ -30,3 +30,8 @@ WHERE token_hash = ?;
 -- name: DeleteExpiredSessions :exec
 DELETE FROM sessions
 WHERE expires_at <= ?;
+
+-- name: DeleteUserSession :execrows
+-- session.revoke: a user can only revoke their own sessions.
+DELETE FROM sessions
+WHERE token_hash = ? AND user_id = ?;
