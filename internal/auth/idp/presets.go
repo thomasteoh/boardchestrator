@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -237,4 +238,43 @@ func entraTenant(issuer string) (tenant string, multi bool) {
 	}
 	tenant = segs[len(segs)-2]
 	return tenant, entraMultiTenant[tenant]
+}
+
+// ParseIssuer recovers the template parameters from an issuer this preset
+// expanded (the admin edit form shows them again). ok is false when issuer
+// does not fit the template.
+func (p Preset) ParseIssuer(issuer string) (params map[string]string, ok bool) {
+	var pat strings.Builder
+	pat.WriteString("^")
+	var names []string
+	rest := p.IssuerTemplate
+	for {
+		i := strings.Index(rest, "{")
+		if i < 0 {
+			pat.WriteString(regexp.QuoteMeta(rest))
+			break
+		}
+		j := strings.Index(rest[i:], "}")
+		if j < 0 {
+			return nil, false
+		}
+		pat.WriteString(regexp.QuoteMeta(rest[:i]))
+		pat.WriteString("(.+?)")
+		names = append(names, rest[i+1:i+j])
+		rest = rest[i+j+1:]
+	}
+	pat.WriteString("$")
+	re, err := regexp.Compile(pat.String())
+	if err != nil {
+		return nil, false
+	}
+	m := re.FindStringSubmatch(issuer)
+	if m == nil {
+		return nil, false
+	}
+	params = make(map[string]string, len(names))
+	for i, n := range names {
+		params[n] = m[i+1]
+	}
+	return params, true
 }

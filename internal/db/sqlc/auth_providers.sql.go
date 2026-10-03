@@ -9,6 +9,75 @@ import (
 	"context"
 )
 
+const countIdentitiesByProvider = `-- name: CountIdentitiesByProvider :one
+SELECT COUNT(*) FROM identities
+WHERE provider = ?
+`
+
+func (q *Queries) CountIdentitiesByProvider(ctx context.Context, provider string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countIdentitiesByProvider, provider)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createAuthProvider = `-- name: CreateAuthProvider :exec
+INSERT INTO auth_providers (id, org_id, kind, preset, display_name, enabled, managed_by, issuer,
+                            client_id, client_secret_enc, scopes, claim_map_json,
+                            trust_email, allow_signup, allowed_tenants_json, position)
+VALUES (?, NULL, ?, ?, ?, ?, 'ui', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type CreateAuthProviderParams struct {
+	ID                 string
+	Kind               string
+	Preset             string
+	DisplayName        string
+	Enabled            int64
+	Issuer             string
+	ClientID           string
+	ClientSecretEnc    string
+	Scopes             string
+	ClaimMapJson       string
+	TrustEmail         int64
+	AllowSignup        int64
+	AllowedTenantsJson string
+	Position           int64
+}
+
+func (q *Queries) CreateAuthProvider(ctx context.Context, arg CreateAuthProviderParams) error {
+	_, err := q.db.ExecContext(ctx, createAuthProvider,
+		arg.ID,
+		arg.Kind,
+		arg.Preset,
+		arg.DisplayName,
+		arg.Enabled,
+		arg.Issuer,
+		arg.ClientID,
+		arg.ClientSecretEnc,
+		arg.Scopes,
+		arg.ClaimMapJson,
+		arg.TrustEmail,
+		arg.AllowSignup,
+		arg.AllowedTenantsJson,
+		arg.Position,
+	)
+	return err
+}
+
+const deleteAuthProvider = `-- name: DeleteAuthProvider :execrows
+DELETE FROM auth_providers
+WHERE id = ? AND org_id IS NULL AND managed_by = 'ui'
+`
+
+func (q *Queries) DeleteAuthProvider(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteAuthProvider, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const disableEnvAuthProvider = `-- name: DisableEnvAuthProvider :exec
 UPDATE auth_providers
 SET enabled = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
@@ -160,6 +229,172 @@ func (q *Queries) ListEnabledAuthProviders(ctx context.Context) ([]AuthProvider,
 		return nil, err
 	}
 	return items, nil
+}
+
+const listPlatformAuthProviders = `-- name: ListPlatformAuthProviders :many
+
+SELECT p.id, p.kind, p.preset, p.display_name, p.enabled, p.managed_by, p.issuer,
+       p.client_id, CAST(p.client_secret_enc <> '' AS INTEGER) AS has_secret,
+       p.scopes, p.claim_map_json, p.trust_email, p.allow_signup,
+       p.allowed_tenants_json, p.position, p.created_at, p.updated_at,
+       CAST((SELECT COUNT(*) FROM identities i WHERE i.provider = p.id) AS INTEGER) AS identity_count
+FROM auth_providers p
+WHERE p.org_id IS NULL
+ORDER BY p.position, p.id
+`
+
+type ListPlatformAuthProvidersRow struct {
+	ID                 string
+	Kind               string
+	Preset             string
+	DisplayName        string
+	Enabled            int64
+	ManagedBy          string
+	Issuer             string
+	ClientID           string
+	HasSecret          int64
+	Scopes             string
+	ClaimMapJson       string
+	TrustEmail         int64
+	AllowSignup        int64
+	AllowedTenantsJson string
+	Position           int64
+	CreatedAt          string
+	UpdatedAt          string
+	IdentityCount      int64
+}
+
+// Platform provider management (idp.* actions, WU-603). These touch only
+// platform rows (org_id IS NULL) managed in the UI (managed_by = 'ui');
+// org-owned providers are WU-607.
+// Every platform provider with its identity count. Deliberately omits
+// client_secret_enc: callers only learn whether a secret is set.
+func (q *Queries) ListPlatformAuthProviders(ctx context.Context) ([]ListPlatformAuthProvidersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPlatformAuthProviders)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPlatformAuthProvidersRow
+	for rows.Next() {
+		var i ListPlatformAuthProvidersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Preset,
+			&i.DisplayName,
+			&i.Enabled,
+			&i.ManagedBy,
+			&i.Issuer,
+			&i.ClientID,
+			&i.HasSecret,
+			&i.Scopes,
+			&i.ClaimMapJson,
+			&i.TrustEmail,
+			&i.AllowSignup,
+			&i.AllowedTenantsJson,
+			&i.Position,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IdentityCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const nextAuthProviderPosition = `-- name: NextAuthProviderPosition :one
+SELECT CAST(COALESCE(MAX(position), 0) + 10 AS INTEGER) FROM auth_providers
+WHERE org_id IS NULL
+`
+
+func (q *Queries) NextAuthProviderPosition(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, nextAuthProviderPosition)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const setAuthProviderEnabled = `-- name: SetAuthProviderEnabled :execrows
+UPDATE auth_providers
+SET enabled = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ? AND org_id IS NULL AND managed_by = 'ui'
+`
+
+type SetAuthProviderEnabledParams struct {
+	Enabled int64
+	ID      string
+}
+
+func (q *Queries) SetAuthProviderEnabled(ctx context.Context, arg SetAuthProviderEnabledParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setAuthProviderEnabled, arg.Enabled, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const updateAuthProvider = `-- name: UpdateAuthProvider :execrows
+UPDATE auth_providers
+SET preset               = ?,
+    display_name         = ?,
+    issuer               = ?,
+    client_id            = ?,
+    client_secret_enc    = ?,
+    scopes               = ?,
+    claim_map_json       = ?,
+    trust_email          = ?,
+    allow_signup         = ?,
+    allowed_tenants_json = ?,
+    position             = ?,
+    updated_at           = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ? AND org_id IS NULL AND managed_by = 'ui'
+`
+
+type UpdateAuthProviderParams struct {
+	Preset             string
+	DisplayName        string
+	Issuer             string
+	ClientID           string
+	ClientSecretEnc    string
+	Scopes             string
+	ClaimMapJson       string
+	TrustEmail         int64
+	AllowSignup        int64
+	AllowedTenantsJson string
+	Position           int64
+	ID                 string
+}
+
+// client_secret_enc is passed through unchanged by callers that keep the
+// stored secret.
+func (q *Queries) UpdateAuthProvider(ctx context.Context, arg UpdateAuthProviderParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateAuthProvider,
+		arg.Preset,
+		arg.DisplayName,
+		arg.Issuer,
+		arg.ClientID,
+		arg.ClientSecretEnc,
+		arg.Scopes,
+		arg.ClaimMapJson,
+		arg.TrustEmail,
+		arg.AllowSignup,
+		arg.AllowedTenantsJson,
+		arg.Position,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const upsertEnvAuthProvider = `-- name: UpsertEnvAuthProvider :exec

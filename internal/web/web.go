@@ -1456,6 +1456,18 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/attachment.delete", handleAction)
 	r.Get("/files/{attachmentID}", handleAttachmentDownload)
 
+	// Sign-in page and Platform Admin → Identity providers (WU-603)
+	r.Get("/login", handleLogin)
+	r.Get(views.IdPAdminBase, handleIdPList)
+	r.Post(views.IdPAdminBase, handleIdPCreate)
+	r.Get(views.IdPAdminBase+"/new", handleIdPNew)
+	r.Post(views.IdPAdminBase+"/discover", handleIdPDiscover)
+	r.Get(views.IdPAdminBase+"/{id}/edit", handleIdPEdit)
+	r.Post(views.IdPAdminBase+"/{id}/update", handleIdPUpdate)
+	r.Post(views.IdPAdminBase+"/{id}/enable", handleIdPVerb("enable"))
+	r.Post(views.IdPAdminBase+"/{id}/disable", handleIdPVerb("disable"))
+	r.Post(views.IdPAdminBase+"/{id}/delete", handleIdPVerb("delete"))
+
 	// Provider routes (WU-302)
 	r.Get("/admin/providers", handleProviders)
 	r.Post("/api/providers/create", handleProviderCreateAction)

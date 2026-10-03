@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -35,6 +36,23 @@ var refusalCopy = map[string]string{
 	RefuseNoAccount:       "There's no account for this email. Ask an administrator for an invite.",
 	RefuseEmailUnverified: "Your identity provider didn't confirm your email address.",
 	"logout":              "Something went wrong signing you out. Please try again.",
+}
+
+// LoginURL is the sign-in page (SPEC §7.2); SignedOutURL is where a local
+// logout lands (SPEC §7.6).
+const (
+	LoginURL     = "/login"
+	SignedOutURL = "/login?signed_out=1"
+)
+
+// LoginURLFor is the sign-in page URL that returns to returnTo afterwards
+// (validated by SafeReturnTo; the default destination is omitted).
+func LoginURLFor(returnTo string) string {
+	rt := SafeReturnTo(returnTo)
+	if rt == DefaultReturnTo {
+		return LoginURL
+	}
+	return LoginURL + "?return_to=" + url.QueryEscape(rt)
 }
 
 // Handler serves the login routes (SPEC §7.2): GET /auth/{providerID},
@@ -114,6 +132,7 @@ func (h *Handler) Begin(w http.ResponseWriter, r *http.Request) {
 	if hint := r.URL.Query().Get("login_hint"); len(hint) <= 254 {
 		flow.LoginHint = hint
 	}
+	flow.ReturnTo = SafeReturnTo(r.URL.Query().Get("return_to"))
 	dest, err := c.Begin(r.Context(), flow)
 	if err != nil {
 		h.fail(w, r, http.StatusBadGateway, id, "begin", err)
@@ -192,7 +211,9 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSessionCookie(w, res.RawToken, res.Session.ExpiresAt)
-	http.Redirect(w, r, h.BaseURL+"/app", http.StatusSeeOther)
+	// Re-validated: the cookie is sealed, but the check is cheap and keeps
+	// the redirect target provably same-origin.
+	http.Redirect(w, r, h.BaseURL+SafeReturnTo(flow.ReturnTo), http.StatusSeeOther)
 }
 
 // Logout revokes the current session and clears its cookie (local logout;
@@ -207,7 +228,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	clearSessionCookie(w)
 	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, SignedOutURL, http.StatusSeeOther)
 }
 
 // fail logs err with a fresh reference code and renders the generic failure

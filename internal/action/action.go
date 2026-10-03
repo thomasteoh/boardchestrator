@@ -168,6 +168,10 @@ type Definition struct {
 	Output     Schema    // documentation/derivation only; not enforced here
 	Handle     HandlerFunc
 	Preview    HandlerFunc // optional; nil ⇒ dry-run echoes validated input
+	// PrivateResult keeps the result out of the emitted event: the event
+	// carries name, actor and subject only. Platform-scope events (Org "")
+	// reach every signed-in SSE client, so admin-only reads set this.
+	PrivateResult bool
 }
 
 var (

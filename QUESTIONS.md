@@ -79,3 +79,23 @@ To be precise about which way this fails: it is a **broken API, not a CSRF bypas
 
 **Recommendation:** 2 (with 1 documented meanwhile). Option 3 conflates linking trust with verification and reopens the takeover WU-601 closed.
 **Assumption taken in WU-602:** behaviour as in option 1; nothing in WU-602 depends on the answer.
+
+## Q9 — SSRF guard for the "Test discovery" button (WU-603)
+
+**Context:** `idp.discover` (platform admins only, permission `platform.idp`) fetches `<issuer>/.well-known/openid-configuration` and reports the endpoints it found. The existing SSRF guard (`action.isPrivateHost`, used for MCP endpoint URLs) rejects loopback and every private range. Self-hosted IdPs (Keycloak, authentik, Zitadel) commonly sit on the operator's private network, so that guard would make the button useless for exactly the providers that most need testing. The login registry itself already fetches discovery from whatever issuer the admin configures, with no guard.
+
+**Assumption taken in WU-603:** discovery uses the IdP client (10 s, 1 MiB, no redirects) over a dialer whose `Control` hook checks the address actually dialled (after DNS, so no rebinding) and refuses link-local (including `169.254.169.254` cloud metadata), multicast, unspecified and `fd00:ec2::254`. Private and loopback addresses are allowed. Only the parsed endpoint URLs from a document whose `issuer` matches are shown; failures show a reference code and the upstream error is only logged. Rationale: platform admins already control which hosts the server talks to for sign-in, so blocking private ranges here adds no protection against them, while metadata endpoints stay out of reach.
+
+**Options:** (a) keep this; (b) apply the full private-range block and add an operator allow-list (`BC_IDP_ALLOW_PRIVATE=1` or CIDRs); (c) apply the same link-local guard to the registry's own discovery/JWKS/token traffic for consistency.
+**Recommendation:** (a) now plus (c) in WU-614's hardening pass.
+**Answer:**
+
+## Q10 — Platform-scope permission is evaluated against a caller-supplied org (found in WU-603)
+
+**Context:** `perm.CheckerAdapter.Allow` passes `ac.Org` through for every action. For a `ScopePlatform` action, `DBScopeResolver` checks nothing, so a caller who sends `X-Org-Id` (or an `org_id` input field, which `web.handleAction` copies into `Opts.Org`) has the permission checked against **that org's** grants instead of the platform org's. An org Owner holds `*` in their own org, so they pass the check for any platform action reachable through `/api/action/*` or `/api/v1/actions/*` (for example `provider.create`, `pricing.upsert`, `org.create`). Some platform-scope actions (`user.theme.update`, `session.revoke`, `notif.*`) appear to rely on this to work for ordinary users at all.
+
+**Mitigation in WU-603:** every `idp.*` handler refuses a call that carries an org/team/project id (`idp.platformOnly`), with a test that an org Owner passing their own org id is refused.
+
+**Options:** (a) in `DBScopeResolver`, refuse a tenant id on `ScopePlatform` actions and move the per-user actions (`user.*`, `session.revoke`, `notif.*`) to a new `ScopeSelf` that needs no grant; (b) in `CheckerAdapter`, always evaluate `ScopePlatform` against the platform org and grant the per-user actions to everyone explicitly.
+**Recommendation:** (a), as its own security WU before Phase 7 merges.
+**Answer:**

@@ -356,6 +356,34 @@ func TestDispatchEmitsEventWithActor(t *testing.T) {
 	}
 }
 
+func TestPrivateResultOmittedFromEvent(t *testing.T) {
+	reset()
+	t.Cleanup(reset)
+	Register(Definition{
+		Name:          "evpriv.x",
+		Impact:        ImpactRead,
+		PrivateResult: true,
+		Handle: func(context.Context, ActionCtx, json.RawMessage) (any, error) {
+			return map[string]string{"id": "subj", "detail": "admin-only"}, nil
+		},
+	})
+	sink := &recordingEvents{}
+	d := New(dbtest.New(t), WithEventSink(sink))
+	out, err := d.Dispatch(context.Background(), userActor(), "evpriv.x", nil, Opts{})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if !strings.Contains(mustJSON(t, out), "admin-only") {
+		t.Fatalf("result lost its detail: %s", mustJSON(t, out))
+	}
+	if len(sink.events) != 1 {
+		t.Fatalf("events = %d, want 1", len(sink.events))
+	}
+	if ev := sink.events[0]; ev.Subject != "subj" || len(ev.Payload) != 0 {
+		t.Fatalf("event = %+v, want subject only", ev)
+	}
+}
+
 func TestDryRunEmitsNoEvent(t *testing.T) {
 	reset()
 	t.Cleanup(reset)

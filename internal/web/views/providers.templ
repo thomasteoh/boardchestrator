@@ -11,6 +11,7 @@ type ProviderRow struct {
 
 templ ProviderPage(s Shell, providers []ProviderRow) {
 	@Base(s) {
+		@adminNav("llm")
 		<h1>Providers</h1>
 		<form hx-post="/api/providers/create" hx-headers={ hxHeaders(s.CSRF) } hx-target="#provider-list" hx-swap="innerHTML">
 			<div>Name: <input type="text" name="name" required/></div>

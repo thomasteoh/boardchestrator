@@ -106,6 +106,9 @@ func newHarness(t *testing.T) *harness {
 		}
 		_, _ = io.WriteString(w, "user="+s.UserID)
 	})
+	r.Get("/app/*", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "deep")
+	})
 	router = r
 	return &harness{t: t, db: d, app: app, reg: reg, cap: cs}
 }
@@ -583,5 +586,38 @@ func TestRegistryInvalidatesOnIdPEvents(t *testing.T) {
 			t.Fatalf("registry not invalidated: %v", ps)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// return_to on GET /auth/{id} survives the round trip in the sealed flow
+// cookie and is re-validated before the final redirect; anything that is not
+// a same-origin path lands on /app (WU-603).
+func TestBeginReturnToRoundTrip(t *testing.T) {
+	h := newHarness(t)
+	srv := oidctest.New(t)
+	h.insert(oidcRow("corp", "generic", srv))
+	cases := map[string]string{
+		"/app/org/o1/settings?tab=sso": "/app/org/o1/settings?tab=sso",
+		"//evil.example/app":           "/app",
+		"https://evil.example/":        "/app",
+		"/\\evil.example":              "/app",
+		"/%2F%2Fevil.example":          "/app",
+		"javascript:alert(1)":          "/app",
+		"":                             "/app",
+	}
+	for rt, want := range cases {
+		srv.SetUser(oidctest.User{Subject: "rt-sub", Email: "rt@example.com", EmailVerified: true})
+		u := h.app.URL + "/auth/corp"
+		if rt != "" {
+			u += "?return_to=" + url.QueryEscape(rt)
+		}
+		steps, err := oidctest.NewBrowser(t).Follow(u, 6, nil)
+		if err != nil {
+			t.Fatalf("%q: %v", rt, err)
+		}
+		end := steps[len(steps)-1]
+		if end.URL != h.app.URL+want || end.Status != http.StatusOK {
+			t.Errorf("return_to %q landed on %s (%d), want %s", rt, end.URL, end.Status, want)
+		}
 	}
 }

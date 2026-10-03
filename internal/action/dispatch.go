@@ -221,12 +221,16 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 	}
 
 	// 10. Emit event carrying the actor (SPEC §4). Subject best-effort.
+	evPayload := payload
+	if def.PrivateResult {
+		evPayload = nil
+	}
 	d.events.Emit(ctx, Event{
 		Name:    name,
 		Org:     ac.Org,
 		Actor:   actor,
 		Subject: subjectOf(out),
-		Payload: payload,
+		Payload: evPayload,
 	})
 
 	// 11. Audit: every ImpactHigh action (all actors) and every agent action.

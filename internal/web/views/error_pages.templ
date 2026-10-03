@@ -4,12 +4,18 @@ import "fmt"
 
 // ErrorPage renders a generic HTTP error page with status code and message.
 templ ErrorPage(s Shell, status int, title string, message string) {
+	@ErrorPageWithLink(s, status, title, message, "/", "Back to home")
+}
+
+// ErrorPageWithLink is ErrorPage with a custom way out (e.g. the sign-in
+// failure page links back to /login).
+templ ErrorPageWithLink(s Shell, status int, title, message string, href templ.SafeURL, label string) {
 	@Base(s) {
 		<div class="bc-error-page">
 			<div class="bc-error-code">{ fmt.Sprintf("%d", status) }</div>
 			<h2>{ title }</h2>
 			<p class="bc-error-message">{ message }</p>
-			<a href="/" class="bc-btn bc-btn-primary">Back to home</a>
+			<a href={ href } class="bc-btn bc-btn-primary">{ label }</a>
 		</div>
 	}
 }

@@ -188,11 +188,7 @@ func (s *Server) setupRoutes() {
 	auth.ForbiddenHandler = func(w http.ResponseWriter, r *http.Request, title, message string) {
 		web.RenderErrorPage(w, r, 403, title, message)
 	}
-	auth.LoginFailedHandler = func(w http.ResponseWriter, r *http.Request, status int, message, ref string) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(status)
-		web.RenderErrorPage(w, r, status, "Sign-in failed", message+" Reference: "+ref)
-	}
+	auth.LoginFailedHandler = web.RenderLoginFailedPage
 	// Custom error pages for 404, 405, 500.
 	s.mux.NotFound(s.handleNotFound)
 	s.mux.MethodNotAllowed(s.handleMethodNotAllowed)
@@ -227,6 +223,7 @@ func (s *Server) setupAuthRoutes() {
 	})
 	s.idpUnwatch = reg.Watch(s.bus)
 	s.idp = reg
+	web.SetIdentity(s.cfg.BaseURL, reg)
 	if ps, err := reg.Providers(ctx); err != nil {
 		slog.Error("auth: listing sign-in providers", "err", err)
 	} else if len(ps) == 0 {

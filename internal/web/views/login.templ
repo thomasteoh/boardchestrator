@@ -1,0 +1,81 @@
+package views
+
+// LoginProvider is one sign-in button on /login.
+type LoginProvider struct {
+	ID     string
+	Name   string
+	Preset string
+	// Href is /auth/{id}, carrying return_to when there is one.
+	Href templ.SafeURL
+}
+
+// LoginPageData is everything the /login page shows.
+type LoginPageData struct {
+	Providers []LoginProvider
+	// ErrorRef is the reference code from a failed sign-in ("" = none).
+	ErrorRef string
+	// Failed is set when ?error= was present, even if its value was not a
+	// usable reference code.
+	Failed    bool
+	SignedOut bool
+	// SSO is the home-realm discovery form ("Sign in with SSO", WU-606).
+	// nil renders nothing.
+	SSO templ.Component
+	// Passkey is the passkey sign-in control (WU-612). nil renders nothing.
+	Passkey templ.Component
+}
+
+// LoginPage is GET /login: the platform sign-in providers in display order,
+// with slots for organisation SSO and passkeys. No inline script.
+templ LoginPage(s Shell, d LoginPageData) {
+	@Base(s) {
+		<section class="bc-login" aria-labelledby="login-title">
+			<h1 id="login-title" class="bc-login-title">Sign in to Boardchestrator</h1>
+			if d.SignedOut {
+				<p class="bc-alert bc-alert-info" role="status">You've been signed out.</p>
+			}
+			if d.Failed {
+				<div class="bc-alert bc-alert-error" role="alert">
+					<p>We couldn't sign you in. Please try again.</p>
+					if d.ErrorRef != "" {
+						<p>If it keeps happening, give your administrator this reference: <code>{ d.ErrorRef }</code></p>
+					}
+				</div>
+			}
+			if len(d.Providers) > 0 {
+				<ul class="bc-login-providers" aria-label="Sign-in methods">
+					for _, p := range d.Providers {
+						<li>
+							<a class="bc-btn bc-login-btn" href={ p.Href } hx-boost="false">
+								@providerMark(p.Preset, p.Name)
+								<span>Continue with { p.Name }</span>
+							</a>
+						</li>
+					}
+				</ul>
+			}
+			// Slot: organisation SSO (home-realm discovery, WU-606).
+			if d.SSO != nil {
+				<div class="bc-login-section">
+					@d.SSO
+				</div>
+			}
+			// Slot: passkey sign-in (WU-612).
+			if d.Passkey != nil {
+				<div class="bc-login-section">
+					@d.Passkey
+				</div>
+			}
+			if len(d.Providers) == 0 && d.SSO == nil && d.Passkey == nil {
+				<p class="bc-muted">No sign-in methods are set up on this instance yet. If you run it, configure a provider in the environment (see the deployment guide) or ask your administrator.</p>
+			}
+		</section>
+	}
+}
+
+// providerMark is the monogram badge beside a sign-in button. Presets get a
+// fixed letter mark and colour; anything else uses the display name's first
+// letter. Decorative: the button text names the provider.
+templ providerMark(preset, name string) {
+	<span class={ "bc-idp-mark", "bc-idp-mark-" + presetMarkClass(preset) } aria-hidden="true">{ presetMonogram(preset, name) }</span>
+}

@@ -453,7 +453,7 @@ func TestLogoutRevokesAndClears(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/" {
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/login?signed_out=1" {
 		t.Errorf("logout: %d → %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	if n := lh.count(`SELECT COUNT(*) FROM sessions WHERE token_hash = ?`, tokenHash(raw)); n != 0 {
