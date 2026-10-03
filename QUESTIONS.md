@@ -139,3 +139,18 @@ To be precise about which way this fails: it is a **broken API, not a CSRF bypas
 **Options:** (a) keep per-user; (b) per org: when the org has an active SCIM token, skip sign-in group sync for everyone in it (simpler to explain, but users outside the SCIM assignment lose sign-in sync); (c) merge: reconcile from the union of SCIM groups and assertion groups (no fight, but removal from either source never removes access while the other still lists it).
 **Recommendation:** (a).
 **Answer:**
+
+## Q15 — Passkey policy choices (WU-612)
+
+**Context:** The WU-612 brief left several passkey details to the worker. None blocks; each is a security-relevant default worth confirming.
+
+**Decisions taken in WU-612 (non-blocking):**
+1. **Begin endpoints are GETs.** `GET /auth/passkey/login/begin` and `GET /auth/passkey/signup/begin` only mint a challenge into the sealed flow cookie, like `GET /auth/{id}`, so they need no CSRF token and no exemption. Only the two anonymous finish POSTs are on the CSRF exemption list. Signed-in registration (`POST /settings/passkeys/begin|finish`) stays CSRF-protected.
+2. **User verification: preferred, then latched.** Both ceremonies ask for UV `preferred`. A credential that has ever verified its user must verify at every later sign-in; an assertion without UV for such a credential is refused.
+3. **Bootstrap email is unverified.** A passkey bootstrap claimant types their email. It is stored with the new `users.email_verified = 0`, and §7.3 step 3 never links an IdP identity to such an account by email (the trusted IdP's sign-in is refused as `no_account`). Nothing marks it verified later; linking an IdP explicitly from Sign-in methods still works.
+4. **`passkeys_enabled = false`** answers 404 on every passkey endpoint, stops existing passkeys signing in, hides the UI, and stops counting passkeys as a sign-in method, so a user cannot unlink their last identity in favour of an unusable passkey. Passkeys can still be renamed and removed.
+5. **Limits.** 20 passkeys per user; names 1-64 printable characters; default name from a small AAGUID map (iCloud Keychain, Google Password Manager, Windows Hello, 1Password, Bitwarden and a few others), else "Passkey".
+
+**Options:** (a) keep; (b) make UV `required` for sign-up and sign-in (stronger, but refuses some security keys without a PIN); (c) add an email-verification step for bootstrap claims (needs outbound email, which the product does not have).
+**Recommendation:** (a).
+**Answer:**

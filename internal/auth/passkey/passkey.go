@@ -121,7 +121,7 @@ func (w waUser) WebAuthnCredentials() []webauthn.Credential {
 }
 
 func (c Credential) toWA() webauthn.Credential {
-	var flags protocol.AuthenticatorFlags = protocol.FlagUserPresent
+	flags := protocol.FlagUserPresent
 	if c.UserVerified {
 		flags |= protocol.FlagUserVerified
 	}

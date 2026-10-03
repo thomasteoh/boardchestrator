@@ -137,7 +137,9 @@ scim_users(id, org_id, user_id, external_id, user_name, email, given_name, famil
 scim_groups(id, org_id, external_id, display_name, created_at, updated_at)
 scim_group_members(group_id, user_id, org_id, PK(group_id,user_id))
 webauthn_credentials(id, user_id, credential_id UNIQUE, public_key, sign_count, aaguid,
-                     transports_json, name, created_at, last_used_at)
+                     transports_json, attestation_type, attestation_format, user_verified,
+                     backup_eligible, backup_state, name, created_at, last_used_at)
+-- users += webauthn_handle BLOB (random 32 bytes, unique where set), email_verified (0 = typed at a passkey bootstrap claim)
 ```
 
 **Tenancy**
@@ -291,7 +293,8 @@ All writes in resolution go through internal (non-registered) functions in one t
 ### 7.9 Passkeys
 
 - Library `github.com/go-webauthn/webauthn`. RP id = host of `BC_BASE_URL`, origin = `BC_BASE_URL`. Credentials in `webauthn_credentials`. Registration and login ceremonies keep `SessionData` in the flow cookie. Login uses discoverable credentials (usernameless). Platform setting `passkeys_enabled` (default on).
-- First-method registration without an IdP: allowed only with a valid invite token (`/invite/{token}`) or the bootstrap token; creates the user, then the passkey. Users must keep at least one sign-in method.
+- First-method registration without an IdP: allowed only with a valid invite token (`/login?invite=<token>`, WU-604) or the bootstrap token; creates the user, then the passkey. Users must keep at least one sign-in method.
+- As built (WU-612): go-webauthn v0.18.0 behind `internal/auth/passkey` (stateless; `passkeytest` is the software authenticator for tests). An IP-address `BC_BASE_URL` host cannot be an RP ID, so passkeys are then unavailable (startup WARN, endpoints 404, UI hidden). Resident key required, user verification preferred, attestation `none`, ES256/EdDSA/RS256, 5 min ceremony timeout. User handle = `users.webauthn_handle` (32 random bytes, created on first use). Routes: `GET /auth/passkey/login/begin` + `POST /auth/passkey/login/finish` (usernameless); `GET /auth/passkey/signup/begin?name=&invite=` (or `&email=&bootstrap=1` with the `/setup` cookie) + `POST /auth/passkey/signup/finish`; `POST /settings/passkeys/begin|finish` (signed in, CSRF, ceremony bound to the session hash like a link). Begins are GETs because they only mint a challenge into the flow cookie (`Flow.WebAuthn`). Every verified response spends its challenge in the replay cache. Sign-in refuses: unknown credential, origin/RP ID hash/challenge/type/signature/user-handle mismatch, missing UP, missing UV for a credential that has verified its user before (UV latch), and a sign count that did not advance once non-zero (audit `auth.passkey_clone_suspected`). Passkey sessions carry `provider_id='passkey'`, `auth_method='passkey'`, so SSO-enforced organisations refuse them (§7.4). First-method sign-up reaches the invite landing as `/login?invite=` (WU-604) and `/setup`; the invite's email is used; a bootstrap claimant types an email that is stored `email_verified=0` and never linked to by §7.3 step 3. Actions `passkey.list` (Read), `passkey.rename` (Low), `passkey.delete` (High), all `ScopeSelf`; `platform.settings.get|update` (`platform.settings`, `ScopePlatform`) carry `passkeys_enabled`. With it off every passkey endpoint answers 404, existing passkeys cannot sign in, and they stop counting as a sign-in method (`action.SignInMethodCount`).
 
 ### 7.10 Sessions & API keys
 
@@ -301,7 +304,7 @@ All writes in resolution go through internal (non-registered) functions in one t
 ### 7.11 Rate limits & CSRF exemptions
 
 - Per-IP token bucket (in-memory; single-node per PRD §19): `/auth/*` and `/login` 20/min burst 10; `/scim/v2/*` 600/min per token. 429 with `Retry-After`.
-- Global CSRF middleware exempts exactly these routes, which authenticate by other means and never read the session cookie: `POST /auth/saml/{id}/acs`, `POST /auth/saml/{id}/slo`, `POST /auth/oidc/{id}/backchannel-logout`, `/scim/v2/*`, and the passkey login-finish endpoint (bound to the flow cookie challenge). The exemption list is a constant in `internal/auth` (`csrf_exempt.go`, `IsCSRFExempt`) with a test asserting its exact contents; the session middleware also skips these routes, so their handlers never see a session.
+- Global CSRF middleware exempts exactly these routes, which authenticate by other means and never read the session cookie: `POST /auth/saml/{id}/acs`, `POST /auth/saml/{id}/slo`, `POST /auth/oidc/{id}/backchannel-logout`, `/scim/v2/*`, and the passkey login-finish and sign-up-finish endpoints `POST /auth/passkey/login/finish` and `POST /auth/passkey/signup/finish` (bound to the single-use challenge in the SameSite=Lax flow cookie; their begin endpoints are GETs that change no server state, so they need no exemption; WU-612). The exemption list is a constant in `internal/auth` (`csrf_exempt.go`, `IsCSRFExempt`) with a test asserting its exact contents; the session middleware also skips these routes, so their handlers never see a session.
 
 ## 8. Realtime (internal/sse)
 

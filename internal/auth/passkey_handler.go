@@ -31,10 +31,10 @@ import (
 // request can neither read nor supply it. Adding a passkey while signed in
 // is CSRF-protected like every other session POST.
 const (
-	PasskeyLoginBeginURL   = "/auth/passkey/login/begin"
-	PasskeyLoginFinishURL  = "/auth/passkey/login/finish"
-	PasskeySignupBeginURL  = "/auth/passkey/signup/begin"
-	PasskeySignupFinishURL = "/auth/passkey/signup/finish"
+	PasskeyLoginBeginURL   = "/auth/passkey/login/begin"   //nolint:gosec // G101: route path, not a credential
+	PasskeyLoginFinishURL  = "/auth/passkey/login/finish"  //nolint:gosec // G101: route path, not a credential
+	PasskeySignupBeginURL  = "/auth/passkey/signup/begin"  //nolint:gosec // G101: route path, not a credential
+	PasskeySignupFinishURL = "/auth/passkey/signup/finish" //nolint:gosec // G101: route path, not a credential
 	PasskeyAddBeginURL     = "/settings/passkeys/begin"
 	PasskeyAddFinishURL    = "/settings/passkeys/finish"
 )
@@ -47,25 +47,25 @@ const maxSignupNameLen = 100
 
 // passkeyCopy is the fixed copy for each passkey refusal. Anything not
 // listed gets msgGeneric.
-var passkeyCopy = map[string]string{
-	RefusePasskeysOff:     "Passkeys are turned off on this instance. Use another way to sign in.",
+var passkeyCopy = map[string]string{ //nolint:gosec // G101: user-facing copy keyed by reason code, no credentials
+	RefusePasskeysOff:      "Passkeys are turned off on this instance. Use another way to sign in.",
 	"passkeys_unavailable": "Passkeys aren't available on this instance. Use another way to sign in.",
-	RefusePasskeyUnknown:  "That passkey isn't registered here. Sign in another way, or ask an organisation admin for an invite.",
-	RefusePasskeyVerify:   "We couldn't verify that passkey. Please try again.",
-	RefusePasskeyReplayed: "We couldn't verify that passkey. Please try again.",
-	RefusePasskeyClone:    "This passkey can't be used because it looks like a copy. Sign in another way and remove it from your sign-in methods.",
-	RefusePasskeyExists:   "That passkey is already registered.",
-	RefusePasskeyLimit:    "You've reached the limit of 20 passkeys. Remove one before adding another.",
-	RefuseInviteInvalid:   "This invite link is invalid, has expired or has already been used. Ask an organisation admin for a new one.",
-	RefuseSetupInvalid:    "This setup link is no longer valid. The instance may already have been claimed.",
-	RefuseAccountExists:   "An account already uses this email address. Sign in with it, then open the invite again.",
-	RefuseUserDeleted:     "This account has been deleted.",
-	RefuseNotBootstrap:    "This instance hasn't been set up yet.",
-	RefuseLinkSession:     "Your session changed while adding the passkey. Please try again.",
-	"flow_cookie":         "That took too long, or it was started in another tab. Please try again.",
-	"name":                "Enter your name (up to 100 characters).",
-	"email":               "Enter a valid email address.",
-	"signed_out":          "Your session has ended. Sign in again to add a passkey.",
+	RefusePasskeyUnknown:   "That passkey isn't registered here. Sign in another way, or ask an organisation admin for an invite.",
+	RefusePasskeyVerify:    "We couldn't verify that passkey. Please try again.",
+	RefusePasskeyReplayed:  "We couldn't verify that passkey. Please try again.",
+	RefusePasskeyClone:     "This passkey can't be used because it looks like a copy. Sign in another way and remove it from your sign-in methods.",
+	RefusePasskeyExists:    "That passkey is already registered.",
+	RefusePasskeyLimit:     "You've reached the limit of 20 passkeys. Remove one before adding another.",
+	RefuseInviteInvalid:    "This invite link is invalid, has expired or has already been used. Ask an organisation admin for a new one.",
+	RefuseSetupInvalid:     "This setup link is no longer valid. The instance may already have been claimed.",
+	RefuseAccountExists:    "An account already uses this email address. Sign in with it, then open the invite again.",
+	RefuseUserDeleted:      "This account has been deleted.",
+	RefuseNotBootstrap:     "This instance hasn't been set up yet.",
+	RefuseLinkSession:      "Your session changed while adding the passkey. Please try again.",
+	"flow_cookie":          "That took too long, or it was started in another tab. Please try again.",
+	"name":                 "Enter your name (up to 100 characters).",
+	"email":                "Enter a valid email address.",
+	"signed_out":           "Your session has ended. Sign in again to add a passkey.",
 }
 
 // PasskeysAvailable reports whether this instance can run passkey ceremonies

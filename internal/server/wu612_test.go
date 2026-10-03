@@ -246,12 +246,12 @@ func TestPasskeyLoginForgeriesRefused(t *testing.T) {
 		t.Fatal("add")
 	}
 	for name, o := range map[string]passkeytest.Options{
-		"wrong origin":    {Origin: "https://evil.example.com"},
-		"wrong rp id":     {RPID: "evil.example.com"},
-		"wrong challenge": {Challenge: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
-		"no user present": {NoUP: true},
-		"bad signature":   {BadSignature: true},
-		"other handle":    {UserHandle: []byte("not bob's handle")},
+		"wrong origin":               {Origin: "https://evil.example.com"},
+		"wrong rp id":                {RPID: "evil.example.com"},
+		"wrong challenge":            {Challenge: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+		"no user present":            {NoUP: true},
+		"bad signature":              {BadSignature: true},
+		"other handle":               {UserHandle: []byte("not bob's handle")},
 		"no user verified (latched)": {NoUV: true},
 	} {
 		b := oidctest.NewBrowser(t)
@@ -439,7 +439,7 @@ func TestPasskeySignupWithInvite(t *testing.T) {
 }
 
 func TestPasskeySignupBootstrap(t *testing.T) {
-	h := newPKHarness(t, smOpts{unclaimed: true, bootstrapToken: "boot-token-612"})
+	h := newPKHarness(t, smOpts{unclaimed: true, bootstrapToken: "boot-token-612"}) //nolint:gosec // G101: test fixture token
 	a := passkeytest.New()
 	q := url.Values{"name": {"Owner"}, "email": {"owner@example.com"}, "bootstrap": {"1"}}
 	// Without the setup cookie: refused.

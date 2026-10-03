@@ -22,7 +22,7 @@ import (
 
 // signInNotices and signInErrors map the fixed codes in ?notice= / ?error=
 // to copy. Unknown codes show nothing, so nothing from the URL is echoed.
-var signInNotices = map[string]string{
+var signInNotices = map[string]string{ //nolint:gosec // G101: notice copy, no credentials
 	"linked":          "Sign-in method linked. You can now sign in with it.",
 	"already_linked":  "That sign-in method was already linked to your account.",
 	"unlinked":        "Sign-in method removed.",

@@ -147,7 +147,7 @@ func (a *Authenticator) Create(options []byte, origin string, o Options) ([]byte
 	}
 	att := make([]byte, 0, 16+2+len(id)+len(cose))
 	att = append(att, a.aaguid()...)
-	att = binary.BigEndian.AppendUint16(att, uint16(len(id)))
+	att = binary.BigEndian.AppendUint16(att, uint16(len(id))) //nolint:gosec // G115: id is 32 bytes
 	att = append(att, id...)
 	att = append(att, cose...)
 	authData := a.authData(firstNonEmpty(o.RPID, pk.RP.ID), o, flagAT, 0)
