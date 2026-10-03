@@ -269,6 +269,7 @@ func (s *Server) setupAuthRoutes() {
 		return
 	}
 	ah.Routes(s.mux)
+	web.SetPasskeys(ah.PasskeysAvailable(), ah.PasskeysOn)
 	s.announceBootstrap(ctx, ah.Resolver.Bootstrap)
 }
 

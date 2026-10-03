@@ -238,7 +238,7 @@ func LoginPage(s Shell, d LoginPageData) templ.Component {
 // SetupPage is the bootstrap claim page (GET /setup?token=, WU-605): the
 // platform sign-in providers, each starting a claim. Whoever finishes first
 // becomes the platform owner.
-func SetupPage(s Shell, providers []LoginProvider) templ.Component {
+func SetupPage(s Shell, providers []LoginProvider, passkey templ.Component) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -324,8 +324,14 @@ func SetupPage(s Shell, providers []LoginProvider) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-			} else {
+			} else if passkey == nil {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<p class=\"bc-muted\">No sign-in provider is configured yet. Configure one in the environment (see the deployment guide), restart, and open this link again.</p>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if passkey != nil {
+				templ_7745c5c3_Err = passkey.Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -393,7 +399,7 @@ func providerMark(preset, name string) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(presetMonogram(preset, name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/login.templ`, Line: 118, Col: 122}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/login.templ`, Line: 122, Col: 122}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {

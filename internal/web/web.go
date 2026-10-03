@@ -75,6 +75,7 @@ func shellData(r *http.Request, title, active string) views.Shell {
 			Alpine:   AssetURL("vendor/alpine-csp.min.js"),
 			AppJS:    AssetURL("app.js"),
 			Sortable: AssetURL("vendor/sortable.min.js"),
+			Passkey:  AssetURL("passkey.js"),
 			// Served at the stable root path (not content-hashed) so the
 			// worker's scope is the whole origin, not just /static/. A
 			// hashed URL would also orphan the previous worker each build.
@@ -1294,6 +1295,8 @@ func Routes(r chi.Router) {
 	// handler's (it owns the flow cookie).
 	r.Get(auth.SignInMethodsURL, handleSignInMethods)
 	r.Post(auth.SignInMethodsURL+"/unlink/{id}", handleSignInMethodUnlink)
+	r.Post(views.PasskeysSettingsBase+"/{id}/rename", handlePasskeyRename)
+	r.Post(views.PasskeysSettingsBase+"/{id}/delete", handlePasskeyDelete)
 	r.Get("/api/sessions", handleSessionsList)
 
 	// Tenancy UI pages
@@ -1492,6 +1495,7 @@ func Routes(r chi.Router) {
 	r.Post(views.IdPAdminBase+"/{id}/enable", handleIdPVerb("enable"))
 	r.Post(views.IdPAdminBase+"/{id}/disable", handleIdPVerb("disable"))
 	r.Post(views.IdPAdminBase+"/{id}/delete", handleIdPVerb("delete"))
+	r.Post(views.IdPAdminBase+"/passkeys", handlePasskeysToggle)
 
 	// Provider routes (WU-302)
 	r.Get("/admin/providers", handleProviders)

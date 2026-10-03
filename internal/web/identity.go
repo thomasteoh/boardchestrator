@@ -51,6 +51,31 @@ func identityCfg() identityConfig {
 	return identityConfig{}
 }
 
+// passkeyState is how the pages learn whether to offer passkeys (WU-612):
+// available = BC_BASE_URL can be a WebAuthn RP ID; on = that plus the
+// platform setting passkeys_enabled.
+type passkeyState struct {
+	available bool
+	on        func(context.Context) bool
+}
+
+var passkeys atomic.Pointer[passkeyState]
+
+// SetPasskeys wires the passkey UI to the auth handler.
+func SetPasskeys(available bool, on func(context.Context) bool) {
+	passkeys.Store(&passkeyState{available: available, on: on})
+}
+
+func passkeysAvailable() bool {
+	p := passkeys.Load()
+	return p != nil && p.available
+}
+
+func passkeysOn(ctx context.Context) bool {
+	p := passkeys.Load()
+	return p != nil && p.available && p.on != nil && p.on(ctx)
+}
+
 // refRe matches the reference codes the sign-in failure page shows.
 var refRe = regexp.MustCompile(`^[A-Z0-9]{4,16}$`)
 
@@ -127,6 +152,13 @@ func renderLogin(w http.ResponseWriter, r *http.Request, x loginExtras) {
 	if c := loginSSOForm(orgProviders, x, returnTo, inviteToken); c != nil {
 		d.SSO = c
 	}
+	if passkeysOn(r.Context()) {
+		pd := views.LoginPasskeyData{InviteToken: inviteToken}
+		if returnTo != auth.DefaultReturnTo {
+			pd.ReturnTo = returnTo
+		}
+		d.Passkey = views.LoginPasskey(pd)
+	}
 	s := shellData(r, "Sign in", "")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -156,10 +188,14 @@ func RenderSetupPage(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+	var pk templ.Component
+	if passkeysOn(r.Context()) {
+		pk = views.SetupPasskey()
+	}
 	s := shellData(r, "Claim this instance", "")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	if err := views.SetupPage(s, ps).Render(r.Context(), w); err != nil {
+	if err := views.SetupPage(s, ps, pk).Render(r.Context(), w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -278,11 +314,37 @@ func idpRef() string {
 
 // idpNotices are the fixed confirmations after a change.
 var idpNotices = map[string]string{
-	"created":  "Provider added.",
-	"updated":  "Changes saved.",
-	"enabled":  "Provider enabled. It now appears on the sign-in page.",
-	"disabled": "Provider disabled. It no longer appears on the sign-in page.",
-	"deleted":  "Provider deleted.",
+	"created":      "Provider added.",
+	"updated":      "Changes saved.",
+	"enabled":      "Provider enabled. It now appears on the sign-in page.",
+	"disabled":     "Provider disabled. It no longer appears on the sign-in page.",
+	"deleted":      "Provider deleted.",
+	"passkeys_on":  "Passkeys are on.",
+	"passkeys_off": "Passkeys are off. Nobody can sign in with a passkey until you turn them back on.",
+}
+
+// handlePasskeysToggle is POST /admin/identity-providers/passkeys: the
+// platform setting passkeys_enabled (WU-612).
+func handlePasskeysToggle(w http.ResponseWriter, r *http.Request) {
+	actor, ok := idpAdmin(w, r)
+	if !ok {
+		return
+	}
+	on := r.PostFormValue("passkeys_enabled") == "1"
+	_, err := idpDispatch(r, actor, "platform.settings.update", map[string]bool{"passkeys_enabled": on})
+	if errors.Is(err, action.ErrForbidden) {
+		idpForbidden(w, r)
+		return
+	}
+	if err != nil {
+		renderIdPList(w, r, actor, http.StatusInternalServerError, "", idpUserMessage(err))
+		return
+	}
+	notice := "passkeys_off"
+	if on {
+		notice = "passkeys_on"
+	}
+	http.Redirect(w, r, views.IdPAdminBase+"?notice="+notice, http.StatusSeeOther)
 }
 
 func handleIdPList(w http.ResponseWriter, r *http.Request) {
@@ -311,6 +373,11 @@ func renderIdPList(w http.ResponseWriter, r *http.Request, actor action.Actor, s
 	d := idpListData(provs)
 	d.Notice, d.Error = notice, errMsg
 	s := shellData(r, "Identity providers", "/settings")
+	if ps, err := idpDispatch(r, actor, "platform.settings.get", struct{}{}); err == nil {
+		if v, ok := ps.(action.PlatformSettingsView); ok {
+			d.Passkeys = views.PasskeysAdminSection(s.CSRF, v.PasskeysEnabled, passkeysAvailable())
+		}
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	if err := views.IdPListPage(s, d).Render(r.Context(), w); err != nil {

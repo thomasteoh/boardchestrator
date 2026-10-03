@@ -34,6 +34,8 @@ type IdPListData struct {
 	// Error is a refusal to show ("" = none); fixed copy or our own
 	// validation message, never upstream text.
 	Error string
+	// Passkeys is the platform passkeys toggle (WU-612); nil renders nothing.
+	Passkeys templ.Component
 }
 
 // IdPParamField is one issuer template parameter on the form.
@@ -217,6 +219,9 @@ templ IdPListPage(s Shell, d IdPListData) {
 						</tbody>
 					</table>
 				</div>
+			}
+			if d.Passkeys != nil {
+				@d.Passkeys
 			}
 			<h2>Add a provider</h2>
 			<ul class="bc-preset-grid" aria-label="Provider types">

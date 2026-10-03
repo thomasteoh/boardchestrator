@@ -1,0 +1,190 @@
+package views
+
+// Passkey UI (WU-612, SPEC §7.9). Every control sits in a [data-bc-passkey-box]
+// that starts hidden; static/passkey.js reveals it only in browsers with
+// WebAuthn (window.PublicKeyCredential) and runs the ceremonies. Errors land
+// in the box's [data-bc-passkey-error] paragraph.
+
+// Passkey endpoint URLs (mirror the auth package's).
+const (
+	PasskeyLoginBeginURL   = "/auth/passkey/login/begin"
+	PasskeyLoginFinishURL  = "/auth/passkey/login/finish"
+	PasskeySignupBeginURL  = "/auth/passkey/signup/begin"
+	PasskeySignupFinishURL = "/auth/passkey/signup/finish"
+	PasskeyAddBeginURL     = "/settings/passkeys/begin"
+	PasskeyAddFinishURL    = "/settings/passkeys/finish"
+	PasskeysSettingsBase   = "/settings/passkeys"
+)
+
+// LoginPasskeyData is the passkey section of /login.
+type LoginPasskeyData struct {
+	// ReturnTo is the validated destination after sign-in ("" = default).
+	ReturnTo string
+	// InviteToken is a valid invite the person arrived with: they may create
+	// their account with a passkey ("" = sign-in only).
+	InviteToken string
+}
+
+// LoginPasskey is the /login passkey slot: usernameless sign-in, plus
+// account creation when an invite is present.
+templ LoginPasskey(d LoginPasskeyData) {
+	<div class="bc-passkey" data-bc-passkey-box hidden>
+		<h2 class="bc-login-subtitle">Passkey</h2>
+		<button
+			type="button"
+			class="bc-btn bc-login-btn"
+			data-bc-passkey="login"
+			data-begin={ PasskeyLoginBeginURL }
+			data-finish={ PasskeyLoginFinishURL }
+			data-return-to={ d.ReturnTo }
+		>
+			<span class="bc-idp-mark bc-idp-mark-passkey" aria-hidden="true">P</span>
+			<span>Sign in with a passkey</span>
+		</button>
+		if d.InviteToken != "" {
+			<form
+				class="bc-form bc-passkey-signup"
+				data-bc-passkey="signup"
+				data-begin={ PasskeySignupBeginURL }
+				data-finish={ PasskeySignupFinishURL }
+				data-invite={ d.InviteToken }
+			>
+				<p class="bc-muted">New here? Create your account with a passkey instead of an identity provider.</p>
+				<label>
+					Your name
+					<input type="text" name="name" required maxlength="100" autocomplete="name" class="bc-input"/>
+				</label>
+				<button type="submit" class="bc-btn">Create account with a passkey</button>
+			</form>
+		}
+		<p class="bc-alert bc-alert-error" role="alert" data-bc-passkey-error hidden></p>
+	</div>
+}
+
+// SetupPasskey is the /setup claim page's passkey option: the claimant
+// types their name and email (which nobody verifies; an identity provider
+// signing in with the same address never links to this account).
+templ SetupPasskey() {
+	<div class="bc-passkey bc-login-section" data-bc-passkey-box hidden>
+		<h2 class="bc-login-subtitle">Or claim with a passkey</h2>
+		<form
+			class="bc-form"
+			data-bc-passkey="signup"
+			data-begin={ PasskeySignupBeginURL }
+			data-finish={ PasskeySignupFinishURL }
+			data-bootstrap="1"
+		>
+			<label>
+				Your name
+				<input type="text" name="name" required maxlength="100" autocomplete="name" class="bc-input"/>
+			</label>
+			<label>
+				Email
+				<input type="email" name="email" required maxlength="254" autocomplete="email" class="bc-input"/>
+			</label>
+			<button type="submit" class="bc-btn">Claim with a passkey</button>
+		</form>
+		<p class="bc-alert bc-alert-error" role="alert" data-bc-passkey-error hidden></p>
+	</div>
+}
+
+// PasskeyRow is one passkey on the Sign-in methods page.
+type PasskeyRow struct {
+	ID       string
+	Name     string
+	Synced   bool
+	Created  string
+	LastUsed string
+}
+
+// PasskeysSectionData is the Sign-in methods page's passkeys slot.
+type PasskeysSectionData struct {
+	CSRF string
+	Rows []PasskeyRow
+	// CanDelete is false when removing any passkey would leave no way in.
+	CanDelete bool
+	// Enabled is the platform setting; when off, passkeys can be removed
+	// but not added or used.
+	Enabled bool
+}
+
+// PasskeysSection lists the user's passkeys with rename and remove, and
+// offers to add one.
+templ PasskeysSection(d PasskeysSectionData) {
+	if !d.Enabled {
+		<p class="bc-muted">Passkeys are turned off on this instance, so these can't be used to sign in.</p>
+	}
+	if len(d.Rows) == 0 {
+		<p class="bc-muted">No passkeys yet. A passkey lets you sign in with your device's screen lock or a security key.</p>
+	} else {
+		<ul class="bc-signin-methods" aria-label="Passkeys">
+			for _, p := range d.Rows {
+				<li class="bc-signin-method">
+					<span class="bc-idp-mark bc-idp-mark-passkey" aria-hidden="true">P</span>
+					<span class="bc-signin-method-name">{ p.Name }</span>
+					if p.Synced {
+						<span class="bc-hint">Synced</span>
+					}
+					if p.Created != "" {
+						<span class="bc-hint">Added { p.Created }</span>
+					}
+					if p.LastUsed != "" {
+						<span class="bc-hint">Last used { p.LastUsed }</span>
+					}
+					<form method="post" action={ templ.SafeURL(PasskeysSettingsBase + "/" + p.ID + "/rename") } class="bc-inline-form" hx-boost="false">
+						<input type="hidden" name="csrf_token" value={ d.CSRF }/>
+						<label class="bc-sr-only" for={ "pk-name-" + p.ID }>New name for { p.Name }</label>
+						<input id={ "pk-name-" + p.ID } type="text" name="name" value={ p.Name } required maxlength="64" class="bc-input bc-input-sm"/>
+						<button type="submit" class="bc-btn bc-btn-sm">Rename</button>
+					</form>
+					<form method="post" action={ templ.SafeURL(PasskeysSettingsBase + "/" + p.ID + "/delete") } class="bc-inline-form" hx-boost="false">
+						<input type="hidden" name="csrf_token" value={ d.CSRF }/>
+						if d.CanDelete {
+							<button type="submit" class="bc-btn bc-btn-sm bc-btn-danger">Remove</button>
+						} else {
+							<button type="submit" class="bc-btn bc-btn-sm bc-btn-danger" disabled title="You can't remove your only sign-in method. Add another first.">Remove</button>
+						}
+					</form>
+				</li>
+			}
+		</ul>
+	}
+	if d.Enabled {
+		<div class="bc-passkey" data-bc-passkey-box hidden>
+			<button
+				type="button"
+				class="bc-btn"
+				data-bc-passkey="add"
+				data-begin={ PasskeyAddBeginURL }
+				data-finish={ PasskeyAddFinishURL }
+				data-csrf={ d.CSRF }
+			>Add a passkey</button>
+			<p class="bc-alert bc-alert-error" role="alert" data-bc-passkey-error hidden></p>
+		</div>
+	}
+}
+
+// PasskeysAdminSection is the platform passkeys toggle on Platform admin ->
+// Identity providers.
+templ PasskeysAdminSection(csrf string, enabled, available bool) {
+	<section class="bc-admin-section" aria-labelledby="passkeys-title">
+		<h2 id="passkeys-title">Passkeys</h2>
+		if !available {
+			<p class="bc-muted">Passkeys aren't available on this instance: its base URL (BC_BASE_URL) must use a domain name, not an IP address.</p>
+		} else if enabled {
+			<p>People can sign in with passkeys, add them in Sign-in methods, and create an account with one from an invite.</p>
+		} else {
+			<p>Passkeys are off. Nobody can sign in with a passkey, including people who already have one.</p>
+		}
+		<form method="post" action={ templ.SafeURL(IdPAdminBase + "/passkeys") } class="bc-inline-form" hx-boost="false">
+			<input type="hidden" name="csrf_token" value={ csrf }/>
+			if enabled {
+				<input type="hidden" name="passkeys_enabled" value="0"/>
+				<button type="submit" class="bc-btn bc-btn-sm">Turn passkeys off</button>
+			} else {
+				<input type="hidden" name="passkeys_enabled" value="1"/>
+				<button type="submit" class="bc-btn bc-btn-sm">Turn passkeys on</button>
+			}
+		</form>
+	</section>
+}

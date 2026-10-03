@@ -87,7 +87,7 @@ templ LoginPage(s Shell, d LoginPageData) {
 // SetupPage is the bootstrap claim page (GET /setup?token=, WU-605): the
 // platform sign-in providers, each starting a claim. Whoever finishes first
 // becomes the platform owner.
-templ SetupPage(s Shell, providers []LoginProvider) {
+templ SetupPage(s Shell, providers []LoginProvider, passkey templ.Component) {
 	@Base(s) {
 		<section class="bc-login" aria-labelledby="setup-title">
 			<h1 id="setup-title" class="bc-login-title">Claim this instance</h1>
@@ -104,8 +104,12 @@ templ SetupPage(s Shell, providers []LoginProvider) {
 					}
 				</ul>
 				<p class="bc-muted">This link stops working once the instance is claimed.</p>
-			} else {
+			} else if passkey == nil {
 				<p class="bc-muted">No sign-in provider is configured yet. Configure one in the environment (see the deployment guide), restart, and open this link again.</p>
+			}
+			// Passkey claim (WU-612).
+			if passkey != nil {
+				@passkey
 			}
 		</section>
 	}

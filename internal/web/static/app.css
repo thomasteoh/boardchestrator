@@ -1507,6 +1507,11 @@ a {
 .bc-idp-mark-keycloak { background: #e5f2f7; color: #00658c; }
 .bc-idp-mark-zitadel { background: #efeafc; color: #5b3fc4; }
 .bc-idp-mark-authentik { background: #fdeae8; color: #b0282a; }
+.bc-idp-mark-passkey { background: #e7f5ee; color: #17663d; }
+/* Passkey controls (WU-612) stay hidden until passkey.js finds WebAuthn. */
+.bc-passkey { display: flex; flex-direction: column; gap: var(--bc-space-3); }
+.bc-passkey[hidden], .bc-passkey [hidden] { display: none; }
+.bc-passkey-signup { margin-top: var(--bc-space-2); }
 [data-theme="dark"] .bc-idp-mark:not(.bc-idp-mark-github) { background: var(--bc-accent-soft); color: var(--bc-text); }
 .bc-alert {
   margin: 0; padding: var(--bc-space-3) var(--bc-space-4);
