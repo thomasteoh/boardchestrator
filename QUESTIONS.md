@@ -55,3 +55,15 @@ To be precise about which way this fails: it is a **broken API, not a CSRF bypas
 
 **Recommendation:** (a) plus a `bc secrets rewrap` to force completion and then drop the v0 path in a later release — the deployment is self-hosted, so we cannot assume a coordinated upgrade window, and (c) silently breaks every org's storage backend and wiki editing.
 **Answer:**
+
+## Q7 — Third-party dependencies for Phase 7 (IAM)
+
+**Context:** WORKER.md forbids new dependencies without a QUESTIONS.md entry. PRD §4 (rewritten 2026-10-03) adds verified OIDC, SAML 2.0 and passkeys. Hand-rolling any of these is the higher risk: the original Google flow decoded ID tokens without verifying them (WU-526).
+
+**Dependencies:**
+- `github.com/coreos/go-oidc/v3`: OIDC discovery, JWKS caching, ID-token verification. The de-facto Go RP library; pulls `github.com/go-jose/go-jose/v4`.
+- `github.com/crewjam/saml`: SAML SP primitives (AuthnRequest, response/assertion validation, metadata). Most widely used Go SAML library; past XML signature-wrapping CVEs are fixed in current releases, and we pin a version at or above the latest advisory fix. Alternative `russellhaering/gosaml2` is smaller but has less IdP coverage in the wild.
+- `github.com/go-webauthn/webauthn`: WebAuthn ceremonies and attestation parsing. The maintained successor to duo-labs/webauthn.
+
+**Recommendation:** accept all three, pinned, with `go mod verify` in CI.
+**Answer:** Accepted 2026-10-03 (Phase 7 scope approved by the product owner, including SAML, SCIM, OIDC logout and passkeys).

@@ -558,7 +558,7 @@ The CSP (`internal/auth/middleware.go:83`) is a genuine nonce policy with no `un
 Note `views/task_detail.templ:82,332` renders `c.BodyHTML` through `templ.Raw` as well; nothing populates it today, so fix it in the same pass before it becomes live.
 AC: task descriptions and comment bodies render through a sanitizing pipeline (scheme allowlist on `href`/`src`/`xlink:href`, attribute filtering that handles `/`-delimited and unquoted attributes); the two `sanitize.go` bypasses have regression tests (`<svg/onload=…>`, single-quoted and space-prefixed `javascript:`); `md.Render` gets a scheme allowlist; a test asserts no `templ.Raw` sink receives unsanitised user input.
 
-### WU-526 · OAuth handler hardening — `ready`
+### WU-526 · OAuth handler hardening — `superseded by WU-601 (Phase 7)`
 Deps: none.
 Four defects in `internal/auth`, one branch:
 1. **`state` is not bound to the browser.** `internal/auth/handler.go:38` — `stateMap map[string]stateEntry` keyed only on the state value; no cookie, no session association. State *is* CSPRNG-generated (`:204`) and *is* verified (`:158`, `:219`), but any state minted by any visitor validates any other visitor's callback. Attacker completes consent with their own account, captures `code`+`state`, then induces the victim to load the callback (a GET) — the victim's browser is issued a session for the **attacker's** account, and everything they subsequently create lands in the attacker's tenant. Same on both providers. `GitHubProvider.Exchange` (`github.go:53`) takes a `state` param and never reads it.
@@ -683,7 +683,7 @@ Deps: none.
 Separately, `secrets.go:35` seals with `nil` associated data. AEAD choice, nonce generation (`crypto/rand`, full `NonceSize()`, `:30`), the nonce-prepend framing, and the `len(key) != 32` guard are all **correct** — but with no AAD binding the ciphertext to its row, an attacker with DB write access can copy org A's encrypted S3 blob into org B's `org_secrets` row and have the server decrypt and use it.
 AC: `BC_SECRET_KEY` is required at ≥32 chars (fatal in `config.Load`, matching `SessionSecret`) and run through HKDF rather than zero-padded; `Seal`/`Open` bind `org_id||key` as associated data; a migration or documented re-encryption path handles existing ciphertexts; test asserts a blob moved between org rows fails to decrypt.
 
-### WU-537 · Session lifecycle: logout, revoke scoping, rotation — `ready`
+### WU-537 · Session lifecycle: logout, revoke scoping, rotation — `superseded by WU-601 + WU-613 (Phase 7)`
 Deps: none.
 - **There is no logout endpoint at all.** `setupRoutes` (`internal/server/server.go:209`) registers only the four `/auth/*` OAuth routes; `SessionStore.Revoke` (`internal/auth/session.go:184`) has no HTTP caller anywhere in the tree. Users cannot end a session; it lives 14 days sliding / 90 days absolute.
 - **`session.revoke` has no ownership check.** `internal/web/user_settings.go:87` and `internal/action/user.go:84` both call `DeleteSession(ctx, input.TokenHash)` with a caller-supplied hash and no `AND user_id = ?`. Exploitability is limited (hashes are sha256 of 32 random bytes and are not exposed cross-user), so this is a missing-authorization defect rather than a live takeover.
@@ -804,3 +804,90 @@ Findings 22 → **0**. The 13 test-harness false positives (G124 on httptest coo
 - **Suppressed as tracked defects (5):** G124 ×2 (`middleware.go`) and G704 ×2 (`github.go`) → **WU-526**; G120 (`storage.go` unbounded body) → **WU-541**. These `//nolint` comments are IOUs naming their owning WU, not dismissals — the underlying bugs are real.
 - **Suppressed as genuine false positives (2):** G117 (`skills.go`, marshal feeding directly into `Seal`) and G703 (`static.go`, name is map-gated and `path.Clean`-validated on an `embed.FS`).
 Full-pass: `golangci-lint v2.12.2` 0 issues; `gofmt -l` clean; `go build ./...` and `go vet ./...` exit 0; `go test -race ./...` PASS (all packages).
+
+
+---
+
+## Phase 7 — Identity & Access Management (branch `feat/iam`)
+
+Source: auth review 2026-10-03 and the PRD §4 rewrite. SPEC §7 governs. **These WUs are stacked on one branch, `feat/iam`, because each builds on the last.** This is a deliberate exception to the one-branch-per-WU rule; each WU is still its own commit series prefixed `WU-6NN:`.
+
+Review findings beyond WU-526/537 that this phase fixes:
+- **No new user can sign in.** `FindUserByEmail` is a sqlc `:one`, so an unknown email returns `sql.ErrNoRows`; `LinkOrCreate` (`oidc.go:139`) treats that as a failure and returns 500 before reaching `CreateUser`.
+- **No returning user can sign in.** `LinkIdentity` is a plain `INSERT` executed on every login; the second login violates `UNIQUE(provider, subject)` → 500.
+- No test exercises a real callback against a real DB, which is how both shipped.
+- Users are resolved by email, never by `(provider, subject)`; with a generic OIDC IdP whose `email_verified` an admin controls, that is an account takeover.
+- `BC_BOOTSTRAP_TOKEN` is loaded and never checked. Google is mandatory in config. The landing page links only GitHub; there is no `/login`. Logins are neither rate-limited nor audited (PRD §4, §17).
+
+### WU-600 · Phase 7 governance docs — `done 2026-10-03 WU-600: Phase 7 IAM governance docs`
+PRD §4/§20/§21 rewritten, SPEC §5/§7/§15 updated, Q7 (dependencies) recorded, WU-526/537 superseded.
+
+### WU-601 · Login correctness + flow hardening — `ready`
+Deps: 600.
+Build `internal/auth/oidctest` first (SPEC §7). Replace the Google hand-parser with go-oidc (PKCE, nonce, full verification). Replace `stateMap` with the sealed `__Host-bc_flow` cookie (§7.2). Implement `auth.Resolve` steps 1, 3 (with current providers treated as trusted), 4 (signup allowed for now; WU-604 tightens it), 6. Session rotation on login; `POST /auth/logout` (local only, CSRF-protected); remove the production `Insecure: true`; GitHub token exchange in a POST body; no internal error strings in responses; sessions of deleted users rejected.
+AC: end-to-end tests against `oidctest` with the real DB cover first login (user created), second login (same user, no error), wrong `state`, missing cookie, cookie from another flow, wrong `aud`/`iss`/`nonce`, expired token, `alg:none`; concurrent logins under `-race`; the login cookie carries `Secure` under production config; GitHub exchange tested against an `httptest` fake asserting no secret in the URL; error bodies contain no upstream text; logout revokes and clears.
+
+### WU-602 · Provider registry, presets, generic OIDC — `ready`
+Deps: 601.
+Migration for `auth_providers` and the identity/session column additions (§5). `internal/auth/idp` registry, presets, connectors (§7.1). Env seeding including `BC_OIDC_<NAME>_*`. Google is no longer required by `config.Load`; startup warns when no sign-in method exists. Routes `/auth/{providerID}` + callback. Entra multi-tenant issuer handling.
+AC: registry tests per preset (issuer template, scopes, claim map); Entra `organizations` mode accepts a token whose `iss` matches its `tid` and rejects a mismatch; a generic provider configured purely by env logs in end to end against `oidctest`; groups and custom claim maps extracted; discovery failure for one provider leaves the others working; existing `google`/`github` identities still resolve.
+
+### WU-603 · `/login` page + platform IdP admin UI — `ready`
+Deps: 602.
+templ `/login` listing enabled platform providers (preset icons, display order), errors by reference code, `return_to` handling (relative paths only). Landing page links to `/login`. Platform Admin → Identity providers: list/create/edit/disable/delete, preset picker, callback URL and SP details display, "Test discovery" button. Actions `idp.list` (read), `idp.create|update|delete|enable|disable` (High, `platform.idp`); secrets write-only (never returned, never in events/audit). Env-managed providers read-only.
+AC: action tests incl. permission denial for non-admins and secret absence from results/events/audit; handler tests for the pages; open-redirect test on `return_to` (`//evil`, `https://evil`, `/\evil`).
+
+### WU-604 · Linking policy, sign-up policy, Sign-in methods settings — `ready`
+Deps: 603.
+`trust_email` and `allow_signup` per provider (§7.3 steps 2–4), invite-gated signup, explicit link flow (intent bound to the current session), unlink (never the last method), Settings → Sign-in methods page. Audit `identity.linked`, `identity.linked_by_email`, `identity.unlinked`.
+AC: untrusted provider with a verified email matching an existing user does **not** link (creates nothing, refuses with guidance); trusted provider links; link intent from a revoked session is refused; identity owned by another user cannot be linked; signup refused without invite when `allow_signup=0` and allowed with one; last-method unlink refused.
+
+### WU-605 · Bootstrap token, rate limits, auth audit — `ready`
+Deps: 604.
+`GET /setup?token=` (§7.3 step 5), startup log line while unclaimed; rate limiter (§7.11) on `/login`, `/auth/*`; audit rows for `auth.login`, `auth.login_failed`, `auth.logout`; visible in the platform/org audit views.
+AC: bootstrap via token works with a non-admin email and is refused with a wrong token (constant-time compare); the token stops working after bootstrap; 429 after the burst with `Retry-After`; audit rows written with IP and no secrets.
+
+### WU-606 · Org domains + home-realm discovery — `ready`
+Deps: 605.
+`org_domains`, `org.domain.add|verify|remove` (High, `org.sso`), injectable TXT resolver, org settings → SSO page (domains section), `/login` "Sign in with SSO" email box → `POST /auth/sso/discover`.
+AC: verification succeeds with the right TXT record and fails otherwise; a domain verified by org A cannot be claimed by org B; discovery redirects to the org's provider with `login_hint`; unknown domains re-render neutrally.
+
+### WU-607 · Org-owned providers + SSO enforcement — `ready`
+Deps: 606.
+`idp.*` at org scope (`org.sso`); org-owned email trust restricted to verified domains; `org_sso_settings`; `Actor.AuthProviderID` from the session; `ErrSSORequired` in dispatch scope verification and its web rendering.
+AC: org provider asserting an email outside the org's verified domains never links or JIT-creates; with enforcement on, a member signed in via Google is refused org actions with `ErrSSORequired` and allowed after signing in via the org IdP; API-key and agent actors unaffected; other orgs unaffected.
+
+### WU-608 · JIT provisioning + group → role mapping — `ready`
+Deps: 607.
+`memberships.source`, `idp_group_mappings` + `org.idp_mapping.create|delete|list` actions and UI, reconciliation (§7.5) at sign-in.
+AC: JIT creates user + membership with the default role only on verified domains; group mapping adds memberships, removing a group removes only `source='idp'` memberships; manual memberships survive sync; team/project-scoped mappings work; audit + events emitted.
+
+### WU-609 · OIDC logout (RP-initiated + back-channel) — `ready`
+Deps: 608.
+§7.6 for OIDC: `end_session_endpoint` redirect with `id_token_hint`; back-channel endpoint with `logout_token` verification, `jti` replay cache, CSRF exemption list constant + test.
+AC: against `oidctest`: logout redirects with the hint; a valid back-channel token revokes sessions by `sid` and by `sub`; tokens with `nonce`, wrong `aud`, missing `events`, stale `iat`, or replayed `jti` → 400 and nothing revoked; the CSRF exemption list test.
+
+### WU-610 · SAML 2.0 SP — `ready`
+Deps: 609.
+§7.7: provider kind `saml` in the registry and admin UI, SP key generation, metadata endpoint, AuthnRequest redirect, ACS with `InResponseTo` bound to the flow cookie (SameSite=None), attribute mapping, assertion replay cache, SP-initiated and IdP-initiated SLO. A test IdP built from crewjam's `samlidp` (or signed fixtures) in tests.
+AC: successful login creates or links the user via §7.3; unsigned assertion, wrong audience, expired, unsolicited (no `InResponseTo`), replayed, and signature-wrapped responses all rejected; metadata validates; SLO revokes the session.
+
+### WU-611 · SCIM 2.0 provisioning — `ready`
+Deps: 610.
+§7.8: `scim_tokens` + `scim.token.create|revoke|list` (High, `org.sso`) and UI; `/scim/v2` Users, Groups, ServiceProviderConfig, ResourceTypes, Schemas; filters and pagination; PATCH semantics; deprovisioning; groups into §7.5 mapping; per-token rate limit.
+AC: tests replay recorded Entra- and Okta-shaped request sequences (create, patch active=false as string, group membership add/remove, delete); token from org A cannot see or change org B; deactivation removes memberships and org API keys; SCIM errors use the RFC envelope.
+
+### WU-612 · Passkeys — `ready`
+Deps: 611.
+§7.9: register/rename/delete passkeys in Sign-in methods, usernameless login button on `/login`, invite- or bootstrap-token first-method registration, platform setting toggle.
+AC: ceremony tests with a software authenticator (go-webauthn test helpers or a virtual authenticator); sign-count regression rejected; wrong origin/RP id rejected; first-method registration refused without a valid invite/bootstrap token; last-method deletion refused. Manual: register and sign in with a real browser passkey.
+
+### WU-613 · Session & API-key lifecycle — `ready`
+Deps: 612.
+Remainder of WU-537: `session.revoke` scoped to the caller; `session.revoke_all`; `api_keys.expires_at` with enforcement and UI; org owners list/revoke org keys; constant-time key compare.
+AC: tests for each item, per WU-537's AC.
+
+### WU-614 · Provider setup docs + changelog — `ready`
+Deps: 613.
+`DEPLOY.md` and website docs: per-provider setup (Google, Entra, GitHub, GitLab, Okta, Auth0, Keycloak, Zitadel, Authentik, generic OIDC, SAML with Entra/Okta), redirect/ACS/back-channel URLs, SCIM setup for Entra/Okta/Authentik, passkeys, env reference regenerated, CHANGELOG.
+AC: env reference test covers the new vars; docs list exact callback URLs. Manual: end-to-end login against a real Authentik or Zitadel container, recorded in the WU notes.
