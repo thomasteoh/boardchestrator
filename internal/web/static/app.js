@@ -702,3 +702,15 @@ document.addEventListener("alpine:init", function () {
     };
   });
 });
+
+/* Copy buttons: <button data-bc-copy="element-id"> copies that element's
+ * text to the clipboard (one-time secrets such as SCIM tokens, WU-611). */
+document.addEventListener("click", function (ev) {
+  var btn = ev.target.closest ? ev.target.closest("[data-bc-copy]") : null;
+  if (!btn || !navigator.clipboard) return;
+  var src = document.getElementById(btn.getAttribute("data-bc-copy"));
+  if (!src) return;
+  navigator.clipboard.writeText(src.textContent.trim()).then(function () {
+    btn.textContent = "Copied";
+  });
+});

@@ -116,6 +116,12 @@ func handleOrgSSO(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	renderOrgSSO(w, r, actor, orgID, nil)
+}
+
+// renderOrgSSO renders the page; newToken is a SCIM token just created, to
+// show once (nil for none).
+func renderOrgSSO(w http.ResponseWriter, r *http.Request, actor action.Actor, orgID string, newToken *action.SCIMTokenCreated) {
 	out, err := disp.Dispatch(r.Context(), actor, "org.domain.list", json.RawMessage(`{}`), action.Opts{Org: orgID})
 	if err != nil {
 		if ssoDenied(w, r, err) {
@@ -151,7 +157,11 @@ func handleOrgSSO(w http.ResponseWriter, r *http.Request) {
 			RecordName: dm.RecordName, RecordValue: dm.RecordValue,
 		})
 	}
-	if err := orgSSOSections(r, actor, orgID, &d); err != nil {
+	err = orgSSOSections(r, actor, orgID, &d)
+	if err == nil {
+		d.SCIM, err = scimSection(r, actor, orgID, newToken)
+	}
+	if err != nil {
 		if ssoDenied(w, r, err) {
 			return
 		}

@@ -1481,6 +1481,8 @@ func Routes(r chi.Router) {
 	r.Post("/app/org/{orgID}/settings/sso/provisioning", handleOrgProvisioning)
 	r.Post("/app/org/{orgID}/settings/sso/mappings", handleOrgMappingCreate)
 	r.Post("/app/org/{orgID}/settings/sso/mappings/{id}/delete", handleOrgMappingDelete)
+	r.Post("/app/org/{orgID}/settings/sso/scim-tokens", handleOrgSCIMCreate)
+	r.Post("/app/org/{orgID}/settings/sso/scim-tokens/{id}/revoke", handleOrgSCIMRevoke)
 	r.Get(views.IdPAdminBase, handleIdPList)
 	r.Post(views.IdPAdminBase, handleIdPCreate)
 	r.Get(views.IdPAdminBase+"/new", handleIdPNew)
