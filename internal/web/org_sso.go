@@ -80,7 +80,8 @@ func ssoActor(w http.ResponseWriter, r *http.Request, orgID string) (action.Acto
 	sess, ok := auth.SessionFrom(r.Context())
 	if !ok || sess.UserID == "" {
 		if r.Method == http.MethodGet {
-			http.Redirect(w, r, auth.LoginURLFor(views.OrgSSOURL(orgID)), http.StatusSeeOther)
+			// The target is /login with a SafeReturnTo-validated return_to.
+			http.Redirect(w, r, auth.LoginURLFor(views.OrgSSOURL(url.PathEscape(orgID))), http.StatusSeeOther) //nolint:gosec // G710: fixed path, return_to validated by auth.SafeReturnTo
 		} else {
 			renderStatusPage(w, r, http.StatusForbidden, "Forbidden", "You must be signed in.")
 		}
@@ -180,7 +181,8 @@ func handleOrgDomainPost(name, notice string) http.HandlerFunc {
 			return
 		}
 		_, err = disp.Dispatch(r.Context(), actor, name, raw, action.Opts{Org: orgID})
-		dest := views.OrgSSOURL(orgID) + "?notice=" + notice
+		page := views.OrgSSOURL(url.PathEscape(orgID))
+		dest := page + "?notice=" + notice
 		if err != nil {
 			if ssoDenied(w, r, err) {
 				return
@@ -195,9 +197,11 @@ func handleOrgDomainPost(name, notice string) http.HandlerFunc {
 			if code == "lookup" {
 				slog.Warn("org sso: domain lookup", "org", orgID, "err", err)
 			}
-			dest = views.OrgSSOURL(orgID) + "?error=" + code
+			dest = page + "?error=" + code
 		}
-		http.Redirect(w, r, dest, http.StatusSeeOther)
+		// dest is the fixed /app/org/<escaped id>/settings/sso path plus a
+		// fixed code: always same-origin.
+		http.Redirect(w, r, dest, http.StatusSeeOther) //nolint:gosec // G710: same-origin fixed path, see above
 	}
 }
 

@@ -36,6 +36,7 @@ type smHarness struct {
 	app    *httptest.Server
 	google *oidctest.Server
 	corp   *oidctest.Server
+	srv    *server.Server
 }
 
 type smOpts struct {
@@ -97,7 +98,7 @@ func newSMHarness(t *testing.T, o smOpts) *smHarness {
 		action.WithSecretKey(tenant.PadKey(cfg.SecretKey)),
 	))
 	h = s
-	return &smHarness{t: t, db: d, app: app, google: g, corp: c}
+	return &smHarness{t: t, db: d, app: app, google: g, corp: c, srv: s}
 }
 
 // signedIn gives b a fresh session for userID and returns its CSRF token.

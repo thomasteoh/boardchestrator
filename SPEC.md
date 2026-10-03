@@ -126,7 +126,8 @@ auth_providers(id, org_id NULL, kind, preset, display_name, enabled, managed_by,
                sp_key_enc, sp_cert, position, created_at, updated_at)     -- kind: oidc|github|saml; managed_by: ui|env
 -- identities += last_login_at; sessions += provider_id, auth_method, idp_sid, idp_subject, id_token_enc
 -- api_keys += expires_at; memberships += source (manual|invite|jit|idp|scim)
-org_domains(id, org_id, domain UNIQUE, verify_token, verified_at, created_at)
+org_domains(id, org_id, domain, verify_token, verified_at, created_at,
+            UNIQUE(org_id,domain))                                      -- + UNIQUE(domain) WHERE verified_at IS NOT NULL
 org_sso_settings(org_id PK, enforce_sso, jit_enabled, jit_default_role_id, group_claim, group_sync)
 idp_group_mappings(id, org_id, provider_id NULL, group_value, role_id, resource_type, resource_id)
 scim_tokens(id, org_id, name, prefix, token_hash, created_by, last_used_at, revoked_at, created_at)
@@ -235,7 +236,7 @@ PRD §4 governs scope. Packages: `internal/auth` (sessions, CSRF, flow cookie, l
 
 ### 7.2 Login flow & flow cookie
 
-- Routes: `GET /login` (page), `GET /auth/{providerID}` (begin; `?return_to=` relative path only, `?login_hint=`), `GET /auth/{providerID}/callback` (OIDC/GitHub), `POST /auth/saml/{providerID}/acs`, `GET /auth/saml/{providerID}/metadata`, `POST /auth/logout`, `POST /auth/oidc/{providerID}/backchannel-logout`, `POST /auth/sso/discover` (home-realm discovery), passkey routes under `/auth/passkey/*`. `/auth/google/callback` and `/auth/github/callback` keep working because they are just provider ids.
+- Routes: `GET /login` (page), `GET /auth/{providerID}` (begin; `?return_to=` relative path only, `?login_hint=`), `GET /auth/{providerID}/callback` (OIDC/GitHub), `POST /auth/saml/{providerID}/acs`, `GET /auth/saml/{providerID}/metadata`, `POST /auth/logout`, `POST /auth/oidc/{providerID}/backchannel-logout`, `GET /auth/sso/discover?email=` (home-realm discovery), passkey routes under `/auth/passkey/*`. `/auth/google/callback` and `/auth/github/callback` keep working because they are just provider ids.
 - **Flow cookie** `__Host-bc_flow`: AES-GCM sealed (key derived from `BC_SECRET_KEY` with a distinct HKDF info label, `bc-auth-flow`), Secure, HttpOnly, Path=/, Max-Age 600. Payload: `{state, nonce, pkce_verifier, provider_id, return_to, intent: login|link|bootstrap, link_session_hash?, bootstrap: bool, saml_request_id?, webauthn_session?, exp}`. The callback requires `state` from the query to equal the cookie's `state` and the provider id to match; the cookie is cleared on every callback outcome. No server-side map. **SameSite=Lax** for OIDC/GitHub (top-level GET callbacks); **SameSite=None** only for SAML flows, because the ACS is a cross-site POST.
 - Session cookies are always `Secure`; there is no production `Insecure` switch (browsers treat `http://localhost` as a secure context). The test seam stays test-only.
 
@@ -253,10 +254,10 @@ All writes in resolution go through internal (non-registered) functions in one t
 
 ### 7.4 Organisation SSO
 
-- `org_domains`: `org.domain.add` returns a TXT record `_boardchestrator-challenge.<domain> = bc-verify=<token>`; `org.domain.verify` resolves it (resolver injectable for tests). A domain may be verified by only one org.
+- `org_domains`: `org.domain.add` returns a TXT record `_boardchestrator-challenge.<domain> = bc-verify=<token>`; `org.domain.verify` resolves it (resolver injectable for tests, 5 s timeout). A domain may be verified by only one org. Any number of orgs may hold a **pending** claim on a domain (unique per org; unique across orgs only once verified, via a partial unique index), so a squatter's unverified claim never blocks the real owner; once verified, add and verify by any other org are refused. Domains are stored normalised: lower-case, IDNA A-labels, no trailing dot; IP addresses, single-label names and public suffixes are refused. Discovery matches the email's domain exactly (a verified `example.com` does not cover `eng.example.com`).
 - Org-owned providers are `auth_providers` rows with `org_id` set, managed by `idp.*` actions at org scope (permission `org.sso`). Platform admins manage `org_id IS NULL` rows (permission `platform.idp`).
 - `org_sso_settings(org_id PK, enforce_sso, jit_enabled, jit_default_role_id, group_claim, group_sync)`. **Enforcement** lives in dispatch scope verification: for a `user` actor on an org with `enforce_sso=1`, `Actor.AuthProviderID` (copied from the session) must be one of the org's enabled providers, else `ErrSSORequired{OrgID}` which the web layer renders as "sign in with <provider>" with a link. Platform admins acting at platform scope are unaffected. API-key and agent actors are unaffected.
-- **Home-realm discovery:** `POST /auth/sso/discover {email}` → if the domain is verified by an org with an enabled provider, redirect to `/auth/{providerID}?login_hint=<email>`; otherwise re-render the login page with a neutral message (do not disclose whether the domain is registered beyond what the redirect implies).
+- **Home-realm discovery:** `GET /auth/sso/discover?email=` → if the domain is verified by an org with an enabled provider, redirect to `/auth/{providerID}?login_hint=<email>` (the org's first provider in display order; `return_to` and `invite` carried over); otherwise re-render the login page with a neutral message (do not disclose whether the domain is registered beyond what the redirect implies). It is a GET (changed from POST in WU-606) because it changes no state and so needs no CSRF exemption (§7.11), and a hit puts the address in the `/auth/{id}?login_hint=` URL anyway; the request log records paths, not query strings. It is under the `/auth/*` rate limit.
 
 ### 7.5 JIT provisioning & group mapping
 
