@@ -53,8 +53,7 @@ func (e *RefusedError) Error() string { return "auth: login refused: " + e.Reaso
 func refuse(reason string) error { return &RefusedError{Reason: reason} }
 
 // Resolver maps a verified Assertion to a user and a fresh session
-// (SPEC §7.3): steps 1-4 (org JIT is WU-607/608), the BC_ADMIN_EMAILS half
-// of step 5 (the token half is WU-605), and 6.
+// (SPEC §7.3): steps 1-4 (org JIT is WU-607/608), 5 and 6.
 type Resolver struct {
 	DB          *sql.DB
 	Sessions    *SessionStore
@@ -62,6 +61,9 @@ type Resolver struct {
 	// SecretKey is the 32-byte AES key for _enc columns (GitHub access token,
 	// ID token). Empty disables storing them.
 	SecretKey []byte
+	// Bootstrap checks a bootstrap flow's token (SPEC §7.3 step 5). nil:
+	// only BC_ADMIN_EMAILS can claim the platform.
+	Bootstrap *Bootstrap
 }
 
 // LoginRequest is one resolution attempt.
@@ -80,6 +82,10 @@ type LoginRequest struct {
 	LinkSessionHash string
 	// InviteToken is the invite carried by the flow, if any.
 	InviteToken string
+	// BootstrapHash is the bootstrap token hash a /setup flow proved ("" =
+	// not a bootstrap flow). It is checked again here, in the transaction,
+	// against the platform's current state.
+	BootstrapHash string
 }
 
 // LoginResult is a successful resolution.
@@ -138,16 +144,21 @@ func (rv *Resolver) resolveTx(ctx context.Context, q *sqlc.Queries, req LoginReq
 	}
 	res := &LoginResult{}
 
-	// Bootstrap gate (SPEC §7.3 step 5, admin-email half; the token half is
-	// WU-605): until the platform is claimed, only BC_ADMIN_EMAILS may sign in.
+	// Bootstrap gate (SPEC §7.3 step 5): until the platform is claimed, only
+	// BC_ADMIN_EMAILS or a flow that proved the bootstrap token may sign in.
+	// Read inside this IMMEDIATE transaction, so of two racing claims only
+	// the first sees an unclaimed platform; a bootstrap flow minted before
+	// someone else claimed it is then an ordinary login.
 	ps, err := q.GetPlatformSettings(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("auth: platform settings: %w", err)
 	}
 	isAdmin := a.EmailVerified && rv.isAdmin(a.Email)
 	bootstrapClaim := ps.BootstrapDone == 0
+	tokenClaim := false
 	if bootstrapClaim {
-		if !isAdmin {
+		tokenClaim = req.BootstrapHash != "" && rv.Bootstrap.claims(ps, req.BootstrapHash)
+		if !isAdmin && !tokenClaim {
 			return nil, refuse(RefuseNotBootstrap)
 		}
 		if err := q.SetBootstrapDone(ctx); err != nil {
@@ -207,8 +218,18 @@ func (rv *Resolver) resolveTx(ctx context.Context, q *sqlc.Queries, req LoginReq
 		return nil, fmt.Errorf("auth: find identity: %w", err)
 	}
 
-	if isAdmin {
+	if isAdmin || tokenClaim {
 		if err := ensurePlatformAdmin(ctx, q, res.UserID); err != nil {
+			return nil, err
+		}
+	}
+	if bootstrapClaim {
+		via := "admin_email"
+		if tokenClaim && !isAdmin {
+			via = "token"
+		}
+		if err := writeAudit(ctx, q, res.UserID, "auth.bootstrap", a.ProviderID, req.IP, now,
+			map[string]string{"provider": a.ProviderID, "via": via}); err != nil {
 			return nil, err
 		}
 	}
@@ -236,6 +257,11 @@ func (rv *Resolver) resolveTx(ctx context.Context, q *sqlc.Queries, req LoginReq
 		return nil, err
 	}
 	res.RawToken, res.Session = raw, sess
+	if err := writeAudit(ctx, q, res.UserID, "auth.login", a.ProviderID, req.IP, now, map[string]string{
+		"provider": a.ProviderID, "method": req.AuthMethod, "ua": truncateUA(req.UA),
+	}); err != nil {
+		return nil, err
+	}
 	return res, nil
 }
 
@@ -371,8 +397,9 @@ func (rv *Resolver) linkOrSignUp(ctx context.Context, q *sqlc.Queries, req Login
 //   - invite: the flow carries a pending, unexpired invite token. Possession
 //     of the invite is the proof, so the IdP need not have verified its
 //     email; the new user gets the invite's email.
-//   - bootstrap: the unclaimed platform's BC_ADMIN_EMAILS sign-in (the gate
-//     in resolveTx already required a verified admin email).
+//   - bootstrap: the unclaimed platform's claim, by a verified
+//     BC_ADMIN_EMAILS address or a flow that proved the bootstrap token (the
+//     gate in resolveTx already checked which).
 //   - open: the provider allows sign-up and verified the email.
 //
 // Org JIT (SPEC §7.5) is WU-607/608: it goes between bootstrap and open, as
@@ -434,17 +461,24 @@ func ensurePlatformAdmin(ctx context.Context, q *sqlc.Queries, userID string) er
 	return nil
 }
 
-// writeAudit appends an authentication audit row directly (SPEC §7.3: auth
-// events are not actions).
+// writeAudit appends an authentication audit row for a user directly (SPEC
+// §7.3: auth events are not actions). Auth rows carry no org: they show in
+// the platform audit view.
 func writeAudit(ctx context.Context, q *sqlc.Queries, userID, action, subject, ip, now string, detail map[string]string) error {
+	return writeAuditAs(ctx, q, "user", userID, action, subject, ip, now, detail)
+}
+
+// writeAuditAs is writeAudit for any actor type ("anonymous" for failed
+// logins, with an empty actor id).
+func writeAuditAs(ctx context.Context, q *sqlc.Queries, actorType, actorID, action, subject, ip, now string, detail map[string]string) error {
 	dj, err := json.Marshal(detail)
 	if err != nil {
 		return fmt.Errorf("auth: audit detail: %w", err)
 	}
 	if err := q.CreateAuditLog(ctx, sqlc.CreateAuditLogParams{
 		ID:         newID(),
-		ActorType:  "user",
-		ActorID:    userID,
+		ActorType:  actorType,
+		ActorID:    actorID,
 		Action:     action,
 		Subject:    subject,
 		DetailJson: string(dj),

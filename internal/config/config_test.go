@@ -236,3 +236,30 @@ func TestLoadAllowSignup(t *testing.T) {
 		t.Fatal("BC_ALLOW_SIGNUP=maybe accepted")
 	}
 }
+
+func TestLoadTrustedProxies(t *testing.T) {
+	baseEnv()
+	t.Setenv("BC_TRUSTED_PROXIES", "")
+	c, err := config.Load()
+	if err != nil || len(c.TrustedProxies) != 0 {
+		t.Fatalf("default TrustedProxies = %v, %v; want none", c, err)
+	}
+	t.Setenv("BC_TRUSTED_PROXIES", "10.0.0.0/8, 192.168.1.7 ::1,fd00::/8")
+	c, err = config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, p := range c.TrustedProxies {
+		got = append(got, p.String())
+	}
+	if want := "10.0.0.0/8 192.168.1.7/32 ::1/128 fd00::/8"; strings.Join(got, " ") != want {
+		t.Fatalf("TrustedProxies = %v, want %s", got, want)
+	}
+	for _, bad := range []string{"10.0.0.0/33", "proxy.example.com", "1.2.3"} {
+		t.Setenv("BC_TRUSTED_PROXIES", bad)
+		if _, err := config.Load(); err == nil {
+			t.Errorf("BC_TRUSTED_PROXIES=%q accepted", bad)
+		}
+	}
+}

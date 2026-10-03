@@ -117,6 +117,35 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// RenderSetupPage is the "Claim this instance" page that auth.Handler.Setup
+// shows after a valid bootstrap token (SPEC §7.3 step 5): every enabled
+// platform provider, each starting a bootstrap flow (?bootstrap=1; the setup
+// cookie carries the proof).
+func RenderSetupPage(w http.ResponseWriter, r *http.Request) {
+	var ps []views.LoginProvider
+	if src := identityCfg().providers; src != nil {
+		all, err := src.Providers(r.Context())
+		if err != nil {
+			slog.Error("setup: list providers", "err", err)
+		}
+		for _, p := range all {
+			if p.OrgID != "" {
+				continue
+			}
+			ps = append(ps, views.LoginProvider{
+				ID: p.ID, Name: p.DisplayName, Preset: p.Preset,
+				Href: templ.SafeURL("/auth/" + url.PathEscape(p.ID) + "?bootstrap=1"),
+			})
+		}
+	}
+	s := shellData(r, "Claim this instance", "")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := views.SetupPage(s, ps).Render(r.Context(), w); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
 // inviteAcceptURL is the invite landing page for token.
 func inviteAcceptURL(token string) string {
 	return "/invite/accept?token=" + url.QueryEscape(token)

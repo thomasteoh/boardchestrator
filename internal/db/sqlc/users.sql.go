@@ -347,13 +347,31 @@ func (q *Queries) ListSignInIdentities(ctx context.Context, userID string) ([]Li
 
 const setBootstrapDone = `-- name: SetBootstrapDone :exec
 UPDATE platform_settings
-SET bootstrap_done = 1
+SET bootstrap_done = 1,
+    settings_json = json_remove(settings_json, '$.bootstrap_token_hash')
 WHERE id = 1
 `
 
+// Claiming the platform also forgets any generated bootstrap token hash.
 func (q *Queries) SetBootstrapDone(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, setBootstrapDone)
 	return err
+}
+
+const setBootstrapTokenHash = `-- name: SetBootstrapTokenHash :execrows
+UPDATE platform_settings
+SET settings_json = json_set(settings_json, '$.bootstrap_token_hash', CAST(?1 AS TEXT))
+WHERE id = 1 AND bootstrap_done = 0
+`
+
+// Stores the SHA-256 of a generated bootstrap token (WU-605) while the
+// platform is unclaimed. The token itself is never stored.
+func (q *Queries) SetBootstrapTokenHash(ctx context.Context, tokenHash string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setBootstrapTokenHash, tokenHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setIdentityToken = `-- name: SetIdentityToken :exec

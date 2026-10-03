@@ -29,7 +29,7 @@ const FlowTTL = 10 * time.Minute
 const flowKeyInfo = "bc-auth-flow"
 
 // Flow intents (SPEC §7.2). IntentLink is issued by the Sign-in methods page
-// (WU-604); IntentBootstrap arrives with WU-605.
+// (WU-604); IntentBootstrap by the /setup claim page (WU-605).
 const (
 	IntentLogin     = "login"
 	IntentLink      = "link"
@@ -47,7 +47,11 @@ type Flow struct {
 	ReturnTo        string `json:"rt,omitempty"`
 	Intent          string `json:"in"`
 	LinkSessionHash string `json:"ls,omitempty"`
-	Bootstrap       bool   `json:"bs,omitempty"`
+	// Bootstrap marks a platform claim started from /setup (WU-605);
+	// BootstrapHash is the token hash it proved, re-checked against the
+	// platform inside the resolution transaction.
+	Bootstrap     bool   `json:"bs,omitempty"`
+	BootstrapHash string `json:"bh,omitempty"`
 	LoginHint       string `json:"lh,omitempty"`
 	// InviteToken is the raw invite token when the person arrived through an
 	// invite link (WU-604). Possession of it may permit sign-up (SPEC §7.3
@@ -121,32 +125,45 @@ func (s *FlowSealer) NewFlow(providerID, intent string) (*Flow, error) {
 // Seal encrypts f into a cookie-safe string. The cookie name is bound as
 // associated data so the ciphertext cannot be replayed under another name.
 func (s *FlowSealer) Seal(f *Flow) (string, error) {
-	pt, err := json.Marshal(f)
+	return s.sealAs(FlowCookieName, f)
+}
+
+// sealAs seals v as JSON with the cookie name as associated data.
+func (s *FlowSealer) sealAs(name string, v any) (string, error) {
+	pt, err := json.Marshal(v)
 	if err != nil {
-		return "", fmt.Errorf("auth: marshal flow: %w", err)
+		return "", fmt.Errorf("auth: marshal %s: %w", name, err)
 	}
 	nonce := make([]byte, s.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
-		return "", fmt.Errorf("auth: flow nonce: %w", err)
+		return "", fmt.Errorf("auth: seal nonce: %w", err)
 	}
-	ct := s.aead.Seal(nonce, nonce, pt, []byte(FlowCookieName))
+	ct := s.aead.Seal(nonce, nonce, pt, []byte(name))
 	return base64.RawURLEncoding.EncodeToString(ct), nil
+}
+
+// openAs reverses sealAs for the same cookie name.
+func (s *FlowSealer) openAs(name, v string, out any) error {
+	raw, err := base64.RawURLEncoding.DecodeString(v)
+	if err != nil || len(raw) < s.aead.NonceSize() {
+		return ErrFlowInvalid
+	}
+	ns := s.aead.NonceSize()
+	pt, err := s.aead.Open(nil, raw[:ns], raw[ns:], []byte(name))
+	if err != nil {
+		return ErrFlowInvalid
+	}
+	if err := json.Unmarshal(pt, out); err != nil {
+		return ErrFlowInvalid
+	}
+	return nil
 }
 
 // Open decrypts and validates a sealed flow, rejecting expired payloads.
 func (s *FlowSealer) Open(v string) (*Flow, error) {
-	raw, err := base64.RawURLEncoding.DecodeString(v)
-	if err != nil || len(raw) < s.aead.NonceSize() {
-		return nil, ErrFlowInvalid
-	}
-	ns := s.aead.NonceSize()
-	pt, err := s.aead.Open(nil, raw[:ns], raw[ns:], []byte(FlowCookieName))
-	if err != nil {
-		return nil, ErrFlowInvalid
-	}
 	var f Flow
-	if err := json.Unmarshal(pt, &f); err != nil {
-		return nil, ErrFlowInvalid
+	if err := s.openAs(FlowCookieName, v, &f); err != nil {
+		return nil, err
 	}
 	if s.now().Unix() >= f.Exp {
 		return nil, ErrFlowExpired

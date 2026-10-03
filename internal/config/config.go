@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -41,6 +42,20 @@ type Config struct {
 	GitHubAPIBase     string `env:"-"`
 	AgentWorkers      int
 	SchedPollInterval int
+	// TrustedProxies (BC_TRUSTED_PROXIES, comma-separated CIDRs or
+	// addresses, default none) are the reverse proxies whose
+	// X-Forwarded-For is believed when working out a client's IP for rate
+	// limits and audit rows (WU-605). Empty: the TCP peer is the client.
+	TrustedProxies []netip.Prefix `env:"BC_TRUSTED_PROXIES"`
+	// SignInRateLimit overrides the per-IP sign-in rate limit (SPEC §7.11,
+	// 20/min burst 10 when zero). Not loaded from the environment: tests
+	// that sign in many times from one address raise it.
+	SignInRateLimit RateLimit `env:"-"`
+}
+
+// RateLimit is a token-bucket rate: PerMinute refill, Burst capacity.
+type RateLimit struct {
+	PerMinute, Burst int
 }
 
 // Load reads configuration from environment variables with defaults.
@@ -108,6 +123,11 @@ func Load() (*Config, error) {
 	if (c.GitHubClientID == "") != (c.GitHubClientSecret == "") {
 		return nil, fmt.Errorf("BC_GITHUB_CLIENT_ID and BC_GITHUB_CLIENT_SECRET must be set together")
 	}
+	tp, err := ParseTrustedProxies(os.Getenv("BC_TRUSTED_PROXIES"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid BC_TRUSTED_PROXIES: %w", err)
+	}
+	c.TrustedProxies = tp
 	oidc, err := loadOIDCProviders(os.Environ())
 	if err != nil {
 		return nil, err
@@ -115,6 +135,29 @@ func Load() (*Config, error) {
 	c.OIDCProviders = oidc
 
 	return c, nil
+}
+
+// ParseTrustedProxies parses a comma- or space-separated list of CIDR
+// prefixes or bare addresses (a bare address is a single-host prefix).
+func ParseTrustedProxies(s string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, f := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' }) {
+		if strings.Contains(f, "/") {
+			p, err := netip.ParsePrefix(f)
+			if err != nil {
+				return nil, fmt.Errorf("%q: %w", f, err)
+			}
+			out = append(out, p.Masked())
+			continue
+		}
+		a, err := netip.ParseAddr(f)
+		if err != nil {
+			return nil, fmt.Errorf("%q: %w", f, err)
+		}
+		a = a.Unmap()
+		out = append(out, netip.PrefixFrom(a, a.BitLen()))
+	}
+	return out, nil
 }
 
 func envOrDefault(key, def string) string {

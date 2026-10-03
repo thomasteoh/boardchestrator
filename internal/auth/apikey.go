@@ -68,7 +68,7 @@ func APIKeyAuthMiddleware(d *sql.DB) func(http.Handler) http.Handler {
 				Type:        action.ActorAPIKey,
 				ID:          key.ID,
 				OwnerUserID: key.UserID,
-				IP:          extractIP(r),
+				IP:          ClientIP(r),
 			}
 
 			r = r.WithContext(context.WithValue(r.Context(), ctxKeyAPIKey{}, actor))
@@ -79,15 +79,4 @@ func APIKeyAuthMiddleware(d *sql.DB) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// extractIP extracts the client IP from the request.
-func extractIP(r *http.Request) string {
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		if idx := strings.Index(fwd, ","); idx > 0 {
-			return strings.TrimSpace(fwd[:idx])
-		}
-		return strings.TrimSpace(fwd)
-	}
-	return r.RemoteAddr
 }

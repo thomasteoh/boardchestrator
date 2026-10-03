@@ -168,6 +168,10 @@ func (s *Server) setupMiddleware() {
 	// Security headers + per-request CSP nonce run for every request, even
 	// before a DB is wired, so the app shell always renders under a strict CSP.
 	s.mux.Use(auth.CSP())
+	// Client IP (BC_TRUSTED_PROXIES) for rate limits and audit rows, then the
+	// per-IP sign-in rate limit (SPEC §7.11), ahead of any DB work.
+	s.mux.Use(auth.ClientIPMiddleware(auth.TrustedProxies(s.cfg.TrustedProxies)))
+	s.mux.Use(s.signInRateLimit())
 	// API key auth middleware — resolves Bearer tokens into API key actors
 	// before session middleware. When a valid API key is present, it takes
 	// priority over session auth for API routes.
@@ -189,6 +193,8 @@ func (s *Server) setupRoutes() {
 		web.RenderErrorPage(w, r, 403, title, message)
 	}
 	auth.LoginFailedHandler = web.RenderLoginFailedPage
+	auth.SetupPageHandler = web.RenderSetupPage
+	auth.NotFoundHandler = s.handleNotFound
 	// Custom error pages for 404, 405, 500.
 	s.mux.NotFound(s.handleNotFound)
 	s.mux.MethodNotAllowed(s.handleMethodNotAllowed)
@@ -236,9 +242,10 @@ func (s *Server) setupAuthRoutes() {
 		SecretKey:   s.cfg.SecretKey,
 		EncKey:      encKey,
 		BaseURL:     s.cfg.BaseURL,
-		AdminEmails: s.cfg.AdminEmails,
-		Providers:   reg,
-		RequestID:   RequestID,
+		AdminEmails:    s.cfg.AdminEmails,
+		BootstrapToken: s.cfg.BootstrapToken,
+		Providers:      reg,
+		RequestID:      RequestID,
 	})
 	if err != nil {
 		// Only an empty BC_SECRET_KEY fails here, which config.Load rejects;
@@ -247,6 +254,25 @@ func (s *Server) setupAuthRoutes() {
 		return
 	}
 	ah.Routes(s.mux)
+	s.announceBootstrap(ctx, ah.Resolver.Bootstrap)
+}
+
+// announceBootstrap logs how to claim an unclaimed platform (SPEC §7.3 step
+// 5). The claim URL carries the bootstrap token: the log is where the
+// operator gets it (PRD §4), and it is useless once the platform is claimed.
+func (s *Server) announceBootstrap(ctx context.Context, b *auth.Bootstrap) {
+	claimURL, err := b.Prepare(ctx, s.cfg.BaseURL)
+	switch {
+	case err != nil:
+		slog.Error("auth: preparing the bootstrap token", "err", err)
+	case claimURL != "":
+		slog.Warn("auth: this instance is unclaimed; open the claim URL and sign in to become its platform owner",
+			"claim_url", claimURL)
+	default:
+		if ps, err := sqlc.New(s.db).GetPlatformSettings(ctx); err == nil && ps.BootstrapDone == 0 {
+			slog.Warn("auth: this instance is unclaimed; the first sign-in by an address in BC_ADMIN_EMAILS claims it")
+		}
+	}
 }
 
 // IdP returns the sign-in provider registry (nil without a database).

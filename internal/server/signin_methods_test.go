@@ -72,6 +72,9 @@ func newSMHarness(t *testing.T, o smOpts) *smHarness {
 	cfg.BaseURL = app.URL
 	cfg.AllowSignup = true
 	cfg.AdminEmails = o.adminEmails
+	// These tests sign in many times from 127.0.0.1; the sign-in rate limit
+	// has its own tests (WU-605).
+	cfg.SignInRateLimit = config.RateLimit{PerMinute: 6000, Burst: 1000}
 	cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleIssuer = g.ClientID, g.ClientSecret, g.Issuer()
 	cfg.OIDCProviders = []config.OIDCEnvProvider{{
 		ID: "corp", Issuer: c.Issuer(), ClientID: c.ClientID, ClientSecret: c.ClientSecret,

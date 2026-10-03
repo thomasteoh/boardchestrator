@@ -8,12 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 )
 
 // LoginFailedHandler renders the generic sign-in failure page. The server
@@ -81,6 +82,8 @@ type HandlerConfig struct {
 	EncKey      []byte // 32-byte key for _enc columns
 	BaseURL     string
 	AdminEmails []string
+	// BootstrapToken is BC_BOOTSTRAP_TOKEN ("" = generated, see Bootstrap).
+	BootstrapToken string
 	// Providers resolves provider ids (production: the idp.Registry). When
 	// nil, Connectors is used as a fixed set.
 	Providers  ConnectorSource
@@ -107,6 +110,9 @@ func NewHandler(cfg HandlerConfig) (*Handler, error) {
 			Sessions:    cfg.Sessions,
 			AdminEmails: cfg.AdminEmails,
 			SecretKey:   cfg.EncKey,
+			Bootstrap: &Bootstrap{
+				DB: cfg.DB, EnvToken: cfg.BootstrapToken, AdminEmails: cfg.AdminEmails,
+			},
 		},
 		BaseURL:   strings.TrimRight(cfg.BaseURL, "/"),
 		RequestID: cfg.RequestID,
@@ -116,6 +122,7 @@ func NewHandler(cfg HandlerConfig) (*Handler, error) {
 
 // Routes mounts the login routes on r.
 func (h *Handler) Routes(r chi.Router) {
+	r.Get(SetupURL, h.Setup)
 	r.Post("/auth/logout", h.Logout)
 	r.Post(SignInMethodsURL+"/link/{providerID}", h.BeginLink)
 	r.Get("/auth/{providerID}", h.Begin)
@@ -142,6 +149,16 @@ func (h *Handler) Begin(w http.ResponseWriter, r *http.Request) {
 	// An invite link's token rides the flow; resolution validates it.
 	if inv := r.URL.Query().Get("invite"); len(inv) <= maxInviteTokenLen {
 		flow.InviteToken = inv
+	}
+	// A claim-page button (?bootstrap=1) with a setup cookie whose token
+	// still claims the platform makes this a bootstrap flow. Anything less
+	// is an ordinary login; resolution re-checks the token either way.
+	if r.URL.Query().Get("bootstrap") == "1" {
+		if hash := h.Flows.setupHash(r); hash != "" {
+			if ok, err := h.Resolver.Bootstrap.Valid(r.Context(), hash); err == nil && ok {
+				flow.Intent, flow.Bootstrap, flow.BootstrapHash = IntentBootstrap, true, hash
+			}
+		}
 	}
 	h.redirectToProvider(w, r, c, id, flow)
 }
@@ -239,11 +256,12 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 		Policy:           c.Policy(),
 		AuthMethod:       c.AuthMethod(),
 		PresentedSession: presented,
-		IP:               clientIP(r),
+		IP:               ClientIP(r),
 		UA:               r.UserAgent(),
 		Intent:           flow.Intent,
 		LinkSessionHash:  flow.LinkSessionHash,
 		InviteToken:      flow.InviteToken,
+		BootstrapHash:    bootstrapHash(flow),
 	})
 	if flow.Intent == IntentLink {
 		h.finishLink(w, r, id, res, err)
@@ -257,6 +275,9 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 		}
 		h.fail(w, r, http.StatusInternalServerError, id, "resolve", err)
 		return
+	}
+	if flow.Bootstrap {
+		clearSetupCookie(w)
 	}
 	setSessionCookie(w, res.RawToken, res.Session.ExpiresAt)
 	dest := SafeReturnTo(flow.ReturnTo)
@@ -301,6 +322,13 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 			h.fail(w, r, http.StatusInternalServerError, "", "logout", err)
 			return
 		}
+		// Audit only a real sign-out: the session middleware resolved this
+		// cookie to a live session.
+		if sess, ok := SessionFrom(r.Context()); ok && sess.UserID != "" && sess.TokenHash == hashToken(ck.Value) {
+			h.audit(r, "user", sess.UserID, "auth.logout", sess.ProviderID, map[string]string{
+				"provider": sess.ProviderID, "method": sess.AuthMethod,
+			})
+		}
 	}
 	clearSessionCookie(w)
 	w.Header().Set("Cache-Control", "no-store")
@@ -317,11 +345,43 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, status int, provi
 	}
 	slog.Warn("auth: login failed",
 		"ref", ref, "req_id", reqID, "provider", provider, "reason", reason, "status", status, "err", err)
+	if reason != "logout" {
+		// auth.login_failed (SPEC §7.3 step 6): the fixed reason code and the
+		// reference only; never err, tokens, codes or claims.
+		h.audit(r, "anonymous", "", "auth.login_failed", provider, map[string]string{
+			"reason": reason, "provider": provider, "ref": ref,
+		})
+	}
 	msg, ok := refusalCopy[reason]
 	if !ok {
 		msg = msgGeneric
 	}
 	LoginFailedHandler(w, r, status, msg, ref)
+}
+
+// maxAuditUA bounds the user agent kept in an audit row.
+const maxAuditUA = 256
+
+func truncateUA(ua string) string {
+	if len(ua) > maxAuditUA {
+		return ua[:maxAuditUA]
+	}
+	return ua
+}
+
+// audit writes an authentication audit row outside any transaction, best
+// effort: a failed write is logged and the response carries on. The client
+// IP and user agent are added here.
+func (h *Handler) audit(r *http.Request, actorType, actorID, act, subject string, detail map[string]string) {
+	if h.Resolver == nil || h.Resolver.DB == nil {
+		return
+	}
+	detail["ua"] = truncateUA(r.UserAgent())
+	now := h.Sessions.now().UTC().Format(timeFormat)
+	if err := writeAuditAs(r.Context(), sqlc.New(h.Resolver.DB), actorType, actorID, act, subject,
+		ClientIP(r), now, detail); err != nil {
+		slog.Error("auth: audit", "action", act, "err", err)
+	}
 }
 
 // newRef returns a short reference code users can quote to an admin.
@@ -333,15 +393,6 @@ func newRef() string {
 	return strings.ToUpper(hex.EncodeToString(b))
 }
 
-// clientIP is the request's remote address without the port.
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
-}
-
 // newID returns a random hex id (16 bytes).
 func newID() string {
 	var b [16]byte
@@ -349,4 +400,12 @@ func newID() string {
 		panic(fmt.Sprintf("auth: crypto/rand failed: %v", err))
 	}
 	return hex.EncodeToString(b[:])
+}
+
+// bootstrapHash is the token hash a bootstrap flow proved ("" otherwise).
+func bootstrapHash(f *Flow) string {
+	if !f.Bootstrap {
+		return ""
+	}
+	return f.BootstrapHash
 }

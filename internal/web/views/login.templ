@@ -84,6 +84,33 @@ templ LoginPage(s Shell, d LoginPageData) {
 	}
 }
 
+// SetupPage is the bootstrap claim page (GET /setup?token=, WU-605): the
+// platform sign-in providers, each starting a claim. Whoever finishes first
+// becomes the platform owner.
+templ SetupPage(s Shell, providers []LoginProvider) {
+	@Base(s) {
+		<section class="bc-login" aria-labelledby="setup-title">
+			<h1 id="setup-title" class="bc-login-title">Claim this instance</h1>
+			<p>This Boardchestrator instance hasn't been set up yet. Sign in below and your account becomes its platform owner, with full administrative access.</p>
+			if len(providers) > 0 {
+				<ul class="bc-login-providers" aria-label="Sign-in methods">
+					for _, p := range providers {
+						<li>
+							<a class="bc-btn bc-login-btn" href={ p.Href } hx-boost="false">
+								@providerMark(p.Preset, p.Name)
+								<span>Claim with { p.Name }</span>
+							</a>
+						</li>
+					}
+				</ul>
+				<p class="bc-muted">This link stops working once the instance is claimed.</p>
+			} else {
+				<p class="bc-muted">No sign-in provider is configured yet. Configure one in the environment (see the deployment guide), restart, and open this link again.</p>
+			}
+		</section>
+	}
+}
+
 // providerMark is the monogram badge beside a sign-in button. Presets get a
 // fixed letter mark and colour; anything else uses the display name's first
 // letter. Decorative: the button text names the provider.

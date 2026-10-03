@@ -73,9 +73,18 @@ FROM platform_settings
 WHERE id = 1;
 
 -- name: SetBootstrapDone :exec
+-- Claiming the platform also forgets any generated bootstrap token hash.
 UPDATE platform_settings
-SET bootstrap_done = 1
+SET bootstrap_done = 1,
+    settings_json = json_remove(settings_json, '$.bootstrap_token_hash')
 WHERE id = 1;
+
+-- name: SetBootstrapTokenHash :execrows
+-- Stores the SHA-256 of a generated bootstrap token (WU-605) while the
+-- platform is unclaimed. The token itself is never stored.
+UPDATE platform_settings
+SET settings_json = json_set(settings_json, '$.bootstrap_token_hash', CAST(sqlc.arg(token_hash) AS TEXT))
+WHERE id = 1 AND bootstrap_done = 0;
 
 -- name: ListSignInIdentities :many
 -- Settings -> Sign-in methods (WU-604): the caller's identities with the
