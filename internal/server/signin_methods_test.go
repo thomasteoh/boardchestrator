@@ -49,6 +49,8 @@ type smOpts struct {
 	bootstrapToken   string
 	defaultRateLimit bool // keep the production sign-in rate limit
 	trustedProxies   []netip.Prefix
+	// WU-611: the per-token SCIM rate limit (zero = production default).
+	scimRate config.RateLimit
 }
 
 func newSMHarness(t *testing.T, o smOpts) *smHarness {
@@ -86,6 +88,7 @@ func newSMHarness(t *testing.T, o smOpts) *smHarness {
 		cfg.SignInRateLimit = config.RateLimit{PerMinute: 6000, Burst: 1000}
 	}
 	cfg.BootstrapToken = o.bootstrapToken
+	cfg.SCIMRateLimit = o.scimRate
 	cfg.TrustedProxies = o.trustedProxies
 	// Org IdPs in these tests are oidctest servers on 127.0.0.1, which the
 	// org SSRF guard refuses unless BC_ORG_IDP_ALLOW_PRIVATE (WU-607).
