@@ -164,7 +164,7 @@ func RenderSSORequired(w http.ResponseWriter, r *http.Request, e action.ErrSSORe
 }
 
 // writeSSORequiredPlain answers an API-style (JSON/HTMX) request refused by
-// enforcement: 403 with a fixed message and the sign-in URL.
+// enforcement: 403 with fixed copy; HTMX follows HX-Redirect to the sign-in URL.
 func writeSSORequiredPlain(w http.ResponseWriter, r *http.Request, e action.ErrSSORequired) {
 	href, _ := ssoRequiredURL(r, e)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -172,7 +172,7 @@ func writeSSORequiredPlain(w http.ResponseWriter, r *http.Request, e action.ErrS
 		w.Header().Set("HX-Redirect", href)
 	}
 	w.WriteHeader(http.StatusForbidden)
-	_, _ = w.Write([]byte("This organisation requires single sign-on. Sign in through its identity provider: " + href + "\n"))
+	_, _ = w.Write([]byte("This organisation requires single sign-on. Sign in through its identity provider.\n"))
 }
 
 // ssoFilter drops items from organisations whose SSO requirement the

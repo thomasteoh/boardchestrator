@@ -99,3 +99,13 @@ To be precise about which way this fails: it is a **broken API, not a CSRF bypas
 **Options:** (a) in `DBScopeResolver`, refuse a tenant id on `ScopePlatform` actions and move the per-user actions (`user.*`, `session.revoke`, `notif.*`) to a new `ScopeSelf` that needs no grant; (b) in `CheckerAdapter`, always evaluate `ScopePlatform` against the platform org and grant the per-user actions to everyone explicitly.
 **Recommendation:** (a), as its own security WU before Phase 7 merges.
 **Answer:** (a), as WU-603a on `feat/iam` before WU-604 (orchestrator decision 2026-10-03, flagged to the product owner).
+
+## Q11 — SSRF guard for organisation-owned identity providers (WU-607)
+
+**Context:** Q9 let platform admins point discovery at private and loopback addresses, because they already control which hosts the server talks to. WU-607 lets **org owners** configure identity providers too. An org owner is a tenant, not an operator: allowing their issuer URL to resolve to `10.x`, `127.0.0.1` or the operator's internal services would let any org owner probe the server's private network (the "Test discovery" button reports success or failure, and the login flow fetches discovery, JWKS and token endpoints).
+
+**Decision taken in WU-607 (non-blocking):** every outbound request for an org-owned provider (registry discovery, JWKS, token, userinfo, and `org.idp.discover`) goes through `idp.NewOrgIdPClient`: no proxy, and a dial-time check on the resolved address (so DNS cannot rebind past it) that refuses link-local/metadata, multicast and unspecified (as Q9) **plus loopback, RFC 1918/ULA private, 100.64/10 and 0/8**. Operators whose tenants run IdPs on the private network set `BC_ORG_IDP_ALLOW_PRIVATE=true` (default false), which relaxes it to the Q9 platform guard. Platform providers keep Q9's behaviour.
+
+**Options:** (a) keep this; (b) replace the boolean with a CIDR allow-list (`BC_ORG_IDP_ALLOW_CIDRS`) so operators can open one subnet rather than all private space; (c) per-org override set by a platform admin.
+**Recommendation:** (a) now; (b) if an operator asks for it.
+**Answer:**

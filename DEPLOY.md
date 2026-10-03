@@ -85,6 +85,7 @@ Every variable is `BC_`-prefixed.
 | `BC_OIDC_<NAME>_SCOPES` | string | preset default | space- or comma-separated scopes |
 | `BC_OIDC_<NAME>_GROUPS_CLAIM` | string | preset default | claim (or dotted path) holding the user's groups |
 | `BC_ALLOW_SIGNUP` | bool | `true` | open sign-up on the env-configured providers (`google`, `github`, and `BC_OIDC_<NAME>_*` without their own `_ALLOW_SIGNUP`); `false` makes them invite-only. Providers added in the admin UI are invite-only unless the admin ticks "Let anyone who signs in through this provider create an account". Invite links and the bootstrap admin can always sign up |
+| `BC_ORG_IDP_ALLOW_PRIVATE` | bool | `false` | let organisation-owned identity providers (and org owners' "Test discovery") reach private and loopback addresses; off, only public addresses are dialled for them (QUESTIONS Q11) |
 | `BC_AGENT_WORKERS` | int | `4` | worker pool size |
 | `BC_SCHED_POLL_INTERVAL` | int | `60` | scheduler poll seconds |
 
@@ -93,6 +94,16 @@ without one but logs a warning, because nobody can sign in. Env-configured
 providers are written to the `auth_providers` table at startup; removing a
 provider's variables disables it on the next start (its users' identities are
 kept).
+
+### Organisation single sign-on and break-glass
+
+Org owners can add their organisation's own OpenID Connect provider and
+require single sign-on (Org settings → Single sign-on). Members must then be
+signed in through that provider to open the organisation's pages or act in
+it; API keys and agents are unaffected. Platform owners are always exempt, so
+if an organisation's IdP breaks, a platform owner can still sign in with a
+platform provider and turn the requirement off. Organisation providers dial public
+addresses only unless `BC_ORG_IDP_ALLOW_PRIVATE=true`.
 
 ### Claiming a new instance
 
