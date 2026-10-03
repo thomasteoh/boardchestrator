@@ -88,7 +88,7 @@ To be precise about which way this fails: it is a **broken API, not a CSRF bypas
 
 **Options:** (a) keep this; (b) apply the full private-range block and add an operator allow-list (`BC_IDP_ALLOW_PRIVATE=1` or CIDRs); (c) apply the same link-local guard to the registry's own discovery/JWKS/token traffic for consistency.
 **Recommendation:** (a) now plus (c) in WU-614's hardening pass.
-**Answer:**
+**Answer:** (orchestrator decision 2026-10-03, flagged to the product owner) An unverified email may still **create** an identity when (1) the flow carries a valid invite token for that email (possession of the invite is the proof; the invite email is used), or (2) the provider is org-owned, JIT is on and the email domain is verified for that org (the org vouches for its own IdP). Linking an unseen identity to an **existing** user by email still requires `EmailVerified` and `trust_email`. Implemented in WU-604.
 
 ## Q10 — Platform-scope permission is evaluated against a caller-supplied org (found in WU-603)
 
@@ -98,4 +98,4 @@ To be precise about which way this fails: it is a **broken API, not a CSRF bypas
 
 **Options:** (a) in `DBScopeResolver`, refuse a tenant id on `ScopePlatform` actions and move the per-user actions (`user.*`, `session.revoke`, `notif.*`) to a new `ScopeSelf` that needs no grant; (b) in `CheckerAdapter`, always evaluate `ScopePlatform` against the platform org and grant the per-user actions to everyone explicitly.
 **Recommendation:** (a), as its own security WU before Phase 7 merges.
-**Answer:**
+**Answer:** (a), as WU-603a on `feat/iam` before WU-604 (orchestrator decision 2026-10-03, flagged to the product owner).
