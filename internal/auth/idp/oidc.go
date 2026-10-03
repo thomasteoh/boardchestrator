@@ -1,25 +1,29 @@
-package auth
+package idp
 
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+
+	"github.com/thomasteoh/boardchestrator/internal/auth"
 )
 
 // GoogleIssuer is Google's OIDC issuer.
 const GoogleIssuer = "https://accounts.google.com"
 
-// discoveryTTL is how long a discovered provider is cached (SPEC §7.1).
-const discoveryTTL = time.Hour
+// DiscoveryTTL is how long a discovered provider is cached (SPEC §7.1).
+const DiscoveryTTL = time.Hour
 
-// OIDCConfig configures an OpenID Connect connector.
+// OIDCConfig configures the generic OpenID Connect connector that every
+// preset except GitHub runs on.
 type OIDCConfig struct {
 	ID           string // provider id, e.g. "google"
 	Issuer       string
@@ -28,15 +32,23 @@ type OIDCConfig struct {
 	// RedirectURL is the absolute callback URL registered with the IdP.
 	RedirectURL string
 	Scopes      []string // default: openid email profile
-	Policy      ResolvePolicy
+	// Claims maps assertion fields to claims; zero value = standard claims.
+	Claims ClaimMap
+	Policy auth.ResolvePolicy
+	// EntraMultiTenant: the issuer is a Microsoft organizations/common/
+	// consumers endpoint. go-oidc's issuer checks are skipped and the token's
+	// iss must instead be the issuer with the pseudo-tenant replaced by the
+	// token's own tid. AllowedTenants, when non-empty, restricts tid.
+	EntraMultiTenant bool
+	AllowedTenants   []string
 	// Client is the IdP HTTP client; nil = NewIdPClient(nil).
 	Client *http.Client
 }
 
 // OIDCConnector signs users in with the authorisation-code flow, PKCE (S256)
 // and a nonce, verifying the ID token's signature, iss, aud and exp with
-// go-oidc. Discovery is lazy and cached, so an unreachable IdP fails only its
-// own logins, never startup.
+// go-oidc. Discovery is lazy and cached for DiscoveryTTL, so an unreachable
+// IdP fails only its own logins, never startup.
 type OIDCConnector struct {
 	cfg OIDCConfig
 
@@ -51,15 +63,18 @@ func NewOIDCConnector(cfg OIDCConfig) *OIDCConnector {
 	if len(cfg.Scopes) == 0 {
 		cfg.Scopes = []string{oidc.ScopeOpenID, "email", "profile"}
 	}
+	if cfg.Claims == (ClaimMap{}) {
+		cfg.Claims = standardClaims
+	}
 	if cfg.Client == nil {
 		cfg.Client = NewIdPClient(nil)
 	}
 	return &OIDCConnector{cfg: cfg}
 }
 
-// NewGoogleConnector is the Google preset: issuer accounts.google.com (or
-// issuer, when non-empty, so tests can point it at oidctest), trusted for
-// email, sign-up allowed (WU-604 makes this configurable).
+// NewGoogleConnector is the Google preset with a fixed trusted, open sign-up
+// policy: issuer accounts.google.com, or issuer when non-empty (tests point it
+// at oidctest). Production wiring builds Google from its auth_providers row.
 func NewGoogleConnector(issuer, clientID, clientSecret, baseURL string, client *http.Client) *OIDCConnector {
 	if issuer == "" {
 		issuer = GoogleIssuer
@@ -69,15 +84,20 @@ func NewGoogleConnector(issuer, clientID, clientSecret, baseURL string, client *
 		Issuer:       issuer,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-		RedirectURL:  baseURL + "/auth/google/callback",
-		Policy:       ResolvePolicy{TrustEmail: true, AllowSignup: true},
+		RedirectURL:  CallbackURL(baseURL, "google"),
+		Policy:       auth.ResolvePolicy{TrustEmail: true, AllowSignup: true},
 		Client:       client,
 	})
 }
 
-func (c *OIDCConnector) ID() string            { return c.cfg.ID }
-func (c *OIDCConnector) AuthMethod() string    { return AuthMethodOIDC }
-func (c *OIDCConnector) Policy() ResolvePolicy { return c.cfg.Policy }
+// CallbackURL is the redirect URI registered with a provider.
+func CallbackURL(baseURL, providerID string) string {
+	return strings.TrimRight(baseURL, "/") + "/auth/" + providerID + "/callback"
+}
+
+func (c *OIDCConnector) ID() string                 { return c.cfg.ID }
+func (c *OIDCConnector) AuthMethod() string         { return auth.AuthMethodOIDC }
+func (c *OIDCConnector) Policy() auth.ResolvePolicy { return c.cfg.Policy }
 
 func (c *OIDCConnector) clientCtx(ctx context.Context) context.Context {
 	// x/oauth2 reads the client from oauth2.HTTPClient; go-oidc from its own
@@ -89,12 +109,18 @@ func (c *OIDCConnector) clientCtx(ctx context.Context) context.Context {
 func (c *OIDCConnector) discover(ctx context.Context) (*oidc.Provider, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.provider != nil && time.Since(c.fetchedAt) < discoveryTTL {
+	if c.provider != nil && time.Since(c.fetchedAt) < DiscoveryTTL {
 		return c.provider, nil
 	}
 	// The provider's key set keeps this context for later JWKS refreshes, so
 	// it must outlive the request.
-	p, err := oidc.NewProvider(c.clientCtx(context.WithoutCancel(ctx)), c.cfg.Issuer)
+	dctx := c.clientCtx(context.WithoutCancel(ctx))
+	if c.cfg.EntraMultiTenant {
+		// Entra's multi-tenant discovery document advertises the templated
+		// issuer ".../{tenantid}/v2.0", not the URL it was fetched from.
+		dctx = oidc.InsecureIssuerURLContext(dctx, c.cfg.Issuer)
+	}
+	p, err := oidc.NewProvider(dctx, c.cfg.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("oidc %s: discovery: %w", c.cfg.ID, err)
 	}
@@ -114,7 +140,7 @@ func (c *OIDCConnector) oauth2Config(p *oidc.Provider) *oauth2.Config {
 
 // Begin returns the IdP authorisation URL carrying state, nonce and the PKCE
 // S256 challenge from flow.
-func (c *OIDCConnector) Begin(ctx context.Context, flow *Flow) (string, error) {
+func (c *OIDCConnector) Begin(ctx context.Context, flow *auth.Flow) (string, error) {
 	p, err := c.discover(ctx)
 	if err != nil {
 		return "", err
@@ -129,41 +155,10 @@ func (c *OIDCConnector) Begin(ctx context.Context, flow *Flow) (string, error) {
 	return c.oauth2Config(p).AuthCodeURL(flow.State, opts...), nil
 }
 
-// oidcClaims are the standard claims read from the ID token and userinfo.
-type oidcClaims struct {
-	Subject       string   `json:"sub"`
-	Email         string   `json:"email"`
-	EmailVerified flexBool `json:"email_verified"`
-	Name          string   `json:"name"`
-	Picture       string   `json:"picture"`
-	Groups        []string `json:"groups"`
-	SID           string   `json:"sid"`
-}
-
-// flexBool accepts JSON true/false and the strings "true"/"false", which some
-// IdPs emit for email_verified.
-type flexBool bool
-
-func (b *flexBool) UnmarshalJSON(d []byte) error {
-	var v any
-	if err := json.Unmarshal(d, &v); err != nil {
-		return err
-	}
-	switch t := v.(type) {
-	case bool:
-		*b = flexBool(t)
-	case string:
-		*b = flexBool(t == "true")
-	default:
-		*b = false
-	}
-	return nil
-}
-
 // Complete exchanges the code (with the PKCE verifier), verifies the ID token
 // and its nonce, and returns the assertion. The handler has already checked
 // state against the flow cookie.
-func (c *OIDCConnector) Complete(ctx context.Context, r *http.Request, flow *Flow) (*Assertion, error) {
+func (c *OIDCConnector) Complete(ctx context.Context, r *http.Request, flow *auth.Flow) (*auth.Assertion, error) {
 	q := r.URL.Query()
 	if e := q.Get("error"); e != "" {
 		return nil, fmt.Errorf("oidc %s: authorisation error %q", c.cfg.ID, e)
@@ -185,25 +180,28 @@ func (c *OIDCConnector) Complete(ctx context.Context, r *http.Request, flow *Flo
 	if rawID == "" {
 		return nil, fmt.Errorf("oidc %s: no id_token", c.cfg.ID)
 	}
-	idt, err := p.Verifier(&oidc.Config{ClientID: c.cfg.ClientID}).Verify(cctx, rawID)
+	vcfg := &oidc.Config{ClientID: c.cfg.ClientID, SkipIssuerCheck: c.cfg.EntraMultiTenant}
+	idt, err := p.Verifier(vcfg).Verify(cctx, rawID)
 	if err != nil {
 		return nil, fmt.Errorf("oidc %s: verify id_token: %w", c.cfg.ID, err)
 	}
 	if idt.Nonce == "" || subtle.ConstantTimeCompare([]byte(idt.Nonce), []byte(flow.Nonce)) != 1 {
 		return nil, fmt.Errorf("oidc %s: nonce mismatch", c.cfg.ID)
 	}
-	var cl oidcClaims
-	if err := idt.Claims(&cl); err != nil {
+	claims := map[string]any{}
+	if err := idt.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("oidc %s: id_token claims: %w", c.cfg.ID, err)
 	}
-	raw := map[string]any{}
-	if err := idt.Claims(&raw); err != nil {
-		return nil, fmt.Errorf("oidc %s: id_token claims: %w", c.cfg.ID, err)
+	if c.cfg.EntraMultiTenant {
+		if err := c.checkEntraIssuer(idt.Issuer, claims); err != nil {
+			return nil, err
+		}
 	}
 
 	// Userinfo only fills claims the ID token lacks, and must be about the
 	// same subject.
-	if cl.Email == "" && p.UserInfoEndpoint() != "" {
+	cm := c.cfg.Claims
+	if claimString(claims, cm.Email) == "" && p.UserInfoEndpoint() != "" {
 		ui, err := p.UserInfo(cctx, oauth2.StaticTokenSource(tok))
 		if err != nil {
 			return nil, fmt.Errorf("oidc %s: userinfo: %w", c.cfg.ID, err)
@@ -211,29 +209,52 @@ func (c *OIDCConnector) Complete(ctx context.Context, r *http.Request, flow *Flo
 		if ui.Subject != idt.Subject {
 			return nil, fmt.Errorf("oidc %s: userinfo subject mismatch", c.cfg.ID)
 		}
-		var uc oidcClaims
+		uc := map[string]any{}
 		if err := ui.Claims(&uc); err != nil {
 			return nil, fmt.Errorf("oidc %s: userinfo claims: %w", c.cfg.ID, err)
 		}
-		cl.Email, cl.EmailVerified = uc.Email, uc.EmailVerified
-		if cl.Name == "" {
-			cl.Name = uc.Name
-		}
-		if cl.Picture == "" {
-			cl.Picture = uc.Picture
+		for k, v := range uc {
+			if _, ok := claims[k]; !ok {
+				claims[k] = v
+			}
 		}
 	}
 
-	return &Assertion{
-		ProviderID:    c.cfg.ID,
-		Subject:       idt.Subject,
-		Email:         cl.Email,
-		EmailVerified: bool(cl.EmailVerified),
-		Name:          cl.Name,
-		Picture:       cl.Picture,
-		Groups:        cl.Groups,
-		SID:           cl.SID,
-		IDTokenRaw:    rawID,
-		RawClaims:     raw,
-	}, nil
+	a := &auth.Assertion{
+		ProviderID: c.cfg.ID,
+		Subject:    idt.Subject,
+		Email:      claimString(claims, cm.Email),
+		Name:       claimString(claims, cm.Name),
+		Picture:    claimString(claims, cm.Picture),
+		SID:        claimString(claims, "sid"),
+		IDTokenRaw: rawID,
+		RawClaims:  claims,
+	}
+	// An unmapped email_verified means this IdP never vouches for the email.
+	if cm.EmailVerified != "" {
+		a.EmailVerified = claimBool(claims, cm.EmailVerified)
+	}
+	if cm.Groups != "" {
+		a.Groups = ClaimGroups(claims, cm.Groups)
+	}
+	return a, nil
+}
+
+// checkEntraIssuer enforces SPEC §7.1's multi-tenant rule: iss must be the
+// configured issuer with the pseudo-tenant replaced by the token's tid, and
+// tid must be allowed.
+func (c *OIDCConnector) checkEntraIssuer(iss string, claims map[string]any) error {
+	tid := claimString(claims, "tid")
+	if tid == "" || strings.ContainsAny(tid, "/?#") {
+		return fmt.Errorf("oidc %s: multi-tenant token without a valid tid", c.cfg.ID)
+	}
+	pseudo, _ := entraTenant(c.cfg.Issuer)
+	want := strings.Replace(c.cfg.Issuer, "/"+pseudo+"/", "/"+tid+"/", 1)
+	if subtle.ConstantTimeCompare([]byte(iss), []byte(want)) != 1 {
+		return fmt.Errorf("oidc %s: issuer %q does not match tenant %q", c.cfg.ID, iss, tid)
+	}
+	if len(c.cfg.AllowedTenants) > 0 && !slices.Contains(c.cfg.AllowedTenants, tid) {
+		return fmt.Errorf("oidc %s: tenant %q not allowed", c.cfg.ID, tid)
+	}
+	return nil
 }

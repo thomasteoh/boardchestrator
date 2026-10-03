@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/thomasteoh/boardchestrator/internal/auth"
+	authidp "github.com/thomasteoh/boardchestrator/internal/auth/idp"
 	"github.com/thomasteoh/boardchestrator/internal/auth/oidctest"
 	"github.com/thomasteoh/boardchestrator/internal/db/dbtest"
 	"github.com/thomasteoh/boardchestrator/internal/perm"
@@ -39,7 +40,7 @@ type loginHarness struct {
 type harnessOpts struct {
 	notBootstrapped bool
 	adminEmails     []string
-	github          *auth.GitHubConfig
+	github          *authidp.GitHubConfig
 	encKey          []byte
 }
 
@@ -57,11 +58,11 @@ func newLoginHarness(t *testing.T, o harnessOpts) *loginHarness {
 	t.Cleanup(app.Close)
 
 	store := auth.NewSessionStore(d)
-	conns := []auth.Connector{auth.NewGoogleConnector(idp.Issuer(), idp.ClientID, idp.ClientSecret, app.URL, nil)}
+	conns := []auth.Connector{authidp.NewGoogleConnector(idp.Issuer(), idp.ClientID, idp.ClientSecret, app.URL, nil)}
 	if o.github != nil {
 		gc := *o.github
 		gc.BaseURL = app.URL
-		conns = append(conns, auth.NewGitHubConnector(gc))
+		conns = append(conns, authidp.NewGitHubConnector(gc))
 	}
 	h, err := auth.NewHandler(auth.HandlerConfig{
 		DB:          d,
@@ -291,7 +292,7 @@ func TestLoginRejectsBadFlow(t *testing.T) {
 	for name, mk := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			lh := newLoginHarness(t, harnessOpts{github: &auth.GitHubConfig{ClientID: "x", ClientSecret: "y", WebBase: "http://127.0.0.1:1", APIBase: "http://127.0.0.1:1"}})
+			lh := newLoginHarness(t, harnessOpts{github: &authidp.GitHubConfig{ClientID: "x", ClientSecret: "y", WebBase: "http://127.0.0.1:1", APIBase: "http://127.0.0.1:1"}})
 			b := oidctest.NewBrowser(t)
 			cb := mk(lh, b)
 			status, body := lh.get(b, cb)
@@ -592,7 +593,7 @@ func TestLoginDiscoveryFailureIsGeneric(t *testing.T) {
 	d := dbtest.New(t)
 	h, err := auth.NewHandler(auth.HandlerConfig{
 		DB: d, Sessions: auth.NewSessionStore(d), SecretKey: "k", BaseURL: "http://app.test",
-		Connectors: []auth.Connector{auth.NewGoogleConnector("http://127.0.0.1:1", "id", "SECRET-VALUE", "http://app.test", nil)},
+		Connectors: []auth.Connector{authidp.NewGoogleConnector("http://127.0.0.1:1", "id", "SECRET-VALUE", "http://app.test", nil)},
 	})
 	if err != nil {
 		t.Fatal(err)

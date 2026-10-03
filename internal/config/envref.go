@@ -14,14 +14,28 @@ type EnvRefEntry struct {
 
 // EnvReference generates the BC_* environment variable reference from the
 // Config struct by reflection (WU-507: env reference generated from config
-// struct). Field names map to upper-snake: DBPath → BC_DB_PATH.
+// struct). Field names map to upper-snake: DBPath → BC_DB_PATH. An `env`
+// struct tag overrides that: `env:"-"` marks a field not loaded from the
+// environment, and `env:"BC_OIDC_<NAME>_*"` documents the per-provider
+// family as one entry per suffix (BC_OIDC_<NAME>_ISSUER, …).
 func EnvReference() []EnvRefEntry {
 	t := reflect.TypeOf(Config{})
 	out := make([]EnvRefEntry, 0, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
-		env := "BC_" + toUpperSnake(f.Name)
-		out = append(out, EnvRefEntry{Env: env, Field: f.Name, Type: f.Type.String()})
+		switch tag := f.Tag.Get("env"); {
+		case tag == "-":
+			continue
+		case strings.HasSuffix(tag, "_*"):
+			base := strings.TrimSuffix(tag, "*")
+			for _, s := range OIDCEnvSuffixes {
+				out = append(out, EnvRefEntry{Env: base + s, Field: f.Name, Type: "string"})
+			}
+		case tag != "":
+			out = append(out, EnvRefEntry{Env: tag, Field: f.Name, Type: f.Type.String()})
+		default:
+			out = append(out, EnvRefEntry{Env: "BC_" + toUpperSnake(f.Name), Field: f.Name, Type: f.Type.String()})
+		}
 	}
 	return out
 }

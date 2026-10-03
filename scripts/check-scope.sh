@@ -17,6 +17,10 @@
 #                      org); rows are written by the dispatch audit hook, not
 #                      via org-scoped reads, so an org_id-required grep would
 #                      be wrong here.
+#   auth_providers   — org_id is NULLABLE (NULL = platform sign-in provider,
+#                      SPEC s7.1); the login registry resolves every enabled
+#                      row by provider id before any org is known. Org-owned
+#                      provider management (WU-607) scopes in its actions.
 #   idempotency_keys — has no org_id at all; keyed globally by the
 #                      idempotency key.
 #   jobs             — agent queue infrastructure; org_id lives in payload,

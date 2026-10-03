@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 )
 
@@ -16,8 +17,8 @@ const (
 // Connector is one sign-in provider (SPEC §7.1). Begin returns the IdP URL to
 // send the browser to for flow; Complete runs on the callback after the
 // handler has matched the flow cookie's state and provider id, and returns a
-// verified Assertion. WU-602 moves connectors behind the idp.Registry; this
-// interface is the shape it builds on.
+// verified Assertion. Implementations live in internal/auth/idp; the
+// handler finds them through a ConnectorSource (the idp.Registry).
 type Connector interface {
 	// ID is the provider id: the {providerID} route segment and the
 	// identities.provider value.
@@ -53,4 +54,35 @@ type Assertion struct {
 type ResolvePolicy struct {
 	TrustEmail  bool
 	AllowSignup bool
+}
+
+// ErrUnknownProvider is returned by a ConnectorSource for an id that names no
+// enabled provider; the handler answers 404.
+var ErrUnknownProvider = errors.New("auth: unknown sign-in provider")
+
+// ConnectorSource resolves a provider id to its connector. An error other
+// than ErrUnknownProvider means the provider exists but cannot be used right
+// now (bad configuration); it fails only that provider's logins.
+type ConnectorSource interface {
+	Connector(ctx context.Context, id string) (Connector, error)
+}
+
+// StaticConnectors is a fixed ConnectorSource keyed by Connector.ID().
+type StaticConnectors map[string]Connector
+
+// NewStaticConnectors indexes conns by id.
+func NewStaticConnectors(conns ...Connector) StaticConnectors {
+	m := StaticConnectors{}
+	for _, c := range conns {
+		m[c.ID()] = c
+	}
+	return m
+}
+
+// Connector implements ConnectorSource.
+func (s StaticConnectors) Connector(_ context.Context, id string) (Connector, error) {
+	if c, ok := s[id]; ok {
+		return c, nil
+	}
+	return nil, ErrUnknownProvider
 }

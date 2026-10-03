@@ -1,4 +1,4 @@
-package auth
+package idp
 
 import (
 	"io"

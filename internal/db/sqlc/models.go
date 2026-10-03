@@ -82,6 +82,31 @@ type AuditLog struct {
 	CreatedAt  string
 }
 
+type AuthProvider struct {
+	ID                 string
+	OrgID              sql.NullString
+	Kind               string
+	Preset             string
+	DisplayName        string
+	Enabled            int64
+	ManagedBy          string
+	Issuer             string
+	ClientID           string
+	ClientSecretEnc    string
+	Scopes             string
+	ClaimMapJson       string
+	TrustEmail         int64
+	AllowSignup        int64
+	AllowedTenantsJson string
+	SamlMetadataUrl    string
+	SamlMetadataXml    string
+	SpKeyEnc           string
+	SpCert             string
+	Position           int64
+	CreatedAt          string
+	UpdatedAt          string
+}
+
 type BoardColumn struct {
 	ID             string
 	ProjectID      string

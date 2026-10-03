@@ -1,4 +1,4 @@
-package auth
+package idp
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/thomasteoh/boardchestrator/internal/auth"
 )
 
 // GitHub endpoints. GitHub is OAuth 2.0, not OIDC (SPEC §7.1).
@@ -20,6 +22,8 @@ const (
 
 // GitHubConfig holds GitHub OAuth application credentials.
 type GitHubConfig struct {
+	// ID is the provider id; "" = "github".
+	ID           string
 	ClientID     string
 	ClientSecret string
 	BaseURL      string // Boardchestrator's BC_BASE_URL
@@ -29,6 +33,9 @@ type GitHubConfig struct {
 	APIBase string
 	// Client is the IdP HTTP client; nil = NewIdPClient(nil).
 	Client *http.Client
+	// Policy is the resolution policy; nil = trusted email, open sign-up
+	// (WU-601 behaviour, for connectors built without a registry row).
+	Policy *auth.ResolvePolicy
 }
 
 // GitHubConnector signs users in with GitHub OAuth. Credentials travel in the
@@ -52,6 +59,12 @@ func NewGitHubConnector(cfg GitHubConfig) *GitHubConnector {
 	if cfg.Client == nil {
 		cfg.Client = NewIdPClient(nil)
 	}
+	if cfg.ID == "" {
+		cfg.ID = "github"
+	}
+	if cfg.Policy == nil {
+		cfg.Policy = &auth.ResolvePolicy{TrustEmail: true, AllowSignup: true}
+	}
 	return &GitHubConnector{
 		cfg:       cfg,
 		tokenURL:  cfg.WebBase + "/login/oauth/access_token",
@@ -60,19 +73,17 @@ func NewGitHubConnector(cfg GitHubConfig) *GitHubConnector {
 	}
 }
 
-func (c *GitHubConnector) ID() string         { return "github" }
-func (c *GitHubConnector) AuthMethod() string { return AuthMethodGitHub }
+func (c *GitHubConnector) ID() string         { return c.cfg.ID }
+func (c *GitHubConnector) AuthMethod() string { return auth.AuthMethodGitHub }
 
-// Policy: GitHub returns only verified emails here, so it is trusted for
-// email linking; sign-up allowed until WU-604.
-func (c *GitHubConnector) Policy() ResolvePolicy {
-	return ResolvePolicy{TrustEmail: true, AllowSignup: true}
-}
+// Policy: GitHub asserts only verified primary emails, so its preset trusts
+// email; the registry passes the auth_providers row's policy.
+func (c *GitHubConnector) Policy() auth.ResolvePolicy { return *c.cfg.Policy }
 
-func (c *GitHubConnector) redirectURL() string { return c.cfg.BaseURL + "/auth/github/callback" }
+func (c *GitHubConnector) redirectURL() string { return CallbackURL(c.cfg.BaseURL, c.cfg.ID) }
 
 // Begin returns GitHub's authorisation URL for flow.
-func (c *GitHubConnector) Begin(_ context.Context, flow *Flow) (string, error) {
+func (c *GitHubConnector) Begin(_ context.Context, flow *auth.Flow) (string, error) {
 	v := url.Values{
 		"client_id":    {c.cfg.ClientID},
 		"redirect_uri": {c.redirectURL()},
@@ -87,7 +98,7 @@ func (c *GitHubConnector) Begin(_ context.Context, flow *Flow) (string, error) {
 
 // Complete exchanges the code and reads the user's id, profile and primary
 // verified email.
-func (c *GitHubConnector) Complete(ctx context.Context, r *http.Request, _ *Flow) (*Assertion, error) {
+func (c *GitHubConnector) Complete(ctx context.Context, r *http.Request, _ *auth.Flow) (*auth.Assertion, error) {
 	q := r.URL.Query()
 	if e := q.Get("error"); e != "" {
 		return nil, fmt.Errorf("github: authorisation error %q", e)
@@ -135,8 +146,8 @@ func (c *GitHubConnector) Complete(ctx context.Context, r *http.Request, _ *Flow
 	if name == "" {
 		name = user.Login
 	}
-	return &Assertion{
-		ProviderID:    "github",
+	return &auth.Assertion{
+		ProviderID:    c.cfg.ID,
 		Subject:       strconv.FormatInt(user.ID, 10),
 		Email:         email,
 		EmailVerified: true,

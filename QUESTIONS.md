@@ -67,3 +67,15 @@ To be precise about which way this fails: it is a **broken API, not a CSRF bypas
 
 **Recommendation:** accept all three, pinned, with `go mod verify` in CI.
 **Answer:** Accepted 2026-10-03 (Phase 7 scope approved by the product owner, including SAML, SCIM, OIDC logout and passkeys).
+
+## Q8 — Unverified-email providers (Microsoft Entra) and sign-up
+
+**Context:** SPEC §7.1 makes the Microsoft preset untrusted, and Entra's `email` claim carries no `email_verified`, so WU-602 asserts `EmailVerified=false` for Microsoft unless an admin maps a verification claim (e.g. the optional `xms_edov`) in `claim_map_json`. WU-601's `auth.Resolve` refuses any unseen identity whose email is unverified, before the sign-up step. Together these mean a Microsoft provider with the default claim map can never sign anyone in: there is no path to the first identity, not even with an invite. Other IdPs that omit `email_verified` hit the same wall.
+
+**Options:**
+1. Keep the refusal; document that Entra needs `xms_edov` (or a custom verification claim) mapped. Safe, but a surprising setup step.
+2. In WU-604, let an **invite** (token bound to the flow, not the asserted email) or org JIT on a verified domain (WU-607/608) create the identity even when the IdP does not vouch for the email; never link by an unverified email.
+3. Treat `trust_email=1` as "the admin vouches for this IdP's emails" and set `EmailVerified` from it when the IdP sends no claim.
+
+**Recommendation:** 2 (with 1 documented meanwhile). Option 3 conflates linking trust with verification and reopens the takeover WU-601 closed.
+**Assumption taken in WU-602:** behaviour as in option 1; nothing in WU-602 depends on the answer.

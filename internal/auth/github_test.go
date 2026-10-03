@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/thomasteoh/boardchestrator/internal/auth"
+	authidp "github.com/thomasteoh/boardchestrator/internal/auth/idp"
 	"github.com/thomasteoh/boardchestrator/internal/auth/oidctest"
 	"github.com/thomasteoh/boardchestrator/internal/tenant"
 )
@@ -85,7 +85,7 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 func newGitHubHarness(t *testing.T, f *fakeGitHub, key []byte) *loginHarness {
 	return newLoginHarness(t, harnessOpts{
 		encKey: key,
-		github: &auth.GitHubConfig{
+		github: &authidp.GitHubConfig{
 			ClientID: ghClientID, ClientSecret: ghClientSec,
 			WebBase: f.srv.URL, APIBase: f.srv.URL,
 		},

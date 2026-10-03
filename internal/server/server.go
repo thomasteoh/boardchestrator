@@ -27,6 +27,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/agentrt"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
+	"github.com/thomasteoh/boardchestrator/internal/auth/idp"
 	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/event"
@@ -119,6 +120,10 @@ type Server struct {
 	// comments, and columns from the DB (source of truth for mention/column
 	// detection). Set in Start once the DB is wired.
 	trigq *sqlc.Queries
+	// idp is the sign-in provider registry (WU-602); idpUnwatch stops its
+	// idp.* invalidation subscriber.
+	idp        *idp.Registry
+	idpUnwatch func()
 }
 
 // New creates a configured server with routes and middleware, with no
@@ -203,34 +208,39 @@ func (s *Server) setupRoutes() {
 	}
 }
 
-// setupAuthRoutes mounts the login routes (SPEC §7.2) with the built-in
-// Google and GitHub connectors. Session cookies set here use the same
-// always-Secure attributes as the session middleware.
+// setupAuthRoutes seeds the env-configured sign-in providers into
+// auth_providers and mounts the login routes (SPEC §7.2) over the provider
+// registry. Session cookies set here use the same always-Secure attributes as
+// the session middleware.
 func (s *Server) setupAuthRoutes() {
-	client := auth.NewIdPClient(nil)
-	var conns []auth.Connector
-	if s.cfg.GoogleClientID != "" {
-		conns = append(conns, auth.NewGoogleConnector(s.cfg.GoogleIssuer,
-			s.cfg.GoogleClientID, s.cfg.GoogleClientSecret, s.cfg.BaseURL, client))
+	ctx := context.Background()
+	encKey := tenant.PadKey(s.cfg.SecretKey)
+	if err := idp.SeedFromConfig(ctx, s.db, encKey, s.cfg); err != nil {
+		// Individual bad providers are reported and skipped; the rest work.
+		slog.Error("auth: seeding sign-in providers from the environment", "err", err)
 	}
-	if s.cfg.GitHubClientID != "" {
-		conns = append(conns, auth.NewGitHubConnector(auth.GitHubConfig{
-			ClientID:     s.cfg.GitHubClientID,
-			ClientSecret: s.cfg.GitHubClientSecret,
-			BaseURL:      s.cfg.BaseURL,
-			WebBase:      s.cfg.GitHubWebBase,
-			APIBase:      s.cfg.GitHubAPIBase,
-			Client:       client,
-		}))
+	reg := idp.New(idp.Options{
+		DB:            s.db,
+		EncKey:        encKey,
+		BaseURL:       s.cfg.BaseURL,
+		GitHubAPIBase: s.cfg.GitHubAPIBase,
+	})
+	s.idpUnwatch = reg.Watch(s.bus)
+	s.idp = reg
+	if ps, err := reg.Providers(ctx); err != nil {
+		slog.Error("auth: listing sign-in providers", "err", err)
+	} else if len(ps) == 0 {
+		slog.Warn("auth: no sign-in provider is configured, so nobody can sign in; " +
+			"set BC_GOOGLE_CLIENT_ID/SECRET, BC_GITHUB_CLIENT_ID/SECRET or BC_OIDC_<NAME>_*")
 	}
 	ah, err := auth.NewHandler(auth.HandlerConfig{
 		DB:          s.db,
 		Sessions:    s.sessions,
 		SecretKey:   s.cfg.SecretKey,
-		EncKey:      tenant.PadKey(s.cfg.SecretKey),
+		EncKey:      encKey,
 		BaseURL:     s.cfg.BaseURL,
 		AdminEmails: s.cfg.AdminEmails,
-		Connectors:  conns,
+		Providers:   reg,
 		RequestID:   RequestID,
 	})
 	if err != nil {
@@ -241,6 +251,9 @@ func (s *Server) setupAuthRoutes() {
 	}
 	ah.Routes(s.mux)
 }
+
+// IdP returns the sign-in provider registry (nil without a database).
+func (s *Server) IdP() *idp.Registry { return s.idp }
 
 // Bus returns the server's event bus. The action Dispatcher wires its
 // EventSink to it via event.NewSink(srv.Bus()); other subscribers (SSE hub —
@@ -731,6 +744,10 @@ func (s *Server) Shutdown() {
 	// Stop the outbound webhook subscriber (WU-404).
 	if s.webhookUnsub != nil {
 		s.webhookUnsub()
+	}
+	// Stop the provider registry's invalidation subscriber (WU-602).
+	if s.idpUnwatch != nil {
+		s.idpUnwatch()
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

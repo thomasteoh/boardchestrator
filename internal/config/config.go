@@ -23,14 +23,17 @@ type Config struct {
 	AdminEmailsStr     string
 	GoogleClientID     string
 	GoogleClientSecret string
-	GitHubClientID     string
-	GitHubClientSecret string
+	GitHubClientID     string `env:"BC_GITHUB_CLIENT_ID"`
+	GitHubClientSecret string `env:"BC_GITHUB_CLIENT_SECRET"`
+	// OIDCProviders are the BC_OIDC_<NAME>_* providers (SPEC s7.1), seeded
+	// into auth_providers at startup.
+	OIDCProviders []OIDCEnvProvider `env:"BC_OIDC_<NAME>_*"`
 	// IdP endpoint overrides. Not loaded from the environment: tests point the
-	// built-in connectors at in-process fakes (internal/auth/oidctest). Empty
-	// means the real provider. WU-602's provider registry supersedes these.
-	GoogleIssuer      string
-	GitHubWebBase     string
-	GitHubAPIBase     string
+	// env-seeded google/github providers at in-process fakes
+	// (internal/auth/oidctest). Empty means the real provider.
+	GoogleIssuer      string `env:"-"`
+	GitHubWebBase     string `env:"-"`
+	GitHubAPIBase     string `env:"-"`
 	AgentWorkers      int
 	SchedPollInterval int
 }
@@ -84,12 +87,19 @@ func Load() (*Config, error) {
 	if len(c.SessionSecret) < 32 {
 		return nil, fmt.Errorf("BC_SESSION_SECRET is required and must be at least 32 characters")
 	}
-	if c.GoogleClientID == "" {
-		return nil, fmt.Errorf("BC_GOOGLE_CLIENT_ID is required")
+	// Google is optional (WU-602): any provider will do, and the server warns
+	// at startup when none is configured. A half-configured pair is an error.
+	if (c.GoogleClientID == "") != (c.GoogleClientSecret == "") {
+		return nil, fmt.Errorf("BC_GOOGLE_CLIENT_ID and BC_GOOGLE_CLIENT_SECRET must be set together")
 	}
-	if c.GoogleClientSecret == "" {
-		return nil, fmt.Errorf("BC_GOOGLE_CLIENT_SECRET is required")
+	if (c.GitHubClientID == "") != (c.GitHubClientSecret == "") {
+		return nil, fmt.Errorf("BC_GITHUB_CLIENT_ID and BC_GITHUB_CLIENT_SECRET must be set together")
 	}
+	oidc, err := loadOIDCProviders(os.Environ())
+	if err != nil {
+		return nil, err
+	}
+	c.OIDCProviders = oidc
 
 	return c, nil
 }

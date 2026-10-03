@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/thomasteoh/boardchestrator/internal/config"
@@ -140,5 +141,80 @@ func TestLoadSessionSecretTooShort(t *testing.T) {
 	_, err := config.Load()
 	if err == nil {
 		t.Fatal("Load() should error when BC_SESSION_SECRET is too short")
+	}
+}
+
+func baseEnv() {
+	os.Clearenv()
+	os.Setenv("BC_SECRET_KEY", "test-secret-key")
+	os.Setenv("BC_SESSION_SECRET", "a-really-long-session-secret-that-is-at-least-thirty-two-chars")
+}
+
+// WU-602: Google is no longer mandatory.
+func TestLoadWithoutGoogle(t *testing.T) {
+	baseEnv()
+	if _, err := config.Load(); err != nil {
+		t.Fatalf("Load() without Google: %v", err)
+	}
+	os.Setenv("BC_GOOGLE_CLIENT_ID", "only-the-id")
+	if _, err := config.Load(); err == nil {
+		t.Fatal("half-configured Google should error")
+	}
+}
+
+func TestLoadOIDCProviders(t *testing.T) {
+	baseEnv()
+	os.Setenv("BC_OIDC_CORP_SSO_ISSUER", "https://idp.example.com")
+	os.Setenv("BC_OIDC_CORP_SSO_CLIENT_ID", "cid")
+	os.Setenv("BC_OIDC_CORP_SSO_CLIENT_SECRET", "csec")
+	os.Setenv("BC_OIDC_CORP_SSO_PRESET", "Keycloak")
+	os.Setenv("BC_OIDC_CORP_SSO_DISPLAY_NAME", "Corp SSO")
+	os.Setenv("BC_OIDC_CORP_SSO_TRUST_EMAIL", "true")
+	os.Setenv("BC_OIDC_CORP_SSO_ALLOW_SIGNUP", "false")
+	os.Setenv("BC_OIDC_CORP_SSO_SCOPES", "openid email,groups")
+	os.Setenv("BC_OIDC_CORP_SSO_GROUPS_CLAIM", "realm_access.roles")
+	os.Setenv("BC_OIDC_OKTA_CLIENT_ID", "okta-id")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.OIDCProviders) != 2 {
+		t.Fatalf("providers = %+v", cfg.OIDCProviders)
+	}
+	p := cfg.OIDCProviders[0]
+	if p.ID != "corp-sso" || p.Issuer != "https://idp.example.com" || p.ClientID != "cid" ||
+		p.ClientSecret != "csec" || p.Preset != "keycloak" || p.DisplayName != "Corp SSO" ||
+		p.GroupsClaim != "realm_access.roles" {
+		t.Errorf("parsed %+v", p)
+	}
+	if p.TrustEmail == nil || !*p.TrustEmail || p.AllowSignup == nil || *p.AllowSignup {
+		t.Errorf("booleans %v %v", p.TrustEmail, p.AllowSignup)
+	}
+	if strings.Join(p.Scopes, " ") != "openid email groups" {
+		t.Errorf("scopes %q", p.Scopes)
+	}
+	if q := cfg.OIDCProviders[1]; q.ID != "okta" || q.TrustEmail != nil {
+		t.Errorf("second %+v", q)
+	}
+}
+
+func TestLoadOIDCProvidersInvalid(t *testing.T) {
+	for name, env := range map[string][2]string{
+		"unknown suffix": {"BC_OIDC_X_CLIENTID", "a"},
+		"no client id":   {"BC_OIDC_X_ISSUER", "https://idp.example.com"},
+		"bad bool":       {"BC_OIDC_X_TRUST_EMAIL", "yes please"},
+		"bad name":       {"BC_OIDC_X.Y_CLIENT_ID", "a"},
+		"reserved":       {"BC_OIDC_GOOGLE_CLIENT_ID", "a"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			baseEnv()
+			os.Setenv(env[0], env[1])
+			if name == "bad bool" {
+				os.Setenv("BC_OIDC_X_CLIENT_ID", "a")
+			}
+			if _, err := config.Load(); err == nil {
+				t.Fatalf("%s=%s: want error", env[0], env[1])
+			}
+		})
 	}
 }

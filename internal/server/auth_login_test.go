@@ -1,8 +1,11 @@
 package server_test
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +14,7 @@ import (
 
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/auth/oidctest"
+	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/db/dbtest"
 	"github.com/thomasteoh/boardchestrator/internal/server"
 )
@@ -117,5 +121,86 @@ func TestLoginFailureRendersGenericPage(t *testing.T) {
 		if strings.Contains(end.Body, leak) {
 			t.Errorf("page leaks %q", leak)
 		}
+	}
+}
+
+// TestGenericOIDCProviderFromEnv: a provider configured purely through
+// BC_OIDC_<NAME>_* variables is seeded at startup and logs in end to end
+// (WU-602), with its groups claim mapped.
+func TestGenericOIDCProviderFromEnv(t *testing.T) {
+	idp := oidctest.New(t)
+	idp.SetUser(oidctest.User{Subject: "corp-sub", Email: "admin@example.com", EmailVerified: true,
+		Extra: map[string]any{"realm_access": map[string]any{"roles": []string{"staff"}}}})
+	d := dbtest.New(t)
+	var h http.Handler
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.ServeHTTP(w, r) }))
+	defer app.Close()
+
+	for k, v := range map[string]string{
+		"BC_SECRET_KEY":                  "test-secret-key",
+		"BC_SESSION_SECRET":              "0123456789abcdef0123456789abcdef",
+		"BC_BASE_URL":                    app.URL,
+		"BC_ADMIN_EMAILS":                "admin@example.com",
+		"BC_OIDC_CORP_SSO_ISSUER":        idp.Issuer(),
+		"BC_OIDC_CORP_SSO_CLIENT_ID":     idp.ClientID,
+		"BC_OIDC_CORP_SSO_CLIENT_SECRET": idp.ClientSecret,
+		"BC_OIDC_CORP_SSO_PRESET":        "keycloak",
+		"BC_OIDC_CORP_SSO_DISPLAY_NAME":  "Corp SSO",
+		"BC_OIDC_CORP_SSO_GROUPS_CLAIM":  "realm_access.roles",
+		"BC_OIDC_CORP_SSO_SCOPES":        "openid email profile",
+	} {
+		t.Setenv(k, v)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	s := server.NewWithDB(cfg, d)
+	h = s
+
+	steps, err := oidctest.NewBrowser(t).Follow(app.URL+"/auth/corp-sso", 5, func(next *url.URL) bool { return next.Path == "/app" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := steps[len(steps)-1].URL; got != app.URL+"/app" {
+		t.Fatalf("login did not land on /app: %+v", steps)
+	}
+	var n int
+	if err := d.QueryRow(`SELECT COUNT(*) FROM identities WHERE provider = 'corp-sso' AND subject = 'corp-sub'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("identity: n=%d err=%v", n, err)
+	}
+	if err := d.QueryRow(`SELECT COUNT(*) FROM sessions WHERE provider_id = 'corp-sso' AND auth_method = 'oidc'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("session provenance: n=%d err=%v", n, err)
+	}
+	ps, err := s.IdP().Providers(context.Background())
+	if err != nil || len(ps) != 1 || ps[0].ID != "corp-sso" || ps[0].DisplayName != "Corp SSO" || ps[0].ManagedBy != "env" {
+		t.Errorf("providers %+v %v", ps, err)
+	}
+	if ar := idp.AuthorizeRequests(); len(ar) != 1 || ar[0].RedirectURI != app.URL+"/auth/corp-sso/callback" {
+		t.Errorf("authorize %+v", ar)
+	}
+}
+
+// TestNoSignInProviderWarns: without any provider the server still starts
+// (Google is optional) and logs a warning.
+func TestNoSignInProviderWarns(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(prev)
+
+	s := server.NewWithDB(testConfig(), dbtest.New(t))
+	if !strings.Contains(buf.String(), "no sign-in provider is configured") {
+		t.Errorf("no warning logged: %s", buf.String())
+	}
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/auth/google")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("/auth/google without config: %d", resp.StatusCode)
 	}
 }

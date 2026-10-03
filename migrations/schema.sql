@@ -743,3 +743,31 @@ CREATE TABLE IF NOT EXISTS wiki_configs (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now'))
 );
+
+-- 0034: sign-in provider registry (WU-602)
+CREATE TABLE auth_providers (
+    id                   TEXT PRIMARY KEY,
+    org_id               TEXT REFERENCES orgs (id) ON DELETE CASCADE,
+    kind                 TEXT NOT NULL CHECK (kind IN ('oidc', 'github', 'saml')),
+    preset               TEXT NOT NULL DEFAULT 'generic',
+    display_name         TEXT NOT NULL DEFAULT '',
+    enabled              INTEGER NOT NULL DEFAULT 1,
+    managed_by           TEXT NOT NULL DEFAULT 'ui' CHECK (managed_by IN ('ui', 'env')),
+    issuer               TEXT NOT NULL DEFAULT '',
+    client_id            TEXT NOT NULL DEFAULT '',
+    client_secret_enc    TEXT NOT NULL DEFAULT '',
+    scopes               TEXT NOT NULL DEFAULT '',
+    claim_map_json       TEXT NOT NULL DEFAULT '{}',
+    trust_email          INTEGER NOT NULL DEFAULT 0,
+    allow_signup         INTEGER NOT NULL DEFAULT 0,
+    allowed_tenants_json TEXT NOT NULL DEFAULT '[]',
+    saml_metadata_url    TEXT NOT NULL DEFAULT '',
+    saml_metadata_xml    TEXT NOT NULL DEFAULT '',
+    sp_key_enc           TEXT NOT NULL DEFAULT '',
+    sp_cert              TEXT NOT NULL DEFAULT '',
+    position             INTEGER NOT NULL DEFAULT 0,
+    created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX idx_auth_providers_org ON auth_providers (org_id);

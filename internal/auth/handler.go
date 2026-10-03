@@ -40,11 +40,11 @@ var refusalCopy = map[string]string{
 // Handler serves the login routes (SPEC §7.2): GET /auth/{providerID},
 // GET /auth/{providerID}/callback and POST /auth/logout.
 type Handler struct {
-	Connectors map[string]Connector
-	Flows      *FlowSealer
-	Sessions   *SessionStore
-	Resolver   *Resolver
-	BaseURL    string
+	Providers ConnectorSource
+	Flows     *FlowSealer
+	Sessions  *SessionStore
+	Resolver  *Resolver
+	BaseURL   string
 	// RequestID returns the request id for log correlation (server wires
 	// server.RequestID); nil logs without one.
 	RequestID func(context.Context) string
@@ -58,8 +58,11 @@ type HandlerConfig struct {
 	EncKey      []byte // 32-byte key for _enc columns
 	BaseURL     string
 	AdminEmails []string
-	Connectors  []Connector
-	RequestID   func(context.Context) string
+	// Providers resolves provider ids (production: the idp.Registry). When
+	// nil, Connectors is used as a fixed set.
+	Providers  ConnectorSource
+	Connectors []Connector
+	RequestID  func(context.Context) string
 }
 
 // NewHandler builds the login handler.
@@ -68,10 +71,14 @@ func NewHandler(cfg HandlerConfig) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	src := cfg.Providers
+	if src == nil {
+		src = NewStaticConnectors(cfg.Connectors...)
+	}
 	h := &Handler{
-		Connectors: map[string]Connector{},
-		Flows:      flows,
-		Sessions:   cfg.Sessions,
+		Providers: src,
+		Flows:     flows,
+		Sessions:  cfg.Sessions,
 		Resolver: &Resolver{
 			DB:          cfg.DB,
 			Sessions:    cfg.Sessions,
@@ -80,9 +87,6 @@ func NewHandler(cfg HandlerConfig) (*Handler, error) {
 		},
 		BaseURL:   strings.TrimRight(cfg.BaseURL, "/"),
 		RequestID: cfg.RequestID,
-	}
-	for _, c := range cfg.Connectors {
-		h.Connectors[c.ID()] = c
 	}
 	return h, nil
 }
@@ -98,9 +102,8 @@ func (h *Handler) Routes(r chi.Router) {
 // redirects to the provider.
 func (h *Handler) Begin(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "providerID")
-	c, ok := h.Connectors[id]
+	c, ok := h.connector(w, r, id)
 	if !ok {
-		http.NotFound(w, r)
 		return
 	}
 	flow, err := h.Flows.NewFlow(id, IntentLogin)
@@ -127,14 +130,28 @@ func (h *Handler) Begin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, dest, http.StatusFound) //nolint:gosec // G710: host fixed by provider config, see above
 }
 
+// connector resolves id, answering 404 for an unknown or disabled provider
+// and the generic failure page for one that is misconfigured.
+func (h *Handler) connector(w http.ResponseWriter, r *http.Request, id string) (Connector, bool) {
+	c, err := h.Providers.Connector(r.Context(), id)
+	switch {
+	case err == nil:
+		return c, true
+	case errors.Is(err, ErrUnknownProvider):
+		http.NotFound(w, r)
+	default:
+		h.fail(w, r, http.StatusBadGateway, id, "provider", err)
+	}
+	return nil, false
+}
+
 // Callback completes a login. The flow cookie is cleared on every outcome.
 func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 	ClearFlowCookie(w)
 	w.Header().Set("Cache-Control", "no-store")
 	id := chi.URLParam(r, "providerID")
-	c, ok := h.Connectors[id]
+	c, ok := h.connector(w, r, id)
 	if !ok {
-		http.NotFound(w, r)
 		return
 	}
 	flow, err := h.Flows.FromRequest(r)

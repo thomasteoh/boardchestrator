@@ -70,12 +70,27 @@ Every variable is `BC_`-prefixed.
 | `BC_SESSION_SECRET` | string | required | session HMAC secret (≥32 chars) |
 | `BC_BOOTSTRAP_TOKEN` | string | `` | first-run bootstrap token |
 | `BC_ADMIN_EMAILS` | string | `` | comma-separated admin emails |
-| `BC_GOOGLE_CLIENT_ID` | string | required | Google OAuth client id |
-| `BC_GOOGLE_CLIENT_SECRET` | string | required | Google OAuth client secret |
-| `BC_GITHUB_CLIENT_ID` | string | `` | GitHub OAuth client id |
+| `BC_GOOGLE_CLIENT_ID` | string | `` | Google OAuth client id (seeds sign-in provider `google`) |
+| `BC_GOOGLE_CLIENT_SECRET` | string | `` | Google OAuth client secret |
+| `BC_GITHUB_CLIENT_ID` | string | `` | GitHub OAuth client id (seeds sign-in provider `github`) |
 | `BC_GITHUB_CLIENT_SECRET` | string | `` | GitHub OAuth client secret |
+| `BC_OIDC_<NAME>_ISSUER` | string | preset default | OIDC issuer URL for provider `<name>` (lower-cased, `_` becomes `-`) |
+| `BC_OIDC_<NAME>_CLIENT_ID` | string | required per provider | OIDC client id |
+| `BC_OIDC_<NAME>_CLIENT_SECRET` | string | `` | OIDC client secret |
+| `BC_OIDC_<NAME>_PRESET` | string | `generic` | google, microsoft, gitlab, okta, auth0, keycloak, zitadel, authentik, generic |
+| `BC_OIDC_<NAME>_DISPLAY_NAME` | string | preset name | label on the sign-in button |
+| `BC_OIDC_<NAME>_TRUST_EMAIL` | bool | preset default | link to existing users by verified email |
+| `BC_OIDC_<NAME>_ALLOW_SIGNUP` | bool | `true` | let new users sign up through this provider |
+| `BC_OIDC_<NAME>_SCOPES` | string | preset default | space- or comma-separated scopes |
+| `BC_OIDC_<NAME>_GROUPS_CLAIM` | string | preset default | claim (or dotted path) holding the user's groups |
 | `BC_AGENT_WORKERS` | int | `4` | worker pool size |
 | `BC_SCHED_POLL_INTERVAL` | int | `60` | scheduler poll seconds |
+
+At least one sign-in provider should be configured; the server starts
+without one but logs a warning, because nobody can sign in. Env-configured
+providers are written to the `auth_providers` table at startup; removing a
+provider's variables disables it on the next start (its users' identities are
+kept).
 
 Secrets (`BC_SECRET_KEY`, `BC_SESSION_SECRET`, OAuth secrets) should come from
 a secret store, never committed. Use `${VAR}` interpolation in compose or a
