@@ -232,7 +232,9 @@ type apiError struct {
 	Detail   string
 }
 
-func (e *apiError) Error() string { return fmt.Sprintf("scim: %d %s: %s", e.Status, e.SCIMType, e.Detail) }
+func (e *apiError) Error() string {
+	return fmt.Sprintf("scim: %d %s: %s", e.Status, e.SCIMType, e.Detail)
+}
 
 func badRequest(scimType, format string, args ...any) error {
 	return &apiError{Status: http.StatusBadRequest, SCIMType: scimType, Detail: fmt.Sprintf(format, args...)}

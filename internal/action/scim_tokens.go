@@ -18,11 +18,12 @@ import (
 // SCIM provisioning tokens (WU-611, SPEC §7.8). An organisation's IdP calls
 // /scim/v2 with one of these as its bearer token; the token resolves the org.
 
-// Action names.
+// Action names. gosec's G101 matches "token" in the identifiers; these are
+// action names, not credentials.
 const (
-	ActionSCIMTokenList   = "scim.token.list"
-	ActionSCIMTokenCreate = "scim.token.create"
-	ActionSCIMTokenRevoke = "scim.token.revoke"
+	ActionSCIMTokenList   = "scim.token.list"   //nolint:gosec // G101: action name, not a credential
+	ActionSCIMTokenCreate = "scim.token.create" //nolint:gosec // G101: action name, not a credential
+	ActionSCIMTokenRevoke = "scim.token.revoke" //nolint:gosec // G101: action name, not a credential
 )
 
 // SCIMTokenScheme starts every SCIM token: bcscim_<prefix>_<secret>, with a

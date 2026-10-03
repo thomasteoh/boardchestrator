@@ -340,15 +340,15 @@ func TestSCIMEntraSequence(t *testing.T) {
 		t.Fatalf("probe %s", r.raw)
 	}
 	r = h.scim(tok, http.MethodPost, "/scim/v2/Users", map[string]any{
-		"schemas":    []string{"urn:ietf:params:scim:schemas:core:2.0:User", "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"},
-		"externalId": "carol-object-id",
-		"userName":   "Carol@corp.example",
-		"active":     true,
+		"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:User", "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"},
+		"externalId":  "carol-object-id",
+		"userName":    "Carol@corp.example",
+		"active":      true,
 		"displayName": "Carol Jones",
 		"emails":      []map[string]any{{"primary": true, "type": "work", "value": "carol@corp.example"}},
 		"name":        map[string]any{"formatted": "Carol Jones", "familyName": "Jones", "givenName": "Carol"},
 		"urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": map[string]any{"department": "Engineering", "manager": map[string]any{"value": "x"}},
-		"title":    "Engineer",
+		"title":     "Engineer",
 		"addresses": []map[string]any{{"type": "work", "country": "AU"}},
 	})
 	expectSCIM(t, "create", r, http.StatusCreated, "")
@@ -518,8 +518,8 @@ func TestSCIMOktaSequence(t *testing.T) {
 	}
 	daveRes := map[string]any{
 		"schemas": []string{"urn:ietf:params:scim:schemas:core:2.0:User"}, "userName": "dave@corp.example",
-		"name":   map[string]any{"givenName": "Dave", "familyName": "Lee"},
-		"emails": []map[string]any{{"primary": true, "value": "dave@corp.example", "type": "work"}},
+		"name":        map[string]any{"givenName": "Dave", "familyName": "Lee"},
+		"emails":      []map[string]any{{"primary": true, "value": "dave@corp.example", "type": "work"}},
 		"displayName": "Dave Lee", "locale": "en-AU", "externalId": "00u1", "groups": []any{},
 		"password": "ignored", "active": true,
 	}

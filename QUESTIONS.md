@@ -129,3 +129,13 @@ To be precise about which way this fails: it is a **broken API, not a CSRF bypas
 **Options:** (a) keep; (b) add a separate per-provider "emails are verified" flag for SAML, so trust (linking) and verification (sign-up) can be set independently.
 **Recommendation:** (a). For SAML the admin who configures the IdP is the only possible source of verification, so a second flag adds a setting without adding safety.
 **Answer:**
+
+## Q14 — SCIM groups and sign-in group sync for the same user (WU-611)
+
+**Context:** SPEC §7.5 lets both sign-in group sync (the assertion's groups, provider-specific plus org-wide mappings) and SCIM group changes (SCIM group display names, org-wide mappings only) reconcile a user's `source='idp'` memberships. If both run for one user they fight: an IdP that sends no or different groups in its tokens would strip at every sign-in what SCIM granted, and SCIM would put it back at its next push. Separately, a SCIM user that the IdP deactivated could get a JIT membership back by signing in, and an org IdP that is not trusted for email could never sign in a person SCIM created (unseen identity, existing email, so §7.3 step 3 refuses and JIT never links).
+
+**Decision taken in WU-611 (non-blocking):** per user, not per org. (1) A user with a `scim_users` row in the org (active or not) is SCIM-managed there: sign-in through the org's providers skips group sync and JIT for that org (INFO log); their `idp` memberships follow their SCIM groups only. Users the IdP does not provision by SCIM keep sign-in sync, even when the org has an active SCIM token. (2) Provisioning by the org on its own verified domain is JIT-level trust: an unseen identity from one of the org's own providers links to an existing user when the email's domain is verified for that org and the user has an **active** `scim_users` row there, whatever `trust_email`/`email_verified` say (audit `identity.linked_by_email` with `via: scim`). (3) SCIM creates a platform user only for an address no account uses; an existing account is linked only on the org's verified domains, otherwise 409 (`users.email` is unique, and linking would hand another account to the org).
+
+**Options:** (a) keep per-user; (b) per org: when the org has an active SCIM token, skip sign-in group sync for everyone in it (simpler to explain, but users outside the SCIM assignment lose sign-in sync); (c) merge: reconcile from the union of SCIM groups and assertion groups (no fight, but removal from either source never removes access while the other still lists it).
+**Recommendation:** (a).
+**Answer:**

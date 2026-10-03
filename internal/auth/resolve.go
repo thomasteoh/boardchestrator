@@ -376,8 +376,8 @@ func (rv *Resolver) linkTx(ctx context.Context, q *sqlc.Queries, req LoginReques
 type unseenOutcome struct {
 	userID  string
 	linkVia string // "scim" for a SCIM-provisioned link (audit detail)
-	method string
-	detail map[string]string // auth.signup audit detail
+	method  string
+	detail  map[string]string // auth.signup audit detail
 }
 
 // linkOrSignUp handles an unseen identity: step 3 (link by verified email on
