@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
 	"testing"
@@ -41,6 +42,10 @@ type smOpts struct {
 	corpTrust, corpSignup bool
 	unclaimed             bool // platform not bootstrapped
 	adminEmails           []string
+	// WU-605.
+	bootstrapToken   string
+	defaultRateLimit bool // keep the production sign-in rate limit
+	trustedProxies   []netip.Prefix
 }
 
 func newSMHarness(t *testing.T, o smOpts) *smHarness {
@@ -74,7 +79,11 @@ func newSMHarness(t *testing.T, o smOpts) *smHarness {
 	cfg.AdminEmails = o.adminEmails
 	// These tests sign in many times from 127.0.0.1; the sign-in rate limit
 	// has its own tests (WU-605).
-	cfg.SignInRateLimit = config.RateLimit{PerMinute: 6000, Burst: 1000}
+	if !o.defaultRateLimit {
+		cfg.SignInRateLimit = config.RateLimit{PerMinute: 6000, Burst: 1000}
+	}
+	cfg.BootstrapToken = o.bootstrapToken
+	cfg.TrustedProxies = o.trustedProxies
 	cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleIssuer = g.ClientID, g.ClientSecret, g.Issuer()
 	cfg.OIDCProviders = []config.OIDCEnvProvider{{
 		ID: "corp", Issuer: c.Issuer(), ClientID: c.ClientID, ClientSecret: c.ClientSecret,

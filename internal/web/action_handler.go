@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/thomasteoh/boardchestrator/internal/action"
+	"github.com/thomasteoh/boardchestrator/internal/auth"
 )
 
 // ActionHandler provides an HTTP handler for action dispatch.
@@ -59,6 +60,6 @@ func actorFromRequest(r *http.Request) (action.Actor, error) {
 	return action.Actor{
 		Type: action.ActorUser,
 		ID:   "placeholder",
-		IP:   r.RemoteAddr,
+		IP:   auth.ClientIP(r),
 	}, nil
 }

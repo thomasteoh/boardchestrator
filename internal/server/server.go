@@ -237,11 +237,11 @@ func (s *Server) setupAuthRoutes() {
 			"set BC_GOOGLE_CLIENT_ID/SECRET, BC_GITHUB_CLIENT_ID/SECRET or BC_OIDC_<NAME>_*")
 	}
 	ah, err := auth.NewHandler(auth.HandlerConfig{
-		DB:          s.db,
-		Sessions:    s.sessions,
-		SecretKey:   s.cfg.SecretKey,
-		EncKey:      encKey,
-		BaseURL:     s.cfg.BaseURL,
+		DB:             s.db,
+		Sessions:       s.sessions,
+		SecretKey:      s.cfg.SecretKey,
+		EncKey:         encKey,
+		BaseURL:        s.cfg.BaseURL,
 		AdminEmails:    s.cfg.AdminEmails,
 		BootstrapToken: s.cfg.BootstrapToken,
 		Providers:      reg,

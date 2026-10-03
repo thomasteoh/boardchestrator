@@ -52,7 +52,7 @@ func signInUser(w http.ResponseWriter, r *http.Request) (action.Actor, bool) {
 		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
 		return action.Actor{}, false
 	}
-	return action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: r.RemoteAddr}, true
+	return action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: auth.ClientIP(r)}, true
 }
 
 func handleSignInMethods(w http.ResponseWriter, r *http.Request) {

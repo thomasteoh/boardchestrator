@@ -134,7 +134,7 @@ func handleOrgSettings(w http.ResponseWriter, r *http.Request) {
 	// session actor to read the current S3 config (secret masked) or local.
 	storageBackend, storageJSON := "local", ""
 	if disp != nil {
-		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
+		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: auth.ClientIP(r)}
 		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
 			actor.ID = sess.UserID
 		}
@@ -251,7 +251,7 @@ func handleOrgRoles(w http.ResponseWriter, r *http.Request) {
 
 	var rows []views.RoleGrantRow
 	if disp != nil {
-		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
+		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: auth.ClientIP(r)}
 		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
 			actor.ID = sess.UserID
 		}
@@ -337,7 +337,7 @@ func handleOrgRoleEdit(w http.ResponseWriter, r *http.Request) {
 
 	name, grantsStr := "", ""
 	if disp != nil {
-		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
+		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: auth.ClientIP(r)}
 		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
 			actor.ID = sess.UserID
 		}
@@ -392,7 +392,7 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
+	actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: auth.ClientIP(r)}
 	if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
 		actor.ID = sess.UserID
 	}
@@ -1044,7 +1044,7 @@ func handleNotifMarkRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	raw, _ := json.Marshal(map[string]string{"id": id})
-	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: r.RemoteAddr}
+	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: auth.ClientIP(r)}
 	if _, err := disp.Dispatch(r.Context(), actor, "notif.mark_read", raw, action.Opts{}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1064,7 +1064,7 @@ func handleNotifMarkAllRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: r.RemoteAddr}
+	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: auth.ClientIP(r)}
 	if _, err := disp.Dispatch(r.Context(), actor, "notif.mark_all_read", json.RawMessage(`{}`), action.Opts{}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1353,6 +1353,7 @@ func Routes(r chi.Router) {
 	// Audit log routes (WU-110)
 	r.Get("/app/org/{orgID}/audit", handleAuditLog)
 	r.Get("/app/org/{orgID}/audit/export", handleAuditExport)
+	r.Get(views.PlatformAuditURL, handlePlatformAudit)
 	r.Post("/api/action/audit.log.list", handleAction)
 	r.Post("/api/action/audit.log.export", handleAction)
 	// Task detail routes

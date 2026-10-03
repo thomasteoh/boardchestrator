@@ -52,7 +52,7 @@ type Flow struct {
 	// platform inside the resolution transaction.
 	Bootstrap     bool   `json:"bs,omitempty"`
 	BootstrapHash string `json:"bh,omitempty"`
-	LoginHint       string `json:"lh,omitempty"`
+	LoginHint     string `json:"lh,omitempty"`
 	// InviteToken is the raw invite token when the person arrived through an
 	// invite link (WU-604). Possession of it may permit sign-up (SPEC §7.3
 	// step 4); resolution re-validates it.

@@ -100,7 +100,7 @@ func handleSessionRevoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: r.RemoteAddr}
+	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: auth.ClientIP(r)}
 	if _, err := disp.Dispatch(r.Context(), actor, "session.revoke", raw, action.Opts{}); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "session not found", http.StatusNotFound)

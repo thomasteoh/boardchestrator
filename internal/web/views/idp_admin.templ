@@ -117,6 +117,13 @@ templ adminNav(active string) {
 				aria-current="page"
 			}
 		>Identity providers</a>
+		<a
+			href={ templ.SafeURL(PlatformAuditURL) }
+			class="bc-admin-nav-link"
+			if active == "audit" {
+				aria-current="page"
+			}
+		>Audit log</a>
 	</nav>
 }
 

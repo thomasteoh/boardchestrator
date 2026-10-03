@@ -68,8 +68,9 @@ Every variable is `BC_`-prefixed.
 | `BC_LOG_LEVEL` | string | `info` | debug/info/warn/error |
 | `BC_SECRET_KEY` | string | required | encryption key for secrets at rest |
 | `BC_SESSION_SECRET` | string | required | session HMAC secret (≥32 chars) |
-| `BC_BOOTSTRAP_TOKEN` | string | `` | first-run bootstrap token |
-| `BC_ADMIN_EMAILS` | string | `` | comma-separated admin emails |
+| `BC_BOOTSTRAP_TOKEN` | string | `` (generated) | token that claims an unclaimed instance at `/setup?token=`; see "Claiming a new instance" |
+| `BC_ADMIN_EMAILS` | string | `` | comma-separated admin emails; while the instance is unclaimed their first sign-in (verified email) claims it, and they always hold platform admin |
+| `BC_TRUSTED_PROXIES` | string | `` | comma-separated CIDRs or addresses of reverse proxies whose `X-Forwarded-For` is believed for the client IP (sign-in rate limits, audit rows, sessions). Empty: the TCP peer is the client and `X-Forwarded-For` is ignored. Set it to your proxy's address, otherwise every client behind the proxy shares one rate-limit bucket |
 | `BC_GOOGLE_CLIENT_ID` | string | `` | Google OAuth client id (seeds sign-in provider `google`) |
 | `BC_GOOGLE_CLIENT_SECRET` | string | `` | Google OAuth client secret |
 | `BC_GITHUB_CLIENT_ID` | string | `` | GitHub OAuth client id (seeds sign-in provider `github`) |
@@ -92,6 +93,35 @@ without one but logs a warning, because nobody can sign in. Env-configured
 providers are written to the `auth_providers` table at startup; removing a
 provider's variables disables it on the next start (its users' identities are
 kept).
+
+### Claiming a new instance
+
+Until someone claims it, an instance lets in only `BC_ADMIN_EMAILS` and
+whoever presents the bootstrap token. At every start while unclaimed the
+server logs one WARN line with the claim URL, `<BC_BASE_URL>/setup?token=…`:
+
+- with `BC_BOOTSTRAP_TOKEN` set, the URL carries that token;
+- with neither `BC_BOOTSTRAP_TOKEN` nor `BC_ADMIN_EMAILS` set, the server
+  generates a random token at each start and stores only its SHA-256, so only
+  the URL in the latest start's log works;
+- with only `BC_ADMIN_EMAILS` set, no token exists and the first sign-in by a
+  listed (verified) address claims the instance.
+
+The token is logged on purpose (PRD §4): it is a secret like any other in the
+environment, so treat logs from an unclaimed instance accordingly. Opening the
+URL shows "Claim this instance" with the configured sign-in providers; the
+first person to finish signing in becomes platform owner, whatever their
+email, and the token stops working (`/setup` then answers 404, as it does for
+a wrong token). Claim before exposing the instance publicly.
+
+### Sign-in rate limit and audit
+
+`/login`, `/setup` and `/auth/*` are rate-limited per client IP to 20 requests
+a minute with bursts of 10 (in memory, per process); excess requests get 429
+with `Retry-After`. Sign-ins (`auth.login`), sign-outs (`auth.logout`), failed
+sign-ins (`auth.login_failed`, with a reason code, never tokens) and the claim
+(`auth.bootstrap`) are written to the audit log without an organisation, and
+show under Platform admin → Audit log (`/admin/audit`).
 
 Secrets (`BC_SECRET_KEY`, `BC_SESSION_SECRET`, OAuth secrets) should come from
 a secret store, never committed. Use `${VAR}` interpolation in compose or a
