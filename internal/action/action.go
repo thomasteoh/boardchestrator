@@ -130,6 +130,10 @@ type Actor struct {
 	ID          string
 	OwnerUserID string // set when Type == ActorAPIKey; the owning user
 	IP          string // client IP, recorded in audit rows
+	// AuthProviderID is the sign-in provider of the web session a user actor
+	// acts through (sessions.provider_id; "" for none). Org SSO enforcement
+	// (SPEC §7.4) checks it against the org's own providers.
+	AuthProviderID string
 }
 
 // ref returns a stable string identifying the actor for idempotency and audit

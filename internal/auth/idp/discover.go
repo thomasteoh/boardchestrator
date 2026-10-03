@@ -95,6 +95,48 @@ func blockedDiscoveryIP(ip net.IP) bool {
 		ip.IsMulticast() || ip.IsUnspecified() || ip.Equal(awsIPv6Metadata)
 }
 
+// NewOrgIdPClient is the IdP client for organisation-owned providers and
+// org.idp.discover. Org owners are less trusted than platform admins, so on
+// top of the platform guard it refuses loopback, private (RFC 1918, ULA),
+// shared (100.64/10) and 0/8 addresses unless allowPrivate
+// (BC_ORG_IDP_ALLOW_PRIVATE). The check runs at dial time on the resolved
+// address, and no proxy is used, so DNS cannot route around it (Q11).
+func NewOrgIdPClient(allowPrivate bool) *http.Client {
+	control := func(network, address string, c syscall.RawConn) error {
+		if err := discoveryDialControl(network, address, c); err != nil {
+			return err
+		}
+		if allowPrivate {
+			return nil
+		}
+		host, _, _ := net.SplitHostPort(address)
+		if ip := net.ParseIP(host); ip != nil && privateIP(ip) {
+			return fmt.Errorf("idp: organisation provider address %s is private; set BC_ORG_IDP_ALLOW_PRIVATE to allow", ip)
+		}
+		return nil
+	}
+	return NewIdPClient(&http.Transport{
+		Proxy:                 nil,
+		DialContext:           (&net.Dialer{Timeout: 5 * time.Second, Control: control}).DialContext,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 8 * time.Second,
+		MaxIdleConns:          16,
+		IdleConnTimeout:       30 * time.Second,
+	})
+}
+
+var sharedNet = &net.IPNet{IP: net.IPv4(100, 64, 0, 0), Mask: net.CIDRMask(10, 32)}
+
+func privateIP(ip net.IP) bool {
+	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+		if ip4[0] == 0 || sharedNet.Contains(ip4) {
+			return true
+		}
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified()
+}
+
 func handleDiscover(ctx context.Context, ac action.ActionCtx, in json.RawMessage) (any, error) {
 	var input DiscoverInput
 	if err := decodeStrict(in, &input); err != nil {

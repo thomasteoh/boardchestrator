@@ -358,7 +358,7 @@ func (r *DBScopeResolver) Resolve(ctx context.Context, ac ActionCtx, def Definit
 		if err != nil {
 			return fmt.Errorf("org %s not found: %w", ac.Org, err)
 		}
-		return nil
+		return r.checkSSO(ctx, ac)
 	case ScopeTeam:
 		if ac.Org == "" || ac.Team == "" {
 			return fmt.Errorf("missing org_id or team_id for team-scoped action")
@@ -371,7 +371,7 @@ func (r *DBScopeResolver) Resolve(ctx context.Context, ac ActionCtx, def Definit
 		if team.OrgID != ac.Org {
 			return fmt.Errorf("team %s does not belong to org %s", ac.Team, ac.Org)
 		}
-		return nil
+		return r.checkSSO(ctx, ac)
 	case ScopeProject:
 		if ac.Org == "" || ac.Proj == "" {
 			return fmt.Errorf("missing org_id or project_id for project-scoped action")
@@ -383,7 +383,7 @@ func (r *DBScopeResolver) Resolve(ctx context.Context, ac ActionCtx, def Definit
 		if proj.OrgID != ac.Org {
 			return fmt.Errorf("project %s does not belong to org %s", ac.Proj, ac.Org)
 		}
-		return nil
+		return r.checkSSO(ctx, ac)
 	default:
 		return fmt.Errorf("unknown scope kind %d", def.Scope)
 	}

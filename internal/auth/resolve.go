@@ -153,7 +153,9 @@ func (rv *Resolver) resolveTx(ctx context.Context, q *sqlc.Queries, req LoginReq
 	if err != nil {
 		return nil, fmt.Errorf("auth: platform settings: %w", err)
 	}
-	isAdmin := a.EmailVerified && rv.isAdmin(a.Email)
+	// An org-owned provider is configured by an org owner, who controls
+	// the emails it asserts; it must never be able to claim BC_ADMIN_EMAILS.
+	isAdmin := a.EmailVerified && rv.isAdmin(a.Email) && req.Policy.OrgID == ""
 	bootstrapClaim := ps.BootstrapDone == 0
 	tokenClaim := false
 	if bootstrapClaim {
@@ -361,7 +363,17 @@ func (rv *Resolver) linkOrSignUp(ctx context.Context, q *sqlc.Queries, req Login
 	// trusted for email. An untrusted provider falls through to sign-up,
 	// which refuses because the address is taken, with the same copy as "no
 	// account", so it cannot be used to probe which emails exist.
-	if verified && req.Policy.TrustEmail {
+	trusted := verified && req.Policy.TrustEmail
+	if trusted && req.Policy.OrgID != "" {
+		// An org-owned provider is trusted only for that org's verified
+		// domains (SPEC §7.3 step 3).
+		org, err := action.VerifiedOrgForEmail(ctx, q, a.Email)
+		if err != nil {
+			return unseenOutcome{}, fmt.Errorf("auth: verified domain: %w", err)
+		}
+		trusted = org == req.Policy.OrgID
+	}
+	if trusted {
 		existing, err := q.FindUserByEmailAnyState(ctx, a.Email)
 		switch {
 		case err == nil:
@@ -402,9 +414,9 @@ func (rv *Resolver) linkOrSignUp(ctx context.Context, q *sqlc.Queries, req Login
 //     gate in resolveTx already checked which).
 //   - open: the provider allows sign-up and verified the email.
 //
-// Org JIT (SPEC §7.5) is WU-607/608: it goes between bootstrap and open, as
-// "provider is org-owned with jit_enabled and the email domain is verified
-// for that org", returning SignupJIT; the membership is then created next to
+// Org JIT (SPEC §7.5) is WU-608: it goes between bootstrap and open, as
+// "req.Policy.OrgID != "" with jit_enabled and VerifiedOrgForEmail(email) ==
+// req.Policy.OrgID", returning SignupJIT; the membership is then created next to
 // the invite acceptance in resolveTx.
 func (rv *Resolver) signUpMethod(ctx context.Context, q *sqlc.Queries, req LoginRequest, verified, bootstrapClaim bool) (method, email string, err error) {
 	a := req.Assertion
@@ -425,7 +437,10 @@ func (rv *Resolver) signUpMethod(ctx context.Context, q *sqlc.Queries, req Login
 	switch {
 	case bootstrapClaim:
 		return SignupBootstrap, a.Email, nil
-	case req.Policy.AllowSignup:
+	case req.Policy.AllowSignup && req.Policy.OrgID == "":
+		// Org-owned providers never allow open sign-up (an org owner must
+		// not be able to mint platform users); they sign people up by
+		// invite or, from WU-608, JIT.
 		return SignupOpen, a.Email, nil
 	}
 	return "", "", refuse(RefuseNoAccount)

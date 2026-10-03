@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -152,6 +153,10 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 	// 4. Resolve + verify scope (ids exist / actor is member). No-op default;
 	// WU-104 enforces existence and membership.
 	if err := d.scope.Resolve(ctx, ac, def); err != nil {
+		var sso ErrSSORequired
+		if errors.As(err, &sso) {
+			return nil, sso
+		}
 		return nil, fmt.Errorf("%w: %v", ErrScope, err)
 	}
 

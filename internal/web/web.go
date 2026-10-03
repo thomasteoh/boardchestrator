@@ -134,10 +134,7 @@ func handleOrgSettings(w http.ResponseWriter, r *http.Request) {
 	// session actor to read the current S3 config (secret masked) or local.
 	storageBackend, storageJSON := "local", ""
 	if disp != nil {
-		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: auth.ClientIP(r)}
-		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
-			actor.ID = sess.UserID
-		}
+		actor := requestActor(r)
 		if res, err := disp.Dispatch(r.Context(), actor, "org.storage.status",
 			json.RawMessage(`{}`), action.Opts{Org: orgID}); err == nil {
 			if m, ok := res.(map[string]any); ok {
@@ -251,10 +248,7 @@ func handleOrgRoles(w http.ResponseWriter, r *http.Request) {
 
 	var rows []views.RoleGrantRow
 	if disp != nil {
-		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: auth.ClientIP(r)}
-		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
-			actor.ID = sess.UserID
-		}
+		actor := requestActor(r)
 		if res, err := disp.Dispatch(r.Context(), actor, "role.list",
 			json.RawMessage(`{}`), action.Opts{Org: orgID}); err == nil {
 			if roles, ok := res.([]sqlc.Role); ok {
@@ -337,10 +331,7 @@ func handleOrgRoleEdit(w http.ResponseWriter, r *http.Request) {
 
 	name, grantsStr := "", ""
 	if disp != nil {
-		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: auth.ClientIP(r)}
-		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
-			actor.ID = sess.UserID
-		}
+		actor := requestActor(r)
 		if res, err := disp.Dispatch(r.Context(), actor, "role.list",
 			json.RawMessage(`{}`), action.Opts{Org: orgID}); err == nil {
 			if roles, ok := res.([]sqlc.Role); ok {
@@ -392,10 +383,7 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: auth.ClientIP(r)}
-	if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
-		actor.ID = sess.UserID
-	}
+	actor := requestActor(r)
 	// X-Dry-Run: chat propose→approve (WU-308) runs the inner action in dry-run
 	// mode to render a preview without mutating anything. X-Org-Id/X-Project-Id/
 	// X-Team-Id carry the chat session's scope so the inner action re-dispatches
@@ -438,6 +426,11 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := disp.Dispatch(r.Context(), actor, name, input, opts)
 	if err != nil {
+		var sso action.ErrSSORequired
+		if errors.As(err, &sso) {
+			writeSSORequiredPlain(w, r, sso)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -772,6 +765,15 @@ func handleAttachmentDownload(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
+		var sso action.ErrSSORequired
+		if err := orgSSOError(r.Context(), sess, att.OrgID); errors.As(err, &sso) {
+			RenderSSORequired(w, r, sso)
+			return
+		} else if err != nil {
+			slog.Error("attachment download sso", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 	} else if keyActor, ok := auth.APIKeyActorFrom(r.Context()); ok {
 		// API-key principal: the key must belong to att.OrgID.
 		key, err := q.FindAPIKeyByID(r.Context(), keyActor.ID)
@@ -840,6 +842,7 @@ func handleSearchPage(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "search error", http.StatusInternalServerError)
 			return
 		}
+		rs = ssoFilter(r.Context(), sess, rs, func(x search.QueryResult) string { return x.OrgID })
 		for _, res := range rs {
 			results = append(results, views.SearchResultRow{
 				Type:      res.Type,
@@ -876,6 +879,7 @@ func handleSearchAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "search error", http.StatusInternalServerError)
 		return
 	}
+	results = ssoFilter(r.Context(), sess, results, func(x search.QueryResult) string { return x.OrgID })
 
 	// Return JSON for API consumers
 	w.Header().Set("Content-Type", "application/json")
@@ -1044,7 +1048,7 @@ func handleNotifMarkRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	raw, _ := json.Marshal(map[string]string{"id": id})
-	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: auth.ClientIP(r)}
+	actor := sessionActor(r, sess)
 	if _, err := disp.Dispatch(r.Context(), actor, "notif.mark_read", raw, action.Opts{}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1064,7 +1068,7 @@ func handleNotifMarkAllRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: auth.ClientIP(r)}
+	actor := sessionActor(r, sess)
 	if _, err := disp.Dispatch(r.Context(), actor, "notif.mark_all_read", json.RawMessage(`{}`), action.Opts{}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

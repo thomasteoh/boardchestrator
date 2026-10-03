@@ -184,6 +184,9 @@ func (s *Server) setupMiddleware() {
 		sc := auth.SessionConfig{Store: s.sessions, Secret: s.cfg.SessionSecret}
 		s.mux.Use(sc.Session())
 		s.mux.Use(sc.CSRF())
+		// Org SSO enforcement for org-scoped pages that read data directly
+		// (SPEC §7.4; dispatch enforces it for actions).
+		s.mux.Use(web.OrgSSOGate)
 	}
 }
 
@@ -226,7 +229,11 @@ func (s *Server) setupAuthRoutes() {
 		EncKey:        encKey,
 		BaseURL:       s.cfg.BaseURL,
 		GitHubAPIBase: s.cfg.GitHubAPIBase,
+		// Org-owned providers dial public addresses only unless
+		// BC_ORG_IDP_ALLOW_PRIVATE (Q11).
+		OrgAllowPrivate: s.cfg.OrgIdPAllowPrivate,
 	})
+	idp.SetOrgAllowPrivate(s.cfg.OrgIdPAllowPrivate)
 	s.idpUnwatch = reg.Watch(s.bus)
 	s.idp = reg
 	web.SetIdentity(s.cfg.BaseURL, reg)

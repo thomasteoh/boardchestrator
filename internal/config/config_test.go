@@ -263,3 +263,21 @@ func TestLoadTrustedProxies(t *testing.T) {
 		}
 	}
 }
+
+// WU-607: BC_ORG_IDP_ALLOW_PRIVATE defaults to false and must be a boolean.
+func TestLoadOrgIdPAllowPrivate(t *testing.T) {
+	baseEnv()
+	t.Setenv("BC_ORG_IDP_ALLOW_PRIVATE", "")
+	c, err := config.Load()
+	if err != nil || c.OrgIdPAllowPrivate {
+		t.Fatalf("default OrgIdPAllowPrivate = %v, %v; want false", c != nil && c.OrgIdPAllowPrivate, err)
+	}
+	t.Setenv("BC_ORG_IDP_ALLOW_PRIVATE", "true")
+	if c, err = config.Load(); err != nil || !c.OrgIdPAllowPrivate {
+		t.Fatalf("BC_ORG_IDP_ALLOW_PRIVATE=true gave %v, %v", c != nil && c.OrgIdPAllowPrivate, err)
+	}
+	t.Setenv("BC_ORG_IDP_ALLOW_PRIVATE", "sometimes")
+	if _, err := config.Load(); err == nil {
+		t.Fatal("BC_ORG_IDP_ALLOW_PRIVATE=sometimes accepted")
+	}
+}

@@ -22,7 +22,10 @@ import (
 
 // InvalidatingEvents are the bus events after which the registry reloads
 // (the idp.* actions, WU-603/607).
-var InvalidatingEvents = []string{"idp.create", "idp.update", "idp.delete", "idp.enable", "idp.disable"}
+var InvalidatingEvents = []string{
+	"idp.create", "idp.update", "idp.delete", "idp.enable", "idp.disable",
+	"org.idp.create", "org.idp.update", "org.idp.delete", "org.idp.enable", "org.idp.disable",
+}
 
 var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
@@ -53,6 +56,11 @@ type Options struct {
 	// Client is the IdP HTTP client shared by every connector; nil =
 	// NewIdPClient(nil).
 	Client *http.Client
+	// OrgClient is the HTTP client for organisation-owned providers. nil =
+	// NewOrgIdPClient(OrgAllowPrivate): private and loopback addresses are
+	// refused unless OrgAllowPrivate (BC_ORG_IDP_ALLOW_PRIVATE, Q11).
+	OrgClient       *http.Client
+	OrgAllowPrivate bool
 	// GitHubAPIBase overrides the API base derived from a github row's
 	// issuer (tests point it at a fake). Empty = api.github.com for
 	// github.com, else <issuer>/api/v3 (GitHub Enterprise Server).
@@ -95,6 +103,9 @@ type Registry struct {
 func New(opts Options) *Registry {
 	if opts.Client == nil {
 		opts.Client = NewIdPClient(nil)
+	}
+	if opts.OrgClient == nil {
+		opts.OrgClient = NewOrgIdPClient(opts.OrgAllowPrivate)
 	}
 	opts.BaseURL = strings.TrimRight(opts.BaseURL, "/")
 	return &Registry{opts: opts}
@@ -191,6 +202,16 @@ func (r *Registry) build(row sqlc.AuthProvider) (auth.Connector, error) {
 		secret = s
 	}
 	policy := auth.ResolvePolicy{TrustEmail: row.TrustEmail == 1, AllowSignup: row.AllowSignup == 1}
+	client := r.opts.Client
+	if row.OrgID.Valid {
+		// Org-owned (SPEC §7.4): never open sign-up, whatever the row says,
+		// and outbound traffic through the org SSRF guard.
+		policy.OrgID, policy.AllowSignup = row.OrgID.String, false
+		client = r.opts.OrgClient
+		if row.Kind != KindOIDC {
+			return nil, fmt.Errorf("organisation providers must be OpenID Connect, not %s", row.Kind)
+		}
+	}
 	switch row.Kind {
 	case KindGitHub:
 		web := strings.TrimRight(row.Issuer, "/")
@@ -206,13 +227,14 @@ func (r *Registry) build(row sqlc.AuthProvider) (auth.Connector, error) {
 		}
 		return NewGitHubConnector(GitHubConfig{
 			ID: row.ID, ClientID: row.ClientID, ClientSecret: secret, BaseURL: r.opts.BaseURL,
-			WebBase: web, APIBase: api, Client: r.opts.Client, Policy: &policy,
+			WebBase: web, APIBase: api, Client: client, Policy: &policy,
 		}), nil
 	case KindOIDC:
 		cfg, err := r.oidcConfig(row, secret, policy)
 		if err != nil {
 			return nil, err
 		}
+		cfg.Client = client
 		return NewOIDCConnector(cfg), nil
 	case KindSAML:
 		return nil, errors.New("SAML providers are not supported yet")

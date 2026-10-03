@@ -51,9 +51,15 @@ type Assertion struct {
 // ResolvePolicy is the per-provider policy login resolution applies.
 // TrustEmail permits linking an unseen identity to an existing user by
 // verified email (step 3); AllowSignup permits creating a new user (step 4).
+//
+// OrgID is set for an organisation-owned provider (SPEC §7.4): such a
+// provider is trusted for email only on that org's verified domains, never
+// allows open sign-up, and can never grant platform admin via
+// BC_ADMIN_EMAILS.
 type ResolvePolicy struct {
 	TrustEmail  bool
 	AllowSignup bool
+	OrgID       string
 }
 
 // ErrUnknownProvider is returned by a ConnectorSource for an id that names no

@@ -38,7 +38,7 @@ func auditRows(w http.ResponseWriter, r *http.Request, name, orgID string, in an
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return nil, false
 	}
-	actor := action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: auth.ClientIP(r)}
+	actor := sessionActor(r, sess)
 	out, err := disp.Dispatch(r.Context(), actor, name, raw, action.Opts{Org: orgID})
 	switch {
 	case errors.Is(err, action.ErrForbidden), errors.Is(err, action.ErrScope):

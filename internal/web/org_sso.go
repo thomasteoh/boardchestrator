@@ -91,7 +91,7 @@ func ssoActor(w http.ResponseWriter, r *http.Request, orgID string) (action.Acto
 		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
 		return action.Actor{}, false
 	}
-	return action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: auth.ClientIP(r)}, true
+	return sessionActor(r, sess), true
 }
 
 // ssoDenied renders the refusal for a dispatch error that is not the

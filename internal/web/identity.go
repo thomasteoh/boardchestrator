@@ -228,7 +228,7 @@ func idpAdmin(w http.ResponseWriter, r *http.Request) (action.Actor, bool) {
 		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
 		return action.Actor{}, false
 	}
-	return action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: auth.ClientIP(r)}, true
+	return sessionActor(r, sess), true
 }
 
 func idpDispatch(r *http.Request, actor action.Actor, name string, in any) (any, error) {

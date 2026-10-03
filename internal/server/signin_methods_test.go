@@ -40,6 +40,8 @@ type smHarness struct {
 }
 
 type smOpts struct {
+	// blockOrgPrivate keeps BC_ORG_IDP_ALLOW_PRIVATE at its default (off).
+	blockOrgPrivate bool
 	corpTrust, corpSignup bool
 	unclaimed             bool // platform not bootstrapped
 	adminEmails           []string
@@ -85,6 +87,9 @@ func newSMHarness(t *testing.T, o smOpts) *smHarness {
 	}
 	cfg.BootstrapToken = o.bootstrapToken
 	cfg.TrustedProxies = o.trustedProxies
+	// Org IdPs in these tests are oidctest servers on 127.0.0.1, which the
+	// org SSRF guard refuses unless BC_ORG_IDP_ALLOW_PRIVATE (WU-607).
+	cfg.OrgIdPAllowPrivate = !o.blockOrgPrivate
 	cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleIssuer = g.ClientID, g.ClientSecret, g.Issuer()
 	cfg.OIDCProviders = []config.OIDCEnvProvider{{
 		ID: "corp", Issuer: c.Issuer(), ClientID: c.ClientID, ClientSecret: c.ClientSecret,

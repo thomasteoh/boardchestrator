@@ -15,19 +15,20 @@ func TestEnvReferenceGeneration(t *testing.T) {
 
 	// Every BC_* env must be present.
 	want := map[string]bool{
-		"BC_DB_PATH":             true,
-		"BC_DATA_DIR":            true,
-		"BC_BASE_URL":            true,
-		"BC_BIND":                true,
-		"BC_SECRET_KEY":          true,
-		"BC_SESSION_SECRET":      true,
-		"BC_BOOTSTRAP_TOKEN":     true,
-		"BC_GOOGLE_CLIENT_ID":    true,
-		"BC_GITHUB_CLIENT_ID":    true,
-		"BC_AGENT_WORKERS":       true,
-		"BC_SCHED_POLL_INTERVAL": true,
-		"BC_ALLOW_SIGNUP":        true, // WU-604
-		"BC_TRUSTED_PROXIES":     true, // WU-605
+		"BC_DB_PATH":               true,
+		"BC_DATA_DIR":              true,
+		"BC_BASE_URL":              true,
+		"BC_BIND":                  true,
+		"BC_SECRET_KEY":            true,
+		"BC_SESSION_SECRET":        true,
+		"BC_BOOTSTRAP_TOKEN":       true,
+		"BC_GOOGLE_CLIENT_ID":      true,
+		"BC_GITHUB_CLIENT_ID":      true,
+		"BC_AGENT_WORKERS":         true,
+		"BC_SCHED_POLL_INTERVAL":   true,
+		"BC_ALLOW_SIGNUP":          true, // WU-604
+		"BC_TRUSTED_PROXIES":       true, // WU-605
+		"BC_ORG_IDP_ALLOW_PRIVATE": true, // WU-607
 		// WU-602: the per-provider OIDC family, documented per suffix.
 		"BC_OIDC_<NAME>_ISSUER":        true,
 		"BC_OIDC_<NAME>_CLIENT_ID":     true,

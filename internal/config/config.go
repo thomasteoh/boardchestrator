@@ -34,6 +34,11 @@ type Config struct {
 	// without their own _ALLOW_SIGNUP (WU-604). Providers created in the UI
 	// default to invite-only regardless.
 	AllowSignup bool
+	// OrgIdPAllowPrivate (BC_ORG_IDP_ALLOW_PRIVATE, default false) lets
+	// organisation-owned identity providers, and org owners' "Test
+	// discovery", reach private and loopback addresses (Q11). Off, only
+	// public addresses are dialled for org providers.
+	OrgIdPAllowPrivate bool `env:"BC_ORG_IDP_ALLOW_PRIVATE"`
 	// IdP endpoint overrides. Not loaded from the environment: tests point the
 	// env-seeded google/github providers at in-process fakes
 	// (internal/auth/oidctest). Empty means the real provider.
@@ -83,6 +88,13 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("invalid BC_ALLOW_SIGNUP: %q (want true or false)", v)
 		}
 		c.AllowSignup = b
+	}
+	if v := os.Getenv("BC_ORG_IDP_ALLOW_PRIVATE"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid BC_ORG_IDP_ALLOW_PRIVATE: %q (want true or false)", v)
+		}
+		c.OrgIdPAllowPrivate = b
 	}
 
 	// Parse log level.
