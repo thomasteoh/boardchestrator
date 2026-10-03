@@ -26,6 +26,7 @@ func TestEnvReferenceGeneration(t *testing.T) {
 		"BC_GITHUB_CLIENT_ID":    true,
 		"BC_AGENT_WORKERS":       true,
 		"BC_SCHED_POLL_INTERVAL": true,
+		"BC_ALLOW_SIGNUP":        true, // WU-604
 		// WU-602: the per-provider OIDC family, documented per suffix.
 		"BC_OIDC_<NAME>_ISSUER":        true,
 		"BC_OIDC_<NAME>_CLIENT_ID":     true,

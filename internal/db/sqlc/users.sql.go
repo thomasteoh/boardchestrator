@@ -10,6 +10,17 @@ import (
 	"database/sql"
 )
 
+const countUserIdentities = `-- name: CountUserIdentities :one
+SELECT COUNT(*) FROM identities WHERE user_id = ?
+`
+
+func (q *Queries) CountUserIdentities(ctx context.Context, userID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUserIdentities, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUser = `-- name: CreateUser :exec
 INSERT INTO users (id, email, name, avatar_url)
 VALUES (?, ?, ?, ?)
@@ -30,6 +41,26 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 		arg.AvatarUrl,
 	)
 	return err
+}
+
+const deleteUserIdentity = `-- name: DeleteUserIdentity :execrows
+DELETE FROM identities
+WHERE id = ?
+  AND user_id = ?
+`
+
+type DeleteUserIdentityParams struct {
+	ID     string
+	UserID string
+}
+
+// identity.unlink: a user can only unlink their own identities.
+func (q *Queries) DeleteUserIdentity(ctx context.Context, arg DeleteUserIdentityParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUserIdentity, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const findIdentityByProviderSubject = `-- name: FindIdentityByProviderSubject :one
@@ -171,6 +202,31 @@ func (q *Queries) FindUserByEmailAnyState(ctx context.Context, email string) (Fi
 	return i, err
 }
 
+const findUserIdentity = `-- name: FindUserIdentity :one
+SELECT id, provider, email
+FROM identities
+WHERE id = ?
+  AND user_id = ?
+`
+
+type FindUserIdentityParams struct {
+	ID     string
+	UserID string
+}
+
+type FindUserIdentityRow struct {
+	ID       string
+	Provider string
+	Email    string
+}
+
+func (q *Queries) FindUserIdentity(ctx context.Context, arg FindUserIdentityParams) (FindUserIdentityRow, error) {
+	row := q.db.QueryRowContext(ctx, findUserIdentity, arg.ID, arg.UserID)
+	var i FindUserIdentityRow
+	err := row.Scan(&i.ID, &i.Provider, &i.Email)
+	return i, err
+}
+
 const getPlatformSettings = `-- name: GetPlatformSettings :one
 SELECT id, context, bootstrap_done, settings_json
 FROM platform_settings
@@ -212,8 +268,8 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 }
 
 const linkIdentity = `-- name: LinkIdentity :exec
-INSERT INTO identities (id, user_id, provider, subject, email, last_login_at)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO identities (id, user_id, provider, subject, email, last_login_at, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type LinkIdentityParams struct {
@@ -223,6 +279,7 @@ type LinkIdentityParams struct {
 	Subject     string
 	Email       string
 	LastLoginAt sql.NullString
+	CreatedAt   sql.NullString
 }
 
 func (q *Queries) LinkIdentity(ctx context.Context, arg LinkIdentityParams) error {
@@ -233,8 +290,59 @@ func (q *Queries) LinkIdentity(ctx context.Context, arg LinkIdentityParams) erro
 		arg.Subject,
 		arg.Email,
 		arg.LastLoginAt,
+		arg.CreatedAt,
 	)
 	return err
+}
+
+const listSignInIdentities = `-- name: ListSignInIdentities :many
+SELECT i.id, i.provider, COALESCE(p.display_name, '') AS display_name, i.email,
+       i.last_login_at, i.created_at
+FROM identities i
+LEFT JOIN auth_providers p ON p.id = i.provider
+WHERE i.user_id = ?
+ORDER BY COALESCE(i.created_at, ''), i.id
+`
+
+type ListSignInIdentitiesRow struct {
+	ID          string
+	Provider    string
+	DisplayName string
+	Email       string
+	LastLoginAt sql.NullString
+	CreatedAt   sql.NullString
+}
+
+// Settings -> Sign-in methods (WU-604): the caller's identities with the
+// provider's display name. Never selects token_enc.
+func (q *Queries) ListSignInIdentities(ctx context.Context, userID string) ([]ListSignInIdentitiesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSignInIdentities, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSignInIdentitiesRow
+	for rows.Next() {
+		var i ListSignInIdentitiesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Provider,
+			&i.DisplayName,
+			&i.Email,
+			&i.LastLoginAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setBootstrapDone = `-- name: SetBootstrapDone :exec

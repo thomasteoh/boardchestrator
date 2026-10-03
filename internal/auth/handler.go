@@ -33,17 +33,22 @@ const msgGeneric = "Something went wrong signing you in. Please try again."
 var refusalCopy = map[string]string{
 	RefuseUserDeleted:     "This account has been deleted.",
 	RefuseNotBootstrap:    "This instance hasn't been set up yet, and your email isn't on its administrator list.",
-	RefuseNoAccount:       "There's no account for this email. Ask an administrator for an invite.",
+	RefuseNoAccount:       "There's no account for this email. Ask an organisation admin for an invite.",
 	RefuseEmailUnverified: "Your identity provider didn't confirm your email address.",
 	"logout":              "Something went wrong signing you out. Please try again.",
 }
 
 // LoginURL is the sign-in page (SPEC §7.2); SignedOutURL is where a local
-// logout lands (SPEC §7.6).
+// logout lands (SPEC §7.6); SignInMethodsURL is Settings -> Sign-in methods,
+// where an explicit link starts and ends (WU-604).
 const (
-	LoginURL     = "/login"
-	SignedOutURL = "/login?signed_out=1"
+	LoginURL         = "/login"
+	SignedOutURL     = "/login?signed_out=1"
+	SignInMethodsURL = "/settings/sign-in-methods"
 )
+
+// maxInviteTokenLen bounds the invite token a flow will carry.
+const maxInviteTokenLen = 128
 
 // LoginURLFor is the sign-in page URL that returns to returnTo afterwards
 // (validated by SafeReturnTo; the default destination is omitted).
@@ -112,6 +117,7 @@ func NewHandler(cfg HandlerConfig) (*Handler, error) {
 // Routes mounts the login routes on r.
 func (h *Handler) Routes(r chi.Router) {
 	r.Post("/auth/logout", h.Logout)
+	r.Post(SignInMethodsURL+"/link/{providerID}", h.BeginLink)
 	r.Get("/auth/{providerID}", h.Begin)
 	r.Get("/auth/{providerID}/callback", h.Callback)
 }
@@ -133,6 +139,41 @@ func (h *Handler) Begin(w http.ResponseWriter, r *http.Request) {
 		flow.LoginHint = hint
 	}
 	flow.ReturnTo = SafeReturnTo(r.URL.Query().Get("return_to"))
+	// An invite link's token rides the flow; resolution validates it.
+	if inv := r.URL.Query().Get("invite"); len(inv) <= maxInviteTokenLen {
+		flow.InviteToken = inv
+	}
+	h.redirectToProvider(w, r, c, id, flow)
+}
+
+// BeginLink is POST /settings/sign-in-methods/link/{providerID} (SPEC §7.3
+// step 2): a signed-in user starts linking another sign-in method. The flow
+// is bound to the current session's hash, which the callback requires the
+// browser to still present. CSRF-protected by the global middleware.
+func (h *Handler) BeginLink(w http.ResponseWriter, r *http.Request) {
+	sess, ok := SessionFrom(r.Context())
+	if !ok || sess.TokenHash == "" {
+		http.Redirect(w, r, LoginURLFor(SignInMethodsURL), http.StatusSeeOther)
+		return
+	}
+	id := chi.URLParam(r, "providerID")
+	c, ok := h.connector(w, r, id)
+	if !ok {
+		return
+	}
+	flow, err := h.Flows.NewFlow(id, IntentLink)
+	if err != nil {
+		h.fail(w, r, http.StatusInternalServerError, id, "flow_create", err)
+		return
+	}
+	flow.LinkSessionHash = sess.TokenHash
+	flow.ReturnTo = SignInMethodsURL
+	h.redirectToProvider(w, r, c, id, flow)
+}
+
+// redirectToProvider seals flow into the flow cookie and sends the browser
+// to the provider.
+func (h *Handler) redirectToProvider(w http.ResponseWriter, r *http.Request, c Connector, id string, flow *Flow) {
 	dest, err := c.Begin(r.Context(), flow)
 	if err != nil {
 		h.fail(w, r, http.StatusBadGateway, id, "begin", err)
@@ -146,7 +187,7 @@ func (h *Handler) Begin(w http.ResponseWriter, r *http.Request) {
 	// gosec G710 sees login_hint (request input) reach dest. It is only a
 	// URL-encoded query value; the scheme and host come from operator config
 	// or the provider's discovery document, so this is not an open redirect.
-	http.Redirect(w, r, dest, http.StatusFound) //nolint:gosec // G710: host fixed by provider config, see above
+	http.Redirect(w, r, dest, http.StatusSeeOther) //nolint:gosec // G710: host fixed by provider config, see above
 }
 
 // connector resolves id, answering 404 for an unknown or disabled provider
@@ -200,7 +241,14 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 		PresentedSession: presented,
 		IP:               clientIP(r),
 		UA:               r.UserAgent(),
+		Intent:           flow.Intent,
+		LinkSessionHash:  flow.LinkSessionHash,
+		InviteToken:      flow.InviteToken,
 	})
+	if flow.Intent == IntentLink {
+		h.finishLink(w, r, id, res, err)
+		return
+	}
 	if err != nil {
 		var ref *RefusedError
 		if errors.As(err, &ref) {
@@ -211,9 +259,37 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSessionCookie(w, res.RawToken, res.Session.ExpiresAt)
+	dest := SafeReturnTo(flow.ReturnTo)
+	if res.InviteOrgID != "" {
+		// The invite was accepted with the sign-up; its landing page (the
+		// usual return_to for invite flows) has nothing left to do.
+		dest = DefaultReturnTo
+	}
 	// Re-validated: the cookie is sealed, but the check is cheap and keeps
 	// the redirect target provably same-origin.
-	http.Redirect(w, r, h.BaseURL+SafeReturnTo(flow.ReturnTo), http.StatusSeeOther)
+	http.Redirect(w, r, h.BaseURL+dest, http.StatusSeeOther)
+}
+
+// finishLink ends a link flow back on the Sign-in methods page. The session
+// cookie is left alone: linking issues no new session. A refusal travels as
+// its fixed reason code (the page maps known codes to copy); anything else
+// gets the generic failure page.
+func (h *Handler) finishLink(w http.ResponseWriter, r *http.Request, id string, res *LoginResult, err error) {
+	if err != nil {
+		var ref *RefusedError
+		if !errors.As(err, &ref) {
+			h.fail(w, r, http.StatusInternalServerError, id, "link", err)
+			return
+		}
+		slog.Warn("auth: link refused", "provider", id, "reason", ref.Reason)
+		http.Redirect(w, r, h.BaseURL+SignInMethodsURL+"?error="+url.QueryEscape(ref.Reason), http.StatusSeeOther)
+		return
+	}
+	notice := "linked"
+	if res.AlreadyLinked {
+		notice = "already_linked"
+	}
+	http.Redirect(w, r, h.BaseURL+SignInMethodsURL+"?notice="+notice, http.StatusSeeOther)
 }
 
 // Logout revokes the current session and clears its cookie (local logout;

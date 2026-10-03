@@ -28,6 +28,11 @@ type Config struct {
 	// OIDCProviders are the BC_OIDC_<NAME>_* providers (SPEC s7.1), seeded
 	// into auth_providers at startup.
 	OIDCProviders []OIDCEnvProvider `env:"BC_OIDC_<NAME>_*"`
+	// AllowSignup (BC_ALLOW_SIGNUP, default true) is the open sign-up policy
+	// of every env-seeded provider: google, github, and BC_OIDC_<NAME>_* rows
+	// without their own _ALLOW_SIGNUP (WU-604). Providers created in the UI
+	// default to invite-only regardless.
+	AllowSignup bool
 	// IdP endpoint overrides. Not loaded from the environment: tests point the
 	// env-seeded google/github providers at in-process fakes
 	// (internal/auth/oidctest). Empty means the real provider.
@@ -56,6 +61,14 @@ func Load() (*Config, error) {
 	c.GitHubClientSecret = envOrDefault("BC_GITHUB_CLIENT_SECRET", "")
 	c.AgentWorkers = intEnvOrDefault("BC_AGENT_WORKERS", 4)
 	c.SchedPollInterval = intEnvOrDefault("BC_SCHED_POLL_INTERVAL", 60)
+	c.AllowSignup = true
+	if v := os.Getenv("BC_ALLOW_SIGNUP"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid BC_ALLOW_SIGNUP: %q (want true or false)", v)
+		}
+		c.AllowSignup = b
+	}
 
 	// Parse log level.
 	switch strings.ToLower(c.LogLevelStr) {

@@ -16,8 +16,8 @@ FROM users
 WHERE email = ?;
 
 -- name: LinkIdentity :exec
-INSERT INTO identities (id, user_id, provider, subject, email, last_login_at)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO identities (id, user_id, provider, subject, email, last_login_at, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: FindIdentityForLogin :one
 -- Login resolution (SPEC s7.3 step 1): (provider, subject) first, with the
@@ -76,3 +76,28 @@ WHERE id = 1;
 UPDATE platform_settings
 SET bootstrap_done = 1
 WHERE id = 1;
+
+-- name: ListSignInIdentities :many
+-- Settings -> Sign-in methods (WU-604): the caller's identities with the
+-- provider's display name. Never selects token_enc.
+SELECT i.id, i.provider, COALESCE(p.display_name, '') AS display_name, i.email,
+       i.last_login_at, i.created_at
+FROM identities i
+LEFT JOIN auth_providers p ON p.id = i.provider
+WHERE i.user_id = ?
+ORDER BY COALESCE(i.created_at, ''), i.id;
+
+-- name: FindUserIdentity :one
+SELECT id, provider, email
+FROM identities
+WHERE id = ?
+  AND user_id = ?;
+
+-- name: CountUserIdentities :one
+SELECT COUNT(*) FROM identities WHERE user_id = ?;
+
+-- name: DeleteUserIdentity :execrows
+-- identity.unlink: a user can only unlink their own identities.
+DELETE FROM identities
+WHERE id = ?
+  AND user_id = ?;

@@ -21,6 +21,7 @@ CREATE TABLE identities (
     email     TEXT NOT NULL DEFAULT '',
     token_enc BLOB,
     last_login_at TEXT, -- 0033
+    created_at TEXT, -- 0035
     UNIQUE (provider, subject)
 );
 

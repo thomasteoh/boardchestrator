@@ -218,3 +218,21 @@ func TestLoadOIDCProvidersInvalid(t *testing.T) {
 		})
 	}
 }
+
+// WU-604: BC_ALLOW_SIGNUP defaults to true and must be a boolean.
+func TestLoadAllowSignup(t *testing.T) {
+	baseEnv()
+	t.Setenv("BC_ALLOW_SIGNUP", "")
+	c, err := config.Load()
+	if err != nil || !c.AllowSignup {
+		t.Fatalf("default AllowSignup = %v, %v; want true", c != nil && c.AllowSignup, err)
+	}
+	t.Setenv("BC_ALLOW_SIGNUP", "false")
+	if c, err = config.Load(); err != nil || c.AllowSignup {
+		t.Fatalf("BC_ALLOW_SIGNUP=false gave %v, %v", c != nil && c.AllowSignup, err)
+	}
+	t.Setenv("BC_ALLOW_SIGNUP", "maybe")
+	if _, err := config.Load(); err == nil {
+		t.Fatal("BC_ALLOW_SIGNUP=maybe accepted")
+	}
+}

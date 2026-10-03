@@ -432,6 +432,7 @@ func TestExistingIdentitiesResolveAfterSeeding(t *testing.T) {
 	cfg := &config.Config{
 		GoogleClientID: srv.ClientID, GoogleClientSecret: srv.ClientSecret, GoogleIssuer: srv.Issuer(),
 		GitHubClientID: "gh-id", GitHubClientSecret: "gh-secret", GitHubWebBase: "http://127.0.0.1:9",
+		AllowSignup: true, // config.Load's BC_ALLOW_SIGNUP default
 	}
 	if err := idp.SeedFromConfig(context.Background(), h.db, encKey, cfg); err != nil {
 		t.Fatal(err)
@@ -482,7 +483,7 @@ func TestSeedFromConfig(t *testing.T) {
 		{ID: "taken", Issuer: "https://env.example.com", ClientID: "env-client"},
 		{ID: "needs-issuer", ClientID: "x", Preset: "okta"},
 		{ID: "logout", Issuer: "https://x.example.com", ClientID: "x"},
-	}}
+	}, AllowSignup: true}
 	err := idp.SeedFromConfig(ctx, d, encKey, cfg)
 	if err == nil || !strings.Contains(err.Error(), `"taken"`) || !strings.Contains(err.Error(), "NEEDS_ISSUER") ||
 		!strings.Contains(err.Error(), "reserved") {

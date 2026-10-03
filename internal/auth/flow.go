@@ -28,7 +28,8 @@ const FlowTTL = 10 * time.Minute
 // other use of BC_SECRET_KEY.
 const flowKeyInfo = "bc-auth-flow"
 
-// Flow intents (SPEC §7.2). WU-601 only issues IntentLogin.
+// Flow intents (SPEC §7.2). IntentLink is issued by the Sign-in methods page
+// (WU-604); IntentBootstrap arrives with WU-605.
 const (
 	IntentLogin     = "login"
 	IntentLink      = "link"
@@ -48,6 +49,10 @@ type Flow struct {
 	LinkSessionHash string `json:"ls,omitempty"`
 	Bootstrap       bool   `json:"bs,omitempty"`
 	LoginHint       string `json:"lh,omitempty"`
+	// InviteToken is the raw invite token when the person arrived through an
+	// invite link (WU-604). Possession of it may permit sign-up (SPEC §7.3
+	// step 4); resolution re-validates it.
+	InviteToken string `json:"iv,omitempty"`
 	Exp             int64  `json:"exp"`
 }
 

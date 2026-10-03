@@ -79,7 +79,7 @@ func SeedFromConfig(ctx context.Context, d *sql.DB, encKey []byte, cfg *config.C
 		upsert(sqlc.UpsertEnvAuthProviderParams{
 			ID: "google", Kind: KindOIDC, Preset: "google", DisplayName: g.DisplayName,
 			Issuer: issuer, ClientID: cfg.GoogleClientID, Scopes: strings.Join(g.Scopes, " "),
-			ClaimMapJson: "{}", TrustEmail: 1, AllowSignup: 1, Position: positionGoogle,
+			ClaimMapJson: "{}", TrustEmail: 1, AllowSignup: b2i(cfg.AllowSignup), Position: positionGoogle,
 		}, cfg.GoogleClientSecret)
 	}
 	if cfg.GitHubClientID != "" {
@@ -91,11 +91,11 @@ func SeedFromConfig(ctx context.Context, d *sql.DB, encKey []byte, cfg *config.C
 		upsert(sqlc.UpsertEnvAuthProviderParams{
 			ID: "github", Kind: KindGitHub, Preset: "github", DisplayName: gh.DisplayName,
 			Issuer: web, ClientID: cfg.GitHubClientID, Scopes: strings.Join(gh.Scopes, " "),
-			ClaimMapJson: "{}", TrustEmail: 1, AllowSignup: 1, Position: positionGitHub,
+			ClaimMapJson: "{}", TrustEmail: 1, AllowSignup: b2i(cfg.AllowSignup), Position: positionGitHub,
 		}, cfg.GitHubClientSecret)
 	}
 	for _, p := range cfg.OIDCProviders {
-		params, err := envOIDCParams(p)
+		params, err := envOIDCParams(p, cfg.AllowSignup)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -121,9 +121,9 @@ func SeedFromConfig(ctx context.Context, d *sql.DB, encKey []byte, cfg *config.C
 }
 
 // envOIDCParams validates one BC_OIDC_<NAME>_* provider and fills preset
-// defaults. Sign-up defaults to allowed for env providers: the operator who
-// set the variables controls the instance (WU-604 revisits sign-up policy).
-func envOIDCParams(p config.OIDCEnvProvider) (sqlc.UpsertEnvAuthProviderParams, error) {
+// defaults. Sign-up defaults to BC_ALLOW_SIGNUP (signupDefault), which itself
+// defaults to true: the operator who set the variables controls the instance.
+func envOIDCParams(p config.OIDCEnvProvider, signupDefault bool) (sqlc.UpsertEnvAuthProviderParams, error) {
 	fail := func(err error) (sqlc.UpsertEnvAuthProviderParams, error) {
 		return sqlc.UpsertEnvAuthProviderParams{}, fmt.Errorf("idp: BC_OIDC_%s_*: %w",
 			strings.ToUpper(strings.ReplaceAll(p.ID, "-", "_")), err)
@@ -163,7 +163,7 @@ func envOIDCParams(p config.OIDCEnvProvider) (sqlc.UpsertEnvAuthProviderParams, 
 	if p.TrustEmail != nil {
 		trust = *p.TrustEmail
 	}
-	signup := true
+	signup := signupDefault
 	if p.AllowSignup != nil {
 		signup = *p.AllowSignup
 	}

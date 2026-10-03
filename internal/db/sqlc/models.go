@@ -209,6 +209,7 @@ type Identity struct {
 	Email       string
 	TokenEnc    []byte
 	LastLoginAt sql.NullString
+	CreatedAt   sql.NullString
 }
 
 type Invite struct {
