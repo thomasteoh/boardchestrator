@@ -13,10 +13,13 @@ WHERE s.token_hash = ?
   AND u.deleted_at IS NULL;
 
 -- name: ListSessionsByUser :many
-SELECT token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at
-FROM sessions
-WHERE user_id = ?
-ORDER BY created_at DESC;
+-- session.list: the user's live sessions with how each was signed in.
+SELECT s.token_hash, s.user_id, s.ip, s.ua, s.created_at, s.last_seen_at, s.expires_at,
+       s.provider_id, s.auth_method, COALESCE(p.display_name, '') AS provider_name
+FROM sessions s
+LEFT JOIN auth_providers p ON p.id = s.provider_id
+WHERE s.user_id = ? AND s.expires_at > ?
+ORDER BY s.last_seen_at DESC, s.created_at DESC;
 
 -- name: TouchSession :exec
 UPDATE sessions
@@ -65,3 +68,18 @@ WHERE provider_id = ? AND idp_subject = ?;
 -- values (sqlc.slice): sessions must match the subject and one of them.
 DELETE FROM sessions
 WHERE provider_id = ? AND idp_subject = ? AND idp_sid IN (sqlc.slice('sids'));
+
+-- name: RevokeUserSessions :execrows
+-- session.revoke_all (everywhere) and user.sessions.revoke.
+DELETE FROM sessions
+WHERE user_id = ?;
+
+-- name: RevokeUserSessionsExcept :execrows
+-- session.revoke_all keeping the current session ("everywhere else").
+DELETE FROM sessions
+WHERE user_id = ? AND token_hash <> ?;
+
+-- name: RevokeUserProviderSessions :execrows
+-- identity.unlink: the user's sessions signed in through that provider.
+DELETE FROM sessions
+WHERE user_id = ? AND provider_id = ?;

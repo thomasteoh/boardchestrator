@@ -44,6 +44,7 @@ type ApiKey struct {
 	LastUsedAt sql.NullString
 	CreatedAt  string
 	RevokedAt  sql.NullString
+	ExpiresAt  sql.NullString
 }
 
 type Approval struct {

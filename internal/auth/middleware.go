@@ -197,6 +197,13 @@ func (c SessionConfig) ClearCookie(w http.ResponseWriter) {
 	clearSessionCookie(w)
 }
 
+// ClearSessionCookie expires the session cookie; for handlers that revoke
+// the current session (sign out everywhere, unlinking the identity it was
+// signed in through).
+func ClearSessionCookie(w http.ResponseWriter) {
+	clearSessionCookie(w)
+}
+
 func setSessionCookie(w http.ResponseWriter, raw string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,

@@ -10,6 +10,24 @@ import (
 	"database/sql"
 )
 
+const countUserMembershipOrgsExcept = `-- name: CountUserMembershipOrgsExcept :one
+SELECT count(DISTINCT org_id) FROM memberships
+WHERE actor_type = 'user' AND actor_id = ? AND org_id <> ?
+`
+
+type CountUserMembershipOrgsExceptParams struct {
+	ActorID string
+	OrgID   string
+}
+
+// How many orgs other than one the user still belongs to.
+func (q *Queries) CountUserMembershipOrgsExcept(ctx context.Context, arg CountUserMembershipOrgsExceptParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUserMembershipOrgsExcept, arg.ActorID, arg.OrgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createMembership = `-- name: CreateMembership :one
 INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, source)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -75,6 +93,27 @@ func (q *Queries) DeleteMembership(ctx context.Context, arg DeleteMembershipPara
 		arg.ResourceID,
 	)
 	return err
+}
+
+const deleteUserOrgMembershipsExcept = `-- name: DeleteUserOrgMembershipsExcept :execrows
+DELETE FROM memberships
+WHERE org_id = ? AND actor_type = 'user' AND actor_id = ? AND id <> ?
+`
+
+type DeleteUserOrgMembershipsExceptParams struct {
+	OrgID   string
+	ActorID string
+	ID      string
+}
+
+// SCIM deprovisioning of an org's last owner: every membership of the user
+// in the org except the preserved owner membership.
+func (q *Queries) DeleteUserOrgMembershipsExcept(ctx context.Context, arg DeleteUserOrgMembershipsExceptParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUserOrgMembershipsExcept, arg.OrgID, arg.ActorID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const findMembership = `-- name: FindMembership :one
@@ -222,6 +261,53 @@ func (q *Queries) FindOrgsByActor(ctx context.Context, actorID string) ([]FindOr
 	for rows.Next() {
 		var i FindOrgsByActorRow
 		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgOwnerCandidates = `-- name: ListOrgOwnerCandidates :many
+SELECT m.id, m.actor_id, COALESCE(m.role_id, '') AS role_id, COALESCE(r.grants_json, '[]') AS grants_json
+FROM memberships m
+JOIN roles r ON r.id = m.role_id
+JOIN users u ON u.id = m.actor_id
+WHERE m.org_id = ? AND m.actor_type = 'user' AND m.resource_type = 'org'
+  AND m.resource_id = m.org_id AND u.deleted_at IS NULL
+ORDER BY m.id
+`
+
+type ListOrgOwnerCandidatesRow struct {
+	ID         string
+	ActorID    string
+	RoleID     string
+	GrantsJson string
+}
+
+// Last-owner guard (WU-613): the org-level memberships of live users with
+// their role's grants; the caller keeps the owner-equivalent ones.
+func (q *Queries) ListOrgOwnerCandidates(ctx context.Context, orgID string) ([]ListOrgOwnerCandidatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgOwnerCandidates, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgOwnerCandidatesRow
+	for rows.Next() {
+		var i ListOrgOwnerCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActorID,
+			&i.RoleID,
+			&i.GrantsJson,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

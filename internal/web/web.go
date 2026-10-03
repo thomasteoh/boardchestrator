@@ -1357,6 +1357,8 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/user.theme.update", handleAction)
 	r.Post("/api/action/user.timezone.update", handleAction)
 	r.Post("/api/action/session.revoke", handleSessionRevoke)
+	r.Post("/api/action/session.revoke_all", handleSessionRevokeAll)
+	r.Post("/api/action/user.sessions.revoke", handleAction)
 	// Audit log routes (WU-110)
 	r.Get("/app/org/{orgID}/audit", handleAuditLog)
 	r.Get("/app/org/{orgID}/audit/export", handleAuditExport)

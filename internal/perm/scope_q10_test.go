@@ -38,7 +38,7 @@ var selfActions = []string{
 	"invite.accept",
 	"notif.list", "notif.mark_all_read", "notif.mark_read", "notif.unread_count",
 	"passkey.delete", "passkey.list", "passkey.rename", // WU-612
-	"session.revoke",
+	"session.list", "session.revoke", "session.revoke_all", // WU-613
 	"user.export", "user.theme.update", "user.timezone.update",
 }
 
@@ -235,6 +235,61 @@ func TestSelfSessionRevoke(t *testing.T) {
 	mustOK(t, "session.revoke", err)
 	if n := scalar(t, d, `SELECT COUNT(*) FROM sessions WHERE token_hash='h-plain'`); n != "0" {
 		t.Fatal("own session not revoked")
+	}
+}
+
+// TestSelfSessionLifecycle (WU-613): session.list shows only the caller's
+// sessions by opaque id; revoke by id and revoke_all never touch another
+// user's sessions.
+func TestSelfSessionLifecycle(t *testing.T) {
+	d, disp := q10DB(t)
+	ctx := context.Background()
+	if _, err := d.Exec(`INSERT INTO sessions (token_hash, user_id, expires_at) VALUES
+		('h-p1','u-plain','2099-01-01'),('h-p2','u-plain','2099-01-01'),('h-p3','u-plain','2099-01-01'),
+		('h-old','u-plain','2000-01-01'),('h-other','u-other','2099-01-01')`); err != nil {
+		t.Fatal(err)
+	}
+	me := user(q10Plain)
+	me.SessionID = action.SessionPublicID("h-p1")
+	out, err := disp.Dispatch(ctx, me, "session.list", json.RawMessage(`{}`), action.Opts{})
+	mustOK(t, "session.list", err)
+	list := out.(map[string]any)["sessions"].([]action.SessionView)
+	if len(list) != 3 || !list[0].Current || list[0].ID != action.SessionPublicID("h-p1") {
+		t.Fatalf("list: %+v", list)
+	}
+	for _, s := range list {
+		if s.ID == action.SessionPublicID("h-other") || s.ID == action.SessionPublicID("h-old") || strings.Contains(s.ID, "h-") {
+			t.Fatalf("list leaks: %+v", s)
+		}
+	}
+	// Another user's session id is not found.
+	in, _ := json.Marshal(map[string]string{"id": action.SessionPublicID("h-other")})
+	if _, err := disp.Dispatch(ctx, me, "session.revoke", in, action.Opts{}); err == nil {
+		t.Fatal("revoked another user's session by id")
+	}
+	in, _ = json.Marshal(map[string]string{"id": action.SessionPublicID("h-p2")})
+	_, err = disp.Dispatch(ctx, me, "session.revoke", in, action.Opts{})
+	mustOK(t, "session.revoke by id", err)
+	if n := scalar(t, d, `SELECT COUNT(*) FROM sessions WHERE token_hash='h-p2'`); n != "0" {
+		t.Fatal("own session not revoked by id")
+	}
+	// Everywhere else keeps the current one only.
+	_, err = disp.Dispatch(ctx, me, "session.revoke_all", json.RawMessage(`{"keep_current":true}`), action.Opts{})
+	mustOK(t, "session.revoke_all keep", err)
+	if got := scalar(t, d, `SELECT group_concat(token_hash) FROM sessions WHERE user_id='u-plain'`); got != "h-p1" {
+		t.Fatalf("after everywhere else: %s", got)
+	}
+	// Without a current session there is nothing to keep.
+	if _, err := disp.Dispatch(ctx, user(q10Plain), "session.revoke_all", json.RawMessage(`{"keep_current":true}`), action.Opts{}); !errors.Is(err, action.ErrNoCurrentSession) {
+		t.Fatalf("keep without current: %v", err)
+	}
+	_, err = disp.Dispatch(ctx, me, "session.revoke_all", json.RawMessage(`{}`), action.Opts{})
+	mustOK(t, "session.revoke_all", err)
+	if n := scalar(t, d, `SELECT COUNT(*) FROM sessions WHERE user_id='u-plain'`); n != "0" {
+		t.Fatal("everywhere left sessions")
+	}
+	if n := scalar(t, d, `SELECT COUNT(*) FROM sessions WHERE token_hash='h-other'`); n != "1" {
+		t.Fatal("another user's session was revoked")
 	}
 }
 

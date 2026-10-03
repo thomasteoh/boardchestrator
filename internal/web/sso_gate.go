@@ -23,7 +23,8 @@ import (
 // sessionActor is the user actor for a web session, carrying the session's
 // sign-in provider for SSO enforcement.
 func sessionActor(r *http.Request, sess auth.Session) action.Actor {
-	return action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: auth.ClientIP(r), AuthProviderID: sess.ProviderID}
+	return action.Actor{Type: action.ActorUser, ID: sess.UserID, IP: auth.ClientIP(r), AuthProviderID: sess.ProviderID,
+		SessionID: action.SessionPublicID(sess.TokenHash)}
 }
 
 // requestActor is the session actor, or the anonymous "placeholder" user the

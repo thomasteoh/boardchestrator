@@ -7,12 +7,13 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createAPIKey = `-- name: CreateAPIKey :one
-INSERT INTO api_keys (id, user_id, org_id, name, prefix, hash, scope_json)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, user_id, org_id, name, prefix, hash, scope_json, last_used_at, created_at, revoked_at
+INSERT INTO api_keys (id, user_id, org_id, name, prefix, hash, scope_json, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, user_id, org_id, name, prefix, hash, scope_json, last_used_at, created_at, revoked_at, expires_at
 `
 
 type CreateAPIKeyParams struct {
@@ -23,6 +24,7 @@ type CreateAPIKeyParams struct {
 	Prefix    string
 	Hash      string
 	ScopeJson string
+	ExpiresAt sql.NullString
 }
 
 func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error) {
@@ -34,6 +36,7 @@ func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (Api
 		arg.Prefix,
 		arg.Hash,
 		arg.ScopeJson,
+		arg.ExpiresAt,
 	)
 	var i ApiKey
 	err := row.Scan(
@@ -47,14 +50,16 @@ func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (Api
 		&i.LastUsedAt,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
 
 const findAPIKeyByID = `-- name: FindAPIKeyByID :one
-SELECT id, user_id, org_id, name, prefix, hash, scope_json, last_used_at, created_at, revoked_at
+SELECT id, user_id, org_id, name, prefix, hash, scope_json, last_used_at, created_at, revoked_at, expires_at
 FROM api_keys
 WHERE id = ? AND revoked_at IS NULL
+  AND (expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 `
 
 func (q *Queries) FindAPIKeyByID(ctx context.Context, id string) (ApiKey, error) {
@@ -71,16 +76,19 @@ func (q *Queries) FindAPIKeyByID(ctx context.Context, id string) (ApiKey, error)
 		&i.LastUsedAt,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
 
 const findAPIKeyByPrefix = `-- name: FindAPIKeyByPrefix :one
-SELECT id, user_id, org_id, name, prefix, hash, scope_json, last_used_at, created_at, revoked_at
+SELECT id, user_id, org_id, name, prefix, hash, scope_json, last_used_at, created_at, revoked_at, expires_at
 FROM api_keys
 WHERE prefix = ? AND revoked_at IS NULL
+  AND (expires_at IS NULL OR expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 `
 
+// SPEC s7.10: revoked and expired keys never authenticate.
 func (q *Queries) FindAPIKeyByPrefix(ctx context.Context, prefix string) (ApiKey, error) {
 	row := q.db.QueryRowContext(ctx, findAPIKeyByPrefix, prefix)
 	var i ApiKey
@@ -95,12 +103,13 @@ func (q *Queries) FindAPIKeyByPrefix(ctx context.Context, prefix string) (ApiKey
 		&i.LastUsedAt,
 		&i.CreatedAt,
 		&i.RevokedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
 
 const listAPIKeysByOrg = `-- name: ListAPIKeysByOrg :many
-SELECT id, user_id, org_id, name, prefix, hash, scope_json, last_used_at, created_at, revoked_at
+SELECT id, user_id, org_id, name, prefix, hash, scope_json, last_used_at, created_at, revoked_at, expires_at
 FROM api_keys
 WHERE org_id = ? AND revoked_at IS NULL
 ORDER BY created_at
@@ -126,6 +135,7 @@ func (q *Queries) ListAPIKeysByOrg(ctx context.Context, orgID string) ([]ApiKey,
 			&i.LastUsedAt,
 			&i.CreatedAt,
 			&i.RevokedAt,
+			&i.ExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -141,7 +151,7 @@ func (q *Queries) ListAPIKeysByOrg(ctx context.Context, orgID string) ([]ApiKey,
 }
 
 const listAPIKeysByUser = `-- name: ListAPIKeysByUser :many
-SELECT id, user_id, org_id, name, prefix, hash, scope_json, last_used_at, created_at, revoked_at
+SELECT id, user_id, org_id, name, prefix, hash, scope_json, last_used_at, created_at, revoked_at, expires_at
 FROM api_keys
 WHERE user_id = ? AND revoked_at IS NULL
 ORDER BY created_at
@@ -167,6 +177,7 @@ func (q *Queries) ListAPIKeysByUser(ctx context.Context, userID string) ([]ApiKe
 			&i.LastUsedAt,
 			&i.CreatedAt,
 			&i.RevokedAt,
+			&i.ExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -181,19 +192,146 @@ func (q *Queries) ListAPIKeysByUser(ctx context.Context, userID string) ([]ApiKe
 	return items, nil
 }
 
-const revokeAPIKey = `-- name: RevokeAPIKey :exec
+const listOrgAPIKeysWithOwner = `-- name: ListOrgAPIKeysWithOwner :many
+SELECT k.id, k.user_id, k.name, k.prefix, k.last_used_at, k.created_at, k.expires_at,
+       COALESCE(u.name, '') AS owner_name, COALESCE(u.email, '') AS owner_email
+FROM api_keys k
+LEFT JOIN users u ON u.id = k.user_id
+WHERE k.org_id = ? AND k.revoked_at IS NULL
+ORDER BY k.created_at, k.id
+`
+
+type ListOrgAPIKeysWithOwnerRow struct {
+	ID         string
+	UserID     string
+	Name       string
+	Prefix     string
+	LastUsedAt sql.NullString
+	CreatedAt  string
+	ExpiresAt  sql.NullString
+	OwnerName  string
+	OwnerEmail string
+}
+
+// apikey.org_list: every unrevoked key bound to the org with its owner.
+func (q *Queries) ListOrgAPIKeysWithOwner(ctx context.Context, orgID string) ([]ListOrgAPIKeysWithOwnerRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgAPIKeysWithOwner, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgAPIKeysWithOwnerRow
+	for rows.Next() {
+		var i ListOrgAPIKeysWithOwnerRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.Prefix,
+			&i.LastUsedAt,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.OwnerName,
+			&i.OwnerEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserOrgAPIKeys = `-- name: ListUserOrgAPIKeys :many
+SELECT id, user_id, org_id, name, prefix, hash, scope_json, last_used_at, created_at, revoked_at, expires_at
+FROM api_keys
+WHERE org_id = ? AND user_id = ? AND revoked_at IS NULL
+ORDER BY created_at, id
+`
+
+type ListUserOrgAPIKeysParams struct {
+	OrgID  string
+	UserID string
+}
+
+// A user's own unrevoked keys bound to one org (apikey.list).
+func (q *Queries) ListUserOrgAPIKeys(ctx context.Context, arg ListUserOrgAPIKeysParams) ([]ApiKey, error) {
+	rows, err := q.db.QueryContext(ctx, listUserOrgAPIKeys, arg.OrgID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ApiKey
+	for rows.Next() {
+		var i ApiKey
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.OrgID,
+			&i.Name,
+			&i.Prefix,
+			&i.Hash,
+			&i.ScopeJson,
+			&i.LastUsedAt,
+			&i.CreatedAt,
+			&i.RevokedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const revokeAPIKey = `-- name: RevokeAPIKey :execrows
 UPDATE api_keys SET revoked_at = strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')
-WHERE id = ? AND user_id = ?
+WHERE id = ? AND user_id = ? AND org_id = ? AND revoked_at IS NULL
 `
 
 type RevokeAPIKeyParams struct {
 	ID     string
 	UserID string
+	OrgID  string
 }
 
-func (q *Queries) RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) error {
-	_, err := q.db.ExecContext(ctx, revokeAPIKey, arg.ID, arg.UserID)
-	return err
+// apikey.revoke: the caller's own key in the org.
+func (q *Queries) RevokeAPIKey(ctx context.Context, arg RevokeAPIKeyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeAPIKey, arg.ID, arg.UserID, arg.OrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const revokeOrgAPIKey = `-- name: RevokeOrgAPIKey :execrows
+UPDATE api_keys SET revoked_at = strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')
+WHERE id = ? AND org_id = ? AND revoked_at IS NULL
+`
+
+type RevokeOrgAPIKeyParams struct {
+	ID    string
+	OrgID string
+}
+
+// apikey.org_revoke: any key bound to the org.
+func (q *Queries) RevokeOrgAPIKey(ctx context.Context, arg RevokeOrgAPIKeyParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeOrgAPIKey, arg.ID, arg.OrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const touchAPIKey = `-- name: TouchAPIKey :exec

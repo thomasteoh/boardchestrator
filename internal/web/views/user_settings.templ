@@ -44,38 +44,69 @@ templ UserSettingsPage(s Shell, theme, timezone string) {
 	}
 }
 
-// SessionRow represents a single session for display.
+// SessionRow represents a single session for display. ID is the opaque
+// session id (never the token or its hash).
 type SessionRow struct {
-	TokenHash  string
+	ID         string
 	IP         string
 	UA         string
+	Method     string
+	Provider   string
 	CreatedAt  string
 	LastSeenAt string
-	ExpiresAt  string
+	Current    bool
 }
 
-// SessionsList renders the session list fragment.
-templ SessionsList(sessions []SessionRow) {
+func sessionVals(id string) string {
+	return `{"id":"` + id + `"}`
+}
+
+// SessionsList renders the session list fragment (WU-613).
+templ SessionsList(csrf string, sessions []SessionRow) {
 	if len(sessions) == 0 {
 		<p>No active sessions.</p>
 	} else {
 		<ul class="bc-session-list">
 			for _, sess := range sessions {
-				<li class="bc-session-item">
-					<span class="bc-session-ip">{ sess.IP }</span>
+				<li class="bc-session-item" data-session-id={ sess.ID }>
+					if sess.Current {
+						<strong class="bc-session-current">This device</strong>
+					}
 					<span class="bc-session-ua">{ sess.UA }</span>
-					<span class="bc-session-time">Created: { sess.CreatedAt }</span>
+					<span class="bc-session-ip">{ sess.IP }</span>
+					<span class="bc-session-method">Signed in with { sess.Provider } ({ sess.Method })</span>
+					<span class="bc-session-time">Signed in: { sess.CreatedAt }</span>
 					<span class="bc-session-time">Last seen: { sess.LastSeenAt }</span>
 					<button class="bc-btn bc-btn-danger bc-session-revoke"
 						hx-post={ templ.URL("/api/action/session.revoke") }
-						hx-headers={ hxHeaders("") }
+						hx-headers={ hxHeaders(csrf) }
+						hx-vals={ sessionVals(sess.ID) }
 						hx-target="closest .bc-session-item"
-						hx-swap="outerHTML"
-						data-token-hash={ sess.TokenHash }>
-						Revoke
+						hx-swap="outerHTML">
+						if sess.Current {
+							Sign out
+						} else {
+							Revoke
+						}
 					</button>
 				</li>
 			}
 		</ul>
+		<div class="bc-session-actions">
+			<button class="bc-btn bc-btn-danger"
+				hx-post={ templ.URL("/api/action/session.revoke_all") }
+				hx-headers={ hxHeaders(csrf) }
+				hx-vals={ `{"keep_current":"1"}` }
+				hx-target="#sessions-list"
+				hx-swap="innerHTML"
+				hx-confirm="Sign out of every other device?">Sign out everywhere else</button>
+			<button class="bc-btn bc-btn-danger"
+				hx-post={ templ.URL("/api/action/session.revoke_all") }
+				hx-headers={ hxHeaders(csrf) }
+				hx-vals={ `{"keep_current":"0"}` }
+				hx-target="#sessions-list"
+				hx-swap="innerHTML"
+				hx-confirm="Sign out everywhere, including this device?">Sign out everywhere</button>
+		</div>
 	}
 }

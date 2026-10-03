@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"net/http"
@@ -47,9 +46,10 @@ func APIKeyAuthMiddleware(d *sql.DB) func(http.Handler) http.Handler {
 			secretHex := token[8:]
 
 			q := sqlc.New(d)
+			// Revoked and expired keys are not found (SPEC §7.10).
 			key, err := q.FindAPIKeyByPrefix(r.Context(), prefix)
 			if err != nil {
-				http.Error(w, "invalid or revoked API key", http.StatusUnauthorized)
+				http.Error(w, "invalid, expired or revoked API key", http.StatusUnauthorized)
 				return
 			}
 
@@ -59,8 +59,7 @@ func APIKeyAuthMiddleware(d *sql.DB) func(http.Handler) http.Handler {
 				http.Error(w, "invalid API key format", http.StatusUnauthorized)
 				return
 			}
-			hash := sha256.Sum256(secret)
-			if hex.EncodeToString(hash[:]) != key.Hash {
+			if !action.APIKeyHashMatches(action.APIKeyHash(secret), key.Hash) {
 				http.Error(w, "invalid API key", http.StatusUnauthorized)
 				return
 			}

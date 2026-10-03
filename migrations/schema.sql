@@ -470,6 +470,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     last_used_at TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
     revoked_at TEXT,
+    expires_at TEXT, -- 0041
     UNIQUE(org_id, name)
 );
 -- 0018: providers + provider_orgs (SPEC §10 — LLM provider management)

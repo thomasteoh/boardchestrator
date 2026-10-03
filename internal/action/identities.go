@@ -142,7 +142,12 @@ func handleIdentityUnlink(ctx context.Context, ac ActionCtx, in json.RawMessage)
 	if left < 1 {
 		return nil, ErrLastSignInMethod
 	}
-	detail, err := json.Marshal(map[string]string{"provider": ident.Provider, "identity_id": ident.ID})
+	// Sessions signed in through the removed identity end with it (WU-613).
+	revoked, err := RevokeUserProviderSessions(ctx, ac.Tx.Queries, uid, ident.Provider)
+	if err != nil {
+		return nil, fmt.Errorf("identity.unlink: sessions: %w", err)
+	}
+	detail, err := json.Marshal(map[string]any{"provider": ident.Provider, "identity_id": ident.ID, "sessions_revoked": revoked})
 	if err != nil {
 		return nil, fmt.Errorf("identity.unlink: %w", err)
 	}
@@ -158,5 +163,5 @@ func handleIdentityUnlink(ctx context.Context, ac ActionCtx, in json.RawMessage)
 	}); err != nil {
 		return nil, fmt.Errorf("identity.unlink: audit: %w", err)
 	}
-	return map[string]string{"id": ident.ID, "provider": ident.Provider}, nil
+	return map[string]any{"id": ident.ID, "provider": ident.Provider, "sessions_revoked": revoked}, nil
 }

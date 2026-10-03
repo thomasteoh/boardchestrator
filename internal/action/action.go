@@ -134,6 +134,10 @@ type Actor struct {
 	// acts through (sessions.provider_id; "" for none). Org SSO enforcement
 	// (SPEC §7.4) checks it against the org's own providers.
 	AuthProviderID string
+	// SessionID is the opaque id (SessionPublicID) of the web session a
+	// user actor acts through; "" for none. session.list marks it current
+	// and session.revoke_all can keep it (WU-613).
+	SessionID string
 }
 
 // ref returns a stable string identifying the actor for idempotency and audit

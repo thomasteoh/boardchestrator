@@ -158,10 +158,17 @@ func handleSignInMethodUnlink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	_, err = disp.Dispatch(r.Context(), actor, "identity.unlink", raw, action.Opts{})
+	out, err := disp.Dispatch(r.Context(), actor, "identity.unlink", raw, action.Opts{})
 	dest := auth.SignInMethodsURL + "?notice=unlinked"
 	switch {
 	case err == nil:
+		// The unlink revoked the sessions signed in through that identity;
+		// when this is one of them the browser is signed out (WU-613).
+		if m, ok := out.(map[string]any); ok && actor.AuthProviderID != "" && m["provider"] == actor.AuthProviderID {
+			auth.ClearSessionCookie(w)
+			http.Redirect(w, r, auth.LoginURL+"?signed_out=1", http.StatusSeeOther)
+			return
+		}
 	case errors.Is(err, action.ErrLastSignInMethod):
 		dest = auth.SignInMethodsURL + "?error=last_method"
 	case errors.Is(err, sql.ErrNoRows):

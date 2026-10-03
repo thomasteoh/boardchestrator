@@ -241,24 +241,35 @@ func (q *Queries) GetSessionLogoutInfo(ctx context.Context, tokenHash string) (G
 }
 
 const listSessionsByUser = `-- name: ListSessionsByUser :many
-SELECT token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at
-FROM sessions
-WHERE user_id = ?
-ORDER BY created_at DESC
+SELECT s.token_hash, s.user_id, s.ip, s.ua, s.created_at, s.last_seen_at, s.expires_at,
+       s.provider_id, s.auth_method, COALESCE(p.display_name, '') AS provider_name
+FROM sessions s
+LEFT JOIN auth_providers p ON p.id = s.provider_id
+WHERE s.user_id = ? AND s.expires_at > ?
+ORDER BY s.last_seen_at DESC, s.created_at DESC
 `
 
-type ListSessionsByUserRow struct {
-	TokenHash  string
-	UserID     string
-	Ip         string
-	Ua         string
-	CreatedAt  string
-	LastSeenAt string
-	ExpiresAt  string
+type ListSessionsByUserParams struct {
+	UserID    string
+	ExpiresAt string
 }
 
-func (q *Queries) ListSessionsByUser(ctx context.Context, userID string) ([]ListSessionsByUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, listSessionsByUser, userID)
+type ListSessionsByUserRow struct {
+	TokenHash    string
+	UserID       string
+	Ip           string
+	Ua           string
+	CreatedAt    string
+	LastSeenAt   string
+	ExpiresAt    string
+	ProviderID   string
+	AuthMethod   string
+	ProviderName string
+}
+
+// session.list: the user's live sessions with how each was signed in.
+func (q *Queries) ListSessionsByUser(ctx context.Context, arg ListSessionsByUserParams) ([]ListSessionsByUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionsByUser, arg.UserID, arg.ExpiresAt)
 	if err != nil {
 		return nil, err
 	}
@@ -274,6 +285,9 @@ func (q *Queries) ListSessionsByUser(ctx context.Context, userID string) ([]List
 			&i.CreatedAt,
 			&i.LastSeenAt,
 			&i.ExpiresAt,
+			&i.ProviderID,
+			&i.AuthMethod,
+			&i.ProviderName,
 		); err != nil {
 			return nil, err
 		}
@@ -286,6 +300,58 @@ func (q *Queries) ListSessionsByUser(ctx context.Context, userID string) ([]List
 		return nil, err
 	}
 	return items, nil
+}
+
+const revokeUserProviderSessions = `-- name: RevokeUserProviderSessions :execrows
+DELETE FROM sessions
+WHERE user_id = ? AND provider_id = ?
+`
+
+type RevokeUserProviderSessionsParams struct {
+	UserID     string
+	ProviderID string
+}
+
+// identity.unlink: the user's sessions signed in through that provider.
+func (q *Queries) RevokeUserProviderSessions(ctx context.Context, arg RevokeUserProviderSessionsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeUserProviderSessions, arg.UserID, arg.ProviderID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const revokeUserSessions = `-- name: RevokeUserSessions :execrows
+DELETE FROM sessions
+WHERE user_id = ?
+`
+
+// session.revoke_all (everywhere) and user.sessions.revoke.
+func (q *Queries) RevokeUserSessions(ctx context.Context, userID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeUserSessions, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const revokeUserSessionsExcept = `-- name: RevokeUserSessionsExcept :execrows
+DELETE FROM sessions
+WHERE user_id = ? AND token_hash <> ?
+`
+
+type RevokeUserSessionsExceptParams struct {
+	UserID    string
+	TokenHash string
+}
+
+// session.revoke_all keeping the current session ("everywhere else").
+func (q *Queries) RevokeUserSessionsExcept(ctx context.Context, arg RevokeUserSessionsExceptParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeUserSessionsExcept, arg.UserID, arg.TokenHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const touchSession = `-- name: TouchSession :exec
