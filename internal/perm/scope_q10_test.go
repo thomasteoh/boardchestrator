@@ -37,6 +37,7 @@ var selfActions = []string{
 	"identity.list", "identity.unlink", // WU-604
 	"invite.accept",
 	"notif.list", "notif.mark_all_read", "notif.mark_read", "notif.unread_count",
+	"passkey.delete", "passkey.list", "passkey.rename", // WU-612
 	"session.revoke",
 	"user.export", "user.theme.update", "user.timezone.update",
 }
@@ -423,5 +424,52 @@ func TestSelfIdentities(t *testing.T) {
 	}
 	if n, err := action.SignInMethodCount(ctx, sqlc.New(d), q10Plain); err != nil || n != 1 {
 		t.Errorf("SignInMethodCount = %d, %v", n, err)
+	}
+}
+
+func TestSelfPasskeys(t *testing.T) {
+	d, disp := q10DB(t)
+	ctx := context.Background()
+	if _, err := d.Exec(`INSERT INTO identities (id, user_id, provider, subject, email) VALUES ('i-p1','u-plain','google','p-g','plain@x.test')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`INSERT INTO webauthn_credentials (id, user_id, credential_id, public_key, name) VALUES
+		('pk-p','u-plain',X'01',X'AA','Mine'),('pk-o','u-other',X'02',X'BB','Theirs')`); err != nil {
+		t.Fatal(err)
+	}
+	out, err := disp.Dispatch(ctx, user(q10Plain), "passkey.list", json.RawMessage(`{}`), action.Opts{})
+	mustOK(t, "passkey.list", err)
+	b, _ := json.Marshal(out)
+	if !strings.Contains(string(b), "pk-p") || strings.Contains(string(b), "pk-o") || strings.Contains(string(b), "public") {
+		t.Fatalf("passkey.list = %s", b)
+	}
+	_, err = disp.Dispatch(ctx, user(q10Plain), "passkey.list", json.RawMessage(`{"user_id":"u-other"}`), action.Opts{})
+	mustForbid(t, "passkey.list", err)
+	for _, name := range []string{"passkey.rename", "passkey.delete"} {
+		if _, err := disp.Dispatch(ctx, user(q10Plain), name, json.RawMessage(`{"id":"pk-o","name":"x"}`), action.Opts{}); !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("%s another user's passkey: err = %v", name, err)
+		}
+		_, err = disp.Dispatch(ctx, user(q10Plain), name, json.RawMessage(`{"id":"pk-o","name":"x","user_id":"u-other"}`), action.Opts{})
+		mustForbid(t, name, err)
+	}
+	if n := scalar(t, d, `SELECT COUNT(*) FROM webauthn_credentials WHERE id='pk-o' AND name='Theirs'`); n != "1" {
+		t.Fatal("another user's passkey was changed")
+	}
+	_, err = disp.Dispatch(ctx, user(q10Plain), "passkey.rename", json.RawMessage(`{"id":"pk-p","name":"  Laptop  "}`), action.Opts{})
+	mustOK(t, "passkey.rename", err)
+	if n := scalar(t, d, `SELECT name FROM webauthn_credentials WHERE id='pk-p'`); n != "Laptop" {
+		t.Fatalf("renamed to %q", n)
+	}
+	if _, err := disp.Dispatch(ctx, user(q10Plain), "passkey.rename", json.RawMessage(`{"id":"pk-p","name":""}`), action.Opts{}); !errors.Is(err, action.ErrPasskeyName) {
+		t.Errorf("empty name: %v", err)
+	}
+	// The passkey and the identity are two methods: either may go, not both.
+	_, err = disp.Dispatch(ctx, user(q10Plain), "identity.unlink", json.RawMessage(`{"id":"i-p1"}`), action.Opts{})
+	mustOK(t, "identity.unlink with a passkey", err)
+	if _, err := disp.Dispatch(ctx, user(q10Plain), "passkey.delete", json.RawMessage(`{"id":"pk-p"}`), action.Opts{}); !errors.Is(err, action.ErrLastSignInMethod) {
+		t.Errorf("last-method passkey delete: %v", err)
+	}
+	if n := scalar(t, d, `SELECT COUNT(*) FROM audit_log WHERE action='passkey.delete'`); n != "0" {
+		t.Errorf("refused delete audited: %s", n)
 	}
 }

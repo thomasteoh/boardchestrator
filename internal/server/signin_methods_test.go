@@ -51,6 +51,9 @@ type smOpts struct {
 	trustedProxies   []netip.Prefix
 	// WU-611: the per-token SCIM rate limit (zero = production default).
 	scimRate config.RateLimit
+	// WU-612: BC_BASE_URL on "localhost" instead of 127.0.0.1, which a
+	// WebAuthn RP ID cannot be.
+	localhost bool
 }
 
 func newSMHarness(t *testing.T, o smOpts) *smHarness {
@@ -80,6 +83,9 @@ func newSMHarness(t *testing.T, o smOpts) *smHarness {
 	cfg := testConfig()
 	cfg.SessionSecret = smSessionSecret
 	cfg.BaseURL = app.URL
+	if o.localhost {
+		cfg.BaseURL = strings.Replace(app.URL, "127.0.0.1", "localhost", 1)
+	}
 	cfg.AllowSignup = true
 	cfg.AdminEmails = o.adminEmails
 	// These tests sign in many times from 127.0.0.1; the sign-in rate limit
