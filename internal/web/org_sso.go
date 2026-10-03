@@ -97,6 +97,11 @@ func ssoActor(w http.ResponseWriter, r *http.Request, orgID string) (action.Acto
 // ssoDenied renders the refusal for a dispatch error that is not the
 // action's own: no permission or not a member of the org.
 func ssoDenied(w http.ResponseWriter, r *http.Request, err error) bool {
+	var sso action.ErrSSORequired
+	if errors.As(err, &sso) {
+		RenderSSORequired(w, r, sso)
+		return true
+	}
 	if errors.Is(err, action.ErrForbidden) || errors.Is(err, action.ErrScope) {
 		renderStatusPage(w, r, http.StatusForbidden, "Forbidden",
 			"You need permission to manage single sign-on for this organisation.")
@@ -145,6 +150,15 @@ func handleOrgSSO(w http.ResponseWriter, r *http.Request) {
 			ID: dm.ID, Domain: dm.Domain, Status: dm.Status, VerifiedAt: displayDate(dm.VerifiedAt),
 			RecordName: dm.RecordName, RecordValue: dm.RecordValue,
 		})
+	}
+	if err := orgSSOSections(r, actor, orgID, &d); err != nil {
+		if ssoDenied(w, r, err) {
+			return
+		}
+		ref := idpRef()
+		slog.Error("org sso: providers", "ref", ref, "err", err)
+		renderStatusPage(w, r, http.StatusInternalServerError, "Something went wrong", "Reference: "+ref)
+		return
 	}
 	label := d.OrgName
 	if label == "" {

@@ -41,7 +41,7 @@ type smHarness struct {
 
 type smOpts struct {
 	// blockOrgPrivate keeps BC_ORG_IDP_ALLOW_PRIVATE at its default (off).
-	blockOrgPrivate bool
+	blockOrgPrivate       bool
 	corpTrust, corpSignup bool
 	unclaimed             bool // platform not bootstrapped
 	adminEmails           []string

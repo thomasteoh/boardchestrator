@@ -167,3 +167,122 @@ templ LoginSSOForm(email, returnTo, invite string, notFound bool) {
 		<button type="submit" class="bc-btn">Continue with SSO</button>
 	</form>
 }
+
+// OrgIdPBase is the URL prefix of an organisation's provider pages (WU-607).
+func OrgIdPBase(orgID string) string {
+	return OrgSSOURL(orgID) + "/providers"
+}
+
+// OrgSSOEnforceURL is the enforcement toggle's form target.
+func OrgSSOEnforceURL(orgID string) string {
+	return OrgSSOURL(orgID) + "/enforcement"
+}
+
+// OrgIdPSectionData is the "Identity provider" section.
+type OrgIdPSectionData struct {
+	OrgID   string
+	CSRF    string
+	Rows    []IdPRow
+	Presets []IdPPresetOption
+}
+
+// OrgIdPSection lists the organisation's providers with their callback
+// URLs and offers OIDC presets to add one.
+templ OrgIdPSection(d OrgIdPSectionData) {
+	<p class="bc-muted">People on your verified domains who sign in with SSO are sent here. Register the callback URL shown with your identity provider.</p>
+	if len(d.Rows) == 0 {
+		<p class="bc-empty-state">No identity provider yet. Add one below.</p>
+	} else {
+		<ul class="bc-signin-methods" aria-label="Identity providers">
+			for _, r := range d.Rows {
+				<li class="bc-sso-domain">
+					<div class="bc-signin-method">
+						<a class="bc-link bc-signin-method-name" href={ templ.SafeURL(OrgIdPBase(d.OrgID) + "/" + r.ID + "/edit") }>{ r.Name }</a>
+						<span class="bc-hint">{ r.PresetName }</span>
+						if r.Enabled {
+							<span class="bc-badge">Enabled</span>
+						} else {
+							<span class="bc-badge bc-badge-muted">Disabled</span>
+						}
+						<span class="bc-row-actions bc-sso-domain-actions">
+							if r.Enabled {
+								@orgIdPPostButton(d.CSRF, d.OrgID, r.ID, "disable", "Disable", "")
+							} else {
+								@orgIdPPostButton(d.CSRF, d.OrgID, r.ID, "enable", "Enable", "")
+							}
+							if r.Identities == 0 {
+								@orgIdPPostButton(d.CSRF, d.OrgID, r.ID, "delete", "Delete", "bc-btn-danger")
+							}
+						</span>
+					</div>
+					<p class="bc-hint">Callback URL: <code class="bc-copyable">{ r.CallbackURL }</code></p>
+				</li>
+			}
+		</ul>
+	}
+	<h3>Add an identity provider</h3>
+	<ul class="bc-preset-grid" aria-label="Provider types">
+		for _, p := range d.Presets {
+			<li>
+				<a class="bc-btn bc-login-btn" href={ templ.SafeURL(OrgIdPBase(d.OrgID) + "/new?preset=" + p.ID) }>
+					@providerMark(p.ID, p.Name)
+					<span>{ p.Name }</span>
+				</a>
+			</li>
+		}
+	</ul>
+}
+
+templ orgIdPPostButton(csrf, orgID, id, verb, label, class string) {
+	<form method="post" action={ templ.SafeURL(OrgIdPBase(orgID) + "/" + id + "/" + verb) } class="bc-inline-form" hx-boost="false">
+		<input type="hidden" name="csrf_token" value={ csrf }/>
+		<button type="submit" class={ "bc-btn", "bc-btn-sm", class }>{ label }</button>
+	</form>
+}
+
+// OrgEnforcementData is the "Enforcement" section.
+type OrgEnforcementData struct {
+	OrgID    string
+	CSRF     string
+	Enforced bool
+	// CanEnable is false when turning enforcement on would be refused; Hint
+	// says why.
+	CanEnable bool
+	Hint      string
+}
+
+// OrgEnforcementSection shows and toggles "Require single sign-on".
+templ OrgEnforcementSection(d OrgEnforcementData) {
+	<p class="bc-muted">When required, members can only work in this organisation from a session signed in through one of its identity providers. API keys and agents are not affected. Platform owners keep access for recovery.</p>
+	<form method="post" action={ templ.SafeURL(OrgSSOEnforceURL(d.OrgID)) } class="bc-form" hx-boost="false">
+		<input type="hidden" name="csrf_token" value={ d.CSRF }/>
+		if d.Enforced {
+			<p><span class="bc-badge">Single sign-on required</span></p>
+			<input type="hidden" name="enforce_sso" value="0"/>
+			<button type="submit" class="bc-btn">Stop requiring single sign-on</button>
+		} else {
+			<p><span class="bc-badge bc-badge-muted">Not required</span></p>
+			if d.Hint != "" {
+				<p class="bc-hint">{ d.Hint }</p>
+			}
+			<input type="hidden" name="enforce_sso" value="1"/>
+			<button type="submit" class="bc-btn bc-btn-primary" disabled?={ !d.CanEnable }>Require single sign-on</button>
+		}
+	</form>
+}
+
+// OrgIdPFormPage is the add/edit form for one organisation provider.
+templ OrgIdPFormPage(s Shell, orgID string, f IdPForm, breadcrumbs []Breadcrumb) {
+	@Base(s) {
+		@Breadcrumbs(breadcrumbs)
+		<div class="bc-settings-page">
+			<p><a class="bc-link" href={ templ.SafeURL(OrgSSOURL(orgID)) }>Back to single sign-on</a></p>
+			if f.Editing {
+				<h1>{ f.DisplayName }</h1>
+			} else {
+				<h1>Add { f.PresetName }</h1>
+			}
+			@IdPFormBody(s.CSRF, f)
+		</div>
+	}
+}

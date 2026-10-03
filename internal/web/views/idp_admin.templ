@@ -81,13 +81,28 @@ type IdPForm struct {
 	// carries a placeholder id.
 	CallbackURL string
 	Error       string
+	// Base is the URL prefix the form posts under ("" = IdPAdminBase); the
+	// org SSO page uses its own (WU-607).
+	Base string
+	// OrgOwned hides open sign-up (never allowed for an organisation's
+	// provider) and explains email trust in terms of verified domains.
+	OrgOwned bool
+	// IDPrefix is the id prefix an org provider must carry.
+	IDPrefix string
+}
+
+func (f IdPForm) base() string {
+	if f.Base != "" {
+		return f.Base
+	}
+	return IdPAdminBase
 }
 
 func (f IdPForm) action() templ.SafeURL {
 	if f.Editing {
-		return templ.SafeURL(IdPAdminBase + "/" + f.ID + "/update")
+		return templ.SafeURL(f.base() + "/" + f.ID + "/update")
 	}
-	return templ.SafeURL(IdPAdminBase)
+	return templ.SafeURL(f.base())
 }
 
 func (f IdPForm) isOIDC() bool { return f.Kind == "oidc" }
@@ -230,130 +245,146 @@ templ IdPFormPage(s Shell, f IdPForm) {
 				<p class="bc-alert bc-alert-info" role="status">This provider is configured by environment variables. Change those and restart to update it.</p>
 			}
 			@idpNotices("", f.Error)
-			<div class="bc-callout">
-				<p><strong>Callback URL</strong> to register with { f.PresetName }:</p>
-				<p><code class="bc-copyable">{ f.CallbackURL }</code></p>
-				if !f.Editing {
-					<p class="bc-hint">Replace <code>your-id</code> with the provider ID you choose below.</p>
-				}
-				if f.DocsURL != "" {
-					<p class="bc-hint"><a class="bc-link" href={ templ.SafeURL(f.DocsURL) } rel="noopener noreferrer" target="_blank">{ f.PresetName } set-up guide</a></p>
-				}
-			</div>
-			<form method="post" action={ f.action() } class="bc-form bc-form-wide" hx-boost="false">
-				<input type="hidden" name="csrf_token" value={ s.CSRF }/>
-				<input type="hidden" name="preset" value={ f.Preset }/>
-				<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
-					<legend>Provider</legend>
-					<label>
-						Provider ID
-						if f.Editing {
-							<input class="bc-input" type="text" value={ f.ID } readonly/>
-						} else {
-							<input class="bc-input" type="text" name="id" value={ f.ID } required pattern="[a-z0-9][a-z0-9-]{0,62}" maxlength="63" autocomplete="off"/>
-							<span class="bc-hint">Lower-case letters, digits and hyphens. It appears in the callback URL and can't be changed later.</span>
-						}
-					</label>
-					<label>
-						Display name
-						<input class="bc-input" type="text" name="display_name" value={ f.DisplayName } maxlength="100" placeholder={ f.PresetName }/>
-						<span class="bc-hint">Shown on the sign-in button as "Continue with …".</span>
-					</label>
-					for _, p := range f.Params {
-						<label>
-							{ p.Label }
-							<input class="bc-input" type="text" name={ "param_" + p.Name } value={ p.Value } placeholder={ p.Default } required?={ p.Required }/>
-							if p.Help != "" {
-								<span class="bc-hint">{ p.Help }</span>
-							}
-						</label>
-					}
-				</fieldset>
-				<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
-					<legend>Client credentials</legend>
-					<label>
-						Client ID
-						<input class="bc-input" type="text" name="client_id" value={ f.ClientID } required maxlength="512" autocomplete="off"/>
-					</label>
-					<label>
-						Client secret
-						if f.Editing {
-							if f.SecretSet {
-								<span class="bc-hint">A secret is set. Leave this blank to keep it.</span>
-							} else {
-								<span class="bc-hint">No secret is set.</span>
-							}
-						}
-						<input class="bc-input" type="password" name="client_secret" value="" autocomplete="new-password" maxlength="4096"/>
-					</label>
-				</fieldset>
-				if f.isOIDC() {
-					<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
-						<legend>Scopes and claims</legend>
-						<label>
-							Scopes
-							<input class="bc-input" type="text" name="scopes" value={ f.Scopes } placeholder={ f.DefaultScopes }/>
-							<span class="bc-hint">Space-separated. Leave blank for the defaults; must include openid.</span>
-						</label>
-						for _, c := range f.Claims {
-							<label>
-								{ c.Label } claim
-								<input class="bc-input" type="text" name={ "claim_" + c.Key } value={ c.Value } placeholder={ c.Default }/>
-							</label>
-						}
-						<span class="bc-hint">Leave a claim blank to use the default shown. Nested claims use dots, e.g. <code>realm_access.roles</code>.</span>
-						if f.ShowTenants {
-							<label>
-								Allowed tenants
-								<textarea class="bc-input bc-textarea" name="allowed_tenants" rows="3">{ f.AllowedTenants }</textarea>
-								<span class="bc-hint">Multi-tenant mode only (tenant organizations or common): one directory (tenant) ID per line. Blank allows any tenant.</span>
-							</label>
-						}
-						<div>
-							<button type="button" class="bc-btn bc-btn-secondary" hx-post={ IdPAdminBase + "/discover" } hx-include="closest form" hx-target="#discover-result" hx-swap="innerHTML">Test discovery</button>
-							<div id="discover-result" aria-live="polite"></div>
-						</div>
-					</fieldset>
-				}
-				<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
-					<legend>Sign-in policy</legend>
-					<label class="bc-check">
-						<input class="bc-checkbox" type="checkbox" name="trust_email" value="1" checked?={ f.TrustEmail }/>
-						Trust this provider's verified email addresses
-					</label>
-					<p class="bc-alert bc-alert-warning">
-						When trusted, a first sign-in through this provider is linked to an existing account with the same verified email. Only trust a provider whose users can't choose or change their own email address, such as your organisation's own directory. Trusting a provider you don't control lets anyone who can register that email there take over the matching account here.
-					</p>
-					<label class="bc-check">
-						<input class="bc-checkbox" type="checkbox" name="allow_signup" value="1" checked?={ f.AllowSignup }/>
-						Let anyone who signs in through this provider create an account
-					</label>
-					<label>
-						Position
-						<input class="bc-input" type="number" name="position" value={ f.Position } min="0" max="100000"/>
-						<span class="bc-hint">Lower numbers appear first on the sign-in page.</span>
-					</label>
-					if !f.Editing {
-						<label class="bc-check">
-							<input class="bc-checkbox" type="checkbox" name="enabled" value="1" checked?={ f.Enabled }/>
-							Show on the sign-in page straight away
-						</label>
-					}
-				</fieldset>
-				if !f.ReadOnly {
-					<div class="bc-form-actions">
-						<button type="submit" class="bc-btn bc-btn-primary">
-							if f.Editing {
-								Save changes
-							} else {
-								Add provider
-							}
-						</button>
-					</div>
-				}
-			</form>
+			@IdPFormBody(s.CSRF, f)
 		</div>
 	}
+}
+
+// IdPFormBody is the provider form: callback URL and the fields. The
+// platform admin page and Org settings -> Single sign-on both use it.
+templ IdPFormBody(csrf string, f IdPForm) {
+	<div class="bc-callout">
+		<p><strong>Callback URL</strong> to register with { f.PresetName }:</p>
+		<p><code class="bc-copyable">{ f.CallbackURL }</code></p>
+		if !f.Editing {
+			<p class="bc-hint">Replace <code>your-id</code> with the provider ID you choose below.</p>
+		}
+		if f.DocsURL != "" {
+			<p class="bc-hint"><a class="bc-link" href={ templ.SafeURL(f.DocsURL) } rel="noopener noreferrer" target="_blank">{ f.PresetName } set-up guide</a></p>
+		}
+	</div>
+	<form method="post" action={ f.action() } class="bc-form bc-form-wide" hx-boost="false">
+		<input type="hidden" name="csrf_token" value={ csrf }/>
+		<input type="hidden" name="preset" value={ f.Preset }/>
+		<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
+			<legend>Provider</legend>
+			<label>
+				Provider ID
+				if f.Editing {
+					<input class="bc-input" type="text" value={ f.ID } readonly/>
+				} else {
+					<input class="bc-input" type="text" name="id" value={ f.ID } required pattern="[a-z0-9][a-z0-9-]{0,62}" maxlength="63" autocomplete="off"/>
+					if f.IDPrefix != "" {
+						<span class="bc-hint">Must start with <code>{ f.IDPrefix }</code>, for example <code>{ f.IDPrefix }sso</code>. Lower-case letters, digits and hyphens. It appears in the callback URL and can't be changed later.</span>
+					} else {
+						<span class="bc-hint">Lower-case letters, digits and hyphens. It appears in the callback URL and can't be changed later.</span>
+					}
+				}
+			</label>
+			<label>
+				Display name
+				<input class="bc-input" type="text" name="display_name" value={ f.DisplayName } maxlength="100" placeholder={ f.PresetName }/>
+				<span class="bc-hint">Shown on the sign-in button as "Continue with …".</span>
+			</label>
+			for _, p := range f.Params {
+				<label>
+					{ p.Label }
+					<input class="bc-input" type="text" name={ "param_" + p.Name } value={ p.Value } placeholder={ p.Default } required?={ p.Required }/>
+					if p.Help != "" {
+						<span class="bc-hint">{ p.Help }</span>
+					}
+				</label>
+			}
+		</fieldset>
+		<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
+			<legend>Client credentials</legend>
+			<label>
+				Client ID
+				<input class="bc-input" type="text" name="client_id" value={ f.ClientID } required maxlength="512" autocomplete="off"/>
+			</label>
+			<label>
+				Client secret
+				if f.Editing {
+					if f.SecretSet {
+						<span class="bc-hint">A secret is set. Leave this blank to keep it.</span>
+					} else {
+						<span class="bc-hint">No secret is set.</span>
+					}
+				}
+				<input class="bc-input" type="password" name="client_secret" value="" autocomplete="new-password" maxlength="4096"/>
+			</label>
+		</fieldset>
+		if f.isOIDC() {
+			<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
+				<legend>Scopes and claims</legend>
+				<label>
+					Scopes
+					<input class="bc-input" type="text" name="scopes" value={ f.Scopes } placeholder={ f.DefaultScopes }/>
+					<span class="bc-hint">Space-separated. Leave blank for the defaults; must include openid.</span>
+				</label>
+				for _, c := range f.Claims {
+					<label>
+						{ c.Label } claim
+						<input class="bc-input" type="text" name={ "claim_" + c.Key } value={ c.Value } placeholder={ c.Default }/>
+					</label>
+				}
+				<span class="bc-hint">Leave a claim blank to use the default shown. Nested claims use dots, e.g. <code>realm_access.roles</code>.</span>
+				if f.ShowTenants {
+					<label>
+						Allowed tenants
+						<textarea class="bc-input bc-textarea" name="allowed_tenants" rows="3">{ f.AllowedTenants }</textarea>
+						<span class="bc-hint">Multi-tenant mode only (tenant organizations or common): one directory (tenant) ID per line. Blank allows any tenant.</span>
+					</label>
+				}
+				<div>
+					<button type="button" class="bc-btn bc-btn-secondary" hx-post={ f.base() + "/discover" } hx-include="closest form" hx-target="#discover-result" hx-swap="innerHTML">Test discovery</button>
+					<div id="discover-result" aria-live="polite"></div>
+				</div>
+			</fieldset>
+		}
+		<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
+			<legend>Sign-in policy</legend>
+			<label class="bc-check">
+				<input class="bc-checkbox" type="checkbox" name="trust_email" value="1" checked?={ f.TrustEmail }/>
+				Trust this provider's verified email addresses
+			</label>
+			if f.OrgOwned {
+				<p class="bc-alert bc-alert-warning">
+					When trusted, a first sign-in through this provider is linked to an existing account with the same verified email, but only for addresses on this organisation's verified domains. Addresses on other domains are never linked. New people join through an invitation.
+				</p>
+			} else {
+				<p class="bc-alert bc-alert-warning">
+					When trusted, a first sign-in through this provider is linked to an existing account with the same verified email. Only trust a provider whose users can't choose or change their own email address, such as your organisation's own directory. Trusting a provider you don't control lets anyone who can register that email there take over the matching account here.
+				</p>
+				<label class="bc-check">
+					<input class="bc-checkbox" type="checkbox" name="allow_signup" value="1" checked?={ f.AllowSignup }/>
+					Let anyone who signs in through this provider create an account
+				</label>
+			}
+			<label>
+				Position
+				<input class="bc-input" type="number" name="position" value={ f.Position } min="0" max="100000"/>
+				<span class="bc-hint">Lower numbers appear first on the sign-in page.</span>
+			</label>
+			if !f.Editing {
+				<label class="bc-check">
+					<input class="bc-checkbox" type="checkbox" name="enabled" value="1" checked?={ f.Enabled }/>
+					Show on the sign-in page straight away
+				</label>
+			}
+		</fieldset>
+		if !f.ReadOnly {
+			<div class="bc-form-actions">
+				<button type="submit" class="bc-btn bc-btn-primary">
+					if f.Editing {
+						Save changes
+					} else {
+						Add provider
+					}
+				</button>
+			</div>
+		}
+	</form>
 }
 
 // IdPDiscoverResult is the HTMX fragment for "Test discovery".

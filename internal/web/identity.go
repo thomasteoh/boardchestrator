@@ -494,28 +494,7 @@ func handleIdPDiscover(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
-	var d views.IdPDiscoverData
-	if err != nil {
-		d.Error = idpUserMessage(err)
-	} else {
-		res, _ := out.(idp.DiscoverResult)
-		d = views.IdPDiscoverData{OK: res.OK, Issuer: res.Issuer, Ref: res.Ref}
-		for _, e := range [][2]string{
-			{"Authorisation endpoint", res.AuthorizationEndpoint},
-			{"Token endpoint", res.TokenEndpoint},
-			{"User info endpoint", res.UserinfoEndpoint},
-			{"Signing keys (JWKS)", res.JWKSURI},
-			{"Sign-out endpoint", res.EndSessionEndpoint},
-		} {
-			if e[1] != "" {
-				d.Endpoints = append(d.Endpoints, e)
-			}
-		}
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.IdPDiscoverResult(d).Render(r.Context(), w); err != nil {
-		slog.Error("render discovery result", "err", err)
-	}
+	renderDiscover(w, r, out, err)
 }
 
 // formValues is the admin form as submitted (or as loaded for editing).
