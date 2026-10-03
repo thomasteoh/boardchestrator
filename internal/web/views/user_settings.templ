@@ -4,6 +4,7 @@ package views
 templ UserSettingsPage(s Shell, theme, timezone string) {
 	@Base(s) {
 		<h2>User Settings</h2>
+		<p><a class="bc-link" href={ templ.SafeURL(SignInMethodsURL) }>Sign-in methods</a>: link or remove the ways you sign in.</p>
 		<form hx-post={ templ.URL("/api/action/user.theme.update") } hx-headers={ hxHeaders(s.CSRF) } hx-target="body" hx-swap="innerHTML" class="bc-form">
 			<label>Theme
 				<select name="theme" class="bc-input">

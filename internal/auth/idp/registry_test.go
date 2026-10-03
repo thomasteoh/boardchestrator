@@ -622,3 +622,31 @@ func TestBeginReturnToRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// WU-604: BC_ALLOW_SIGNUP=false closes open sign-up on every env-seeded
+// provider that does not set its own _ALLOW_SIGNUP.
+func TestSeedAllowSignupFalse(t *testing.T) {
+	d := dbtest.New(t)
+	yes := true
+	cfg := &config.Config{
+		GoogleClientID: "g-id", GoogleClientSecret: "g-secret",
+		GitHubClientID: "gh-id", GitHubClientSecret: "gh-secret",
+		OIDCProviders: []config.OIDCEnvProvider{
+			{ID: "corp", Issuer: "https://sso.example.com", ClientID: "c"},
+			{ID: "open", Issuer: "https://open.example.com", ClientID: "o", AllowSignup: &yes},
+		},
+		AllowSignup: false,
+	}
+	if err := idp.SeedFromConfig(context.Background(), d, encKey, cfg); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]int{"google": 0, "github": 0, "corp": 0, "open": 1} {
+		var got int
+		if err := d.QueryRow(`SELECT allow_signup FROM auth_providers WHERE id = ?`, id).Scan(&got); err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if got != want {
+			t.Errorf("%s allow_signup = %d, want %d", id, got, want)
+		}
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/a-h/templ"
 	"github.com/go-chi/chi/v5"
@@ -20,6 +21,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/auth/idp"
+	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
 )
 
@@ -56,12 +58,26 @@ var refRe = regexp.MustCompile(`^[A-Z0-9]{4,16}$`)
 func handleLogin(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	returnTo := auth.SafeReturnTo(q.Get("return_to"))
+	inviteToken := q.Get("invite")
+	if inviteToken != "" {
+		// The invite's own page is where a signed-in person accepts it, so
+		// that is where every sign-in through this page returns.
+		returnTo = inviteAcceptURL(inviteToken)
+	}
 	if auth.IsAuthenticated(r.Context()) {
 		// returnTo passed auth.SafeReturnTo: a same-origin path or /app.
 		http.Redirect(w, r, returnTo, http.StatusSeeOther) //nolint:gosec // G710: validated by auth.SafeReturnTo, see above
 		return
 	}
 	d := views.LoginPageData{SignedOut: q.Get("signed_out") == "1"}
+	if inviteToken != "" {
+		if org, ok := pendingInviteOrg(r.Context(), inviteToken); ok {
+			d.InviteOrg = org
+		} else {
+			d.InviteInvalid = true
+			inviteToken = "" // grants nothing; don't carry it
+		}
+	}
 	if q.Has("error") {
 		d.Failed = true
 		if ref := q.Get("error"); refRe.MatchString(ref) {
@@ -77,9 +93,16 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 			if p.OrgID != "" {
 				continue // org-owned providers are reached through SSO discovery
 			}
-			href := "/auth/" + url.PathEscape(p.ID)
+			hq := url.Values{}
 			if returnTo != auth.DefaultReturnTo {
-				href += "?return_to=" + url.QueryEscape(returnTo)
+				hq.Set("return_to", returnTo)
+			}
+			if inviteToken != "" {
+				hq.Set("invite", inviteToken)
+			}
+			href := "/auth/" + url.PathEscape(p.ID)
+			if len(hq) > 0 {
+				href += "?" + hq.Encode()
 			}
 			d.Providers = append(d.Providers, views.LoginProvider{
 				ID: p.ID, Name: p.DisplayName, Preset: p.Preset, Href: templ.SafeURL(href),
@@ -92,6 +115,34 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	if err := views.LoginPage(s, d).Render(r.Context(), w); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
+}
+
+// inviteAcceptURL is the invite landing page for token.
+func inviteAcceptURL(token string) string {
+	return "/invite/accept?token=" + url.QueryEscape(token)
+}
+
+// pendingInviteOrg reports the organisation name of the pending, unexpired
+// invite token names. Anything else (unknown, used, expired, no database)
+// is just "not usable"; the page never says which.
+func pendingInviteOrg(ctx context.Context, token string) (string, bool) {
+	if disp == nil || disp.DB() == nil || len(token) > 128 {
+		return "", false
+	}
+	q := sqlc.New(disp.DB())
+	inv, err := action.PendingInvite(ctx, q, token, time.Now())
+	if err != nil {
+		if !errors.Is(err, action.ErrInviteInvalid) {
+			slog.Error("login: look up invite", "err", err)
+		}
+		return "", false
+	}
+	org, err := q.FindOrgByID(ctx, inv.OrgID)
+	if err != nil {
+		slog.Error("login: invite org", "err", err)
+		return "", false
+	}
+	return org.Name, true
 }
 
 // RenderLoginFailedPage renders the generic sign-in failure page (WU-601)

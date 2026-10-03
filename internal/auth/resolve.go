@@ -25,9 +25,9 @@ const (
 	RefuseEmailUnverified = "email_unverified"
 	RefuseInvalid         = "invalid_assertion"
 	// Link intent (SPEC §7.3 step 2) refusals.
-	RefuseLinkSession     = "link_session"
-	RefuseIdentityInUse   = "identity_in_use"
-	RefuseProviderLinked  = "provider_already_linked"
+	RefuseLinkSession    = "link_session"
+	RefuseIdentityInUse  = "identity_in_use"
+	RefuseProviderLinked = "provider_already_linked"
 )
 
 // Sign-up methods recorded in the auth.signup audit row (SPEC §7.3 step 4).

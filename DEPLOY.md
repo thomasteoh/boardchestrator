@@ -80,9 +80,10 @@ Every variable is `BC_`-prefixed.
 | `BC_OIDC_<NAME>_PRESET` | string | `generic` | google, microsoft, gitlab, okta, auth0, keycloak, zitadel, authentik, generic |
 | `BC_OIDC_<NAME>_DISPLAY_NAME` | string | preset name | label on the sign-in button |
 | `BC_OIDC_<NAME>_TRUST_EMAIL` | bool | preset default | link to existing users by verified email |
-| `BC_OIDC_<NAME>_ALLOW_SIGNUP` | bool | `true` | let new users sign up through this provider |
+| `BC_OIDC_<NAME>_ALLOW_SIGNUP` | bool | `BC_ALLOW_SIGNUP` | let new users sign up through this provider |
 | `BC_OIDC_<NAME>_SCOPES` | string | preset default | space- or comma-separated scopes |
 | `BC_OIDC_<NAME>_GROUPS_CLAIM` | string | preset default | claim (or dotted path) holding the user's groups |
+| `BC_ALLOW_SIGNUP` | bool | `true` | open sign-up on the env-configured providers (`google`, `github`, and `BC_OIDC_<NAME>_*` without their own `_ALLOW_SIGNUP`); `false` makes them invite-only. Providers added in the admin UI are invite-only unless the admin ticks "Let anyone who signs in through this provider create an account". Invite links and the bootstrap admin can always sign up |
 | `BC_AGENT_WORKERS` | int | `4` | worker pool size |
 | `BC_SCHED_POLL_INTERVAL` | int | `60` | scheduler poll seconds |
 

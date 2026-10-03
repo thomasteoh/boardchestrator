@@ -53,7 +53,7 @@ type Flow struct {
 	// invite link (WU-604). Possession of it may permit sign-up (SPEC §7.3
 	// step 4); resolution re-validates it.
 	InviteToken string `json:"iv,omitempty"`
-	Exp             int64  `json:"exp"`
+	Exp         int64  `json:"exp"`
 }
 
 // Flow errors. Callers map all of them to a generic failure response.

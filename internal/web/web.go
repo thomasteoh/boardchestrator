@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -446,6 +447,12 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 
 func handleInviteAccept(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
+	if !auth.IsAuthenticated(r.Context()) {
+		// An anonymous invitee signs in (or signs up) first; the invite
+		// rides the login flow (WU-604, SPEC §7.3 step 4).
+		http.Redirect(w, r, auth.LoginURL+"?invite="+url.QueryEscape(token), http.StatusSeeOther)
+		return
+	}
 	s := shellData(r, "Accept Invite", "")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := views.InviteAcceptPage(s, token).Render(r.Context(), w); err != nil {
@@ -1279,6 +1286,10 @@ func Routes(r chi.Router) {
 	r.Get("/invite/accept", handleInviteAccept)
 	// User settings
 	r.Get("/app/settings", handleUserSettings)
+	// Settings -> Sign-in methods (WU-604). The link POST is the auth
+	// handler's (it owns the flow cookie).
+	r.Get(auth.SignInMethodsURL, handleSignInMethods)
+	r.Post(auth.SignInMethodsURL+"/unlink/{id}", handleSignInMethodUnlink)
 	r.Get("/api/sessions", handleSessionsList)
 
 	// Tenancy UI pages

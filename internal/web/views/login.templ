@@ -23,6 +23,11 @@ type LoginPageData struct {
 	SSO templ.Component
 	// Passkey is the passkey sign-in control (WU-612). nil renders nothing.
 	Passkey templ.Component
+	// InviteOrg is the organisation of the valid invite the person arrived
+	// with ("" = none); InviteInvalid is set when ?invite= named no usable
+	// invite (WU-604).
+	InviteOrg     string
+	InviteInvalid bool
 }
 
 // LoginPage is GET /login: the platform sign-in providers in display order,
@@ -33,6 +38,12 @@ templ LoginPage(s Shell, d LoginPageData) {
 			<h1 id="login-title" class="bc-login-title">Sign in to Boardchestrator</h1>
 			if d.SignedOut {
 				<p class="bc-alert bc-alert-info" role="status">You've been signed out.</p>
+			}
+			if d.InviteOrg != "" {
+				<p class="bc-alert bc-alert-info" role="status">You've been invited to join <strong>{ d.InviteOrg }</strong>. Sign in, or create your account, with one of the options below.</p>
+			}
+			if d.InviteInvalid {
+				<p class="bc-alert bc-alert-error" role="alert">This invite link is invalid, has expired or has already been used. Ask an organisation admin for a new one.</p>
 			}
 			if d.Failed {
 				<div class="bc-alert bc-alert-error" role="alert">

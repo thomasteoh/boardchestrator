@@ -12,6 +12,7 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	_ "github.com/thomasteoh/boardchestrator/internal/auth/idp" // registers idp.* (ScopePlatform)
 	"github.com/thomasteoh/boardchestrator/internal/db/dbtest"
+	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/perm"
 	"github.com/thomasteoh/boardchestrator/internal/tenant"
 )
@@ -33,6 +34,7 @@ var q10Key = tenant.PadKey("q10-test-secret")
 // added here, which makes it pick up the cross-user tests below.
 var selfActions = []string{
 	"github.connect", "github.disconnect", "github.status",
+	"identity.list", "identity.unlink", // WU-604
 	"invite.accept",
 	"notif.list", "notif.mark_all_read", "notif.mark_read", "notif.unread_count",
 	"session.revoke",
@@ -364,5 +366,62 @@ func TestSelfInviteAccept(t *testing.T) {
 	}
 	if _, err := disp.Dispatch(ctx, user(q10Other), "invite.accept", json.RawMessage(`{"token":"`+inv.Token+`"}`), action.Opts{}); err == nil {
 		t.Fatal("an accepted invite was accepted again")
+	}
+}
+
+// WU-604: identity.list / identity.unlink only see and touch the caller's
+// identities, and never remove the last sign-in method.
+func TestSelfIdentities(t *testing.T) {
+	d, disp := q10DB(t)
+	ctx := context.Background()
+	if _, err := d.Exec(`INSERT INTO identities (id, user_id, provider, subject, email, token_enc) VALUES
+		('i-p1','u-plain','google','p-g','plain@x.test',X'00'),
+		('i-p2','u-plain','github','p-h','plain@x.test',NULL),
+		('i-o1','u-other','google','o-g','other@x.test',NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	out, err := disp.Dispatch(ctx, user(q10Plain), "identity.list", json.RawMessage(`{}`), action.Opts{})
+	mustOK(t, "identity.list", err)
+	b, _ := json.Marshal(out)
+	if !strings.Contains(string(b), "i-p1") || !strings.Contains(string(b), "i-p2") || strings.Contains(string(b), "i-o1") {
+		t.Fatalf("identity.list = %s", b)
+	}
+	for _, leak := range []string{"p-g", "subject", "token"} {
+		if strings.Contains(string(b), leak) {
+			t.Errorf("identity.list leaks %q: %s", leak, b)
+		}
+	}
+	_, err = disp.Dispatch(ctx, user(q10Plain), "identity.list", json.RawMessage(`{"user_id":"u-other"}`), action.Opts{})
+	mustForbid(t, "identity.list", err)
+
+	// Another user's identity: not found, untouched (also when naming them).
+	if _, err := disp.Dispatch(ctx, user(q10Plain), "identity.unlink", json.RawMessage(`{"id":"i-o1"}`), action.Opts{}); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("unlink another user's identity: err = %v", err)
+	}
+	_, err = disp.Dispatch(ctx, user(q10Plain), "identity.unlink", json.RawMessage(`{"id":"i-o1","user_id":"u-other"}`), action.Opts{})
+	mustForbid(t, "identity.unlink", err)
+	if n := scalar(t, d, `SELECT COUNT(*) FROM identities WHERE user_id='u-other'`); n != "1" {
+		t.Fatal("another user's identity was removed")
+	}
+
+	_, err = disp.Dispatch(ctx, user(q10Plain), "identity.unlink", json.RawMessage(`{"id":"i-p2"}`), action.Opts{})
+	mustOK(t, "identity.unlink", err)
+	if n := scalar(t, d, `SELECT COUNT(*) FROM identities WHERE id='i-p2'`); n != "0" {
+		t.Fatal("own identity not unlinked")
+	}
+	// Dispatch audits the High action; the handler adds identity.unlinked.
+	for _, a := range []string{"identity.unlink", "identity.unlinked"} {
+		if n := scalar(t, d, `SELECT COUNT(*) FROM audit_log WHERE action=? AND actor_id='u-plain'`, a); n != "1" {
+			t.Errorf("%s audit rows = %s", a, n)
+		}
+	}
+	if _, err := disp.Dispatch(ctx, user(q10Plain), "identity.unlink", json.RawMessage(`{"id":"i-p1"}`), action.Opts{}); !errors.Is(err, action.ErrLastSignInMethod) {
+		t.Errorf("last-method unlink: err = %v", err)
+	}
+	if n := scalar(t, d, `SELECT COUNT(*) FROM identities WHERE id='i-p1'`); n != "1" {
+		t.Fatal("last sign-in method removed")
+	}
+	if n, err := action.SignInMethodCount(ctx, sqlc.New(d), q10Plain); err != nil || n != 1 {
+		t.Errorf("SignInMethodCount = %d, %v", n, err)
 	}
 }
