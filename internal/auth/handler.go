@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/thomasteoh/boardchestrator/internal/action"
+	"github.com/thomasteoh/boardchestrator/internal/auth/passkey"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 )
 
@@ -77,6 +78,9 @@ type Handler struct {
 	// RequestID returns the request id for log correlation (server wires
 	// server.RequestID); nil logs without one.
 	RequestID func(context.Context) string
+	// Passkeys is the WebAuthn relying party (WU-612); nil when BC_BASE_URL's
+	// host cannot be an RP ID, which turns passkeys off.
+	Passkeys *passkey.RP
 }
 
 // HandlerConfig is everything NewHandler needs.
@@ -126,6 +130,11 @@ func NewHandler(cfg HandlerConfig) (*Handler, error) {
 		Replay:    NewReplayCache(0),
 		RequestID: cfg.RequestID,
 	}
+	if rp, err := passkey.New(cfg.BaseURL); err != nil {
+		slog.Warn("auth: passkeys are unavailable on this instance", "err", err)
+	} else {
+		h.Passkeys = rp
+	}
 	return h, nil
 }
 
@@ -141,6 +150,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get(SAMLMetadataPattern, h.SAMLMetadata)
 	r.Get(SAMLCertificatePattern, h.SAMLCertificate)
 	r.Get(SAMLLinkPattern, h.SAMLLinkFinish)
+	h.passkeyRoutes(r)
 	r.Get("/auth/{providerID}", h.Begin)
 	r.Get("/auth/{providerID}/callback", h.Callback)
 }

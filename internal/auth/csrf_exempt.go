@@ -17,7 +17,7 @@ type CSRFExemption struct {
 // other means and never reads the session cookie: the session middleware
 // skips these paths too, so SessionFrom is always empty in their handlers.
 // Later WUs append their own entries here (and to the test asserting the
-// list): passkey login finish (WU-612).
+// list).
 var csrfExemptions = [...]CSRFExemption{
 	// OIDC Back-Channel Logout 1.0: a server-to-server POST from the IdP,
 	// authenticated by the signed logout_token (WU-609).
@@ -37,6 +37,13 @@ var csrfExemptions = [...]CSRFExemption{
 	{Method: http.MethodPut, Pattern: SCIMPattern},
 	{Method: http.MethodPatch, Pattern: SCIMPattern},
 	{Method: http.MethodDelete, Pattern: SCIMPattern},
+	// Passkey sign-in and passkey sign-up finish (WU-612): anonymous POSTs
+	// authenticated by a WebAuthn response over the single-use challenge
+	// sealed in the SameSite=Lax flow cookie, which a cross-site request can
+	// neither read nor send. Their begin endpoints are GETs (they change
+	// nothing on the server), so they need no exemption.
+	{Method: http.MethodPost, Pattern: PasskeyLoginFinishURL},
+	{Method: http.MethodPost, Pattern: PasskeySignupFinishURL},
 }
 
 // SCIMPattern matches everything under the SCIM base path /scim/v2.

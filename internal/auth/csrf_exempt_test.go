@@ -24,6 +24,8 @@ func TestCSRFExemptionListExact(t *testing.T) {
 		{Method: http.MethodPut, Pattern: "/scim/v2/*"},
 		{Method: http.MethodPatch, Pattern: "/scim/v2/*"},
 		{Method: http.MethodDelete, Pattern: "/scim/v2/*"},
+		{Method: http.MethodPost, Pattern: "/auth/passkey/login/finish"},
+		{Method: http.MethodPost, Pattern: "/auth/passkey/signup/finish"},
 	}
 	if got := auth.CSRFExemptions(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("CSRF exemptions = %+v, want %+v", got, want)
@@ -72,6 +74,14 @@ func TestIsCSRFExempt(t *testing.T) {
 		{http.MethodPost, "/scim/v1/Users", false},
 		{http.MethodPost, "/scim/v2x/Users", false},
 		{http.MethodPost, "/api/scim/v2/Users", false},
+		{http.MethodPost, "/auth/passkey/login/finish", true},
+		{http.MethodPost, "/auth/passkey/signup/finish", true},
+		{http.MethodGet, "/auth/passkey/login/finish", false},
+		{http.MethodPost, "/auth/passkey/login/begin", false},
+		{http.MethodPost, "/auth/passkey/signup/begin", false},
+		{http.MethodPost, "/auth/passkey/login/finish/x", false},
+		{http.MethodPost, "/settings/passkeys/finish", false},
+		{http.MethodPost, "/settings/passkeys/begin", false},
 	} {
 		if got := auth.IsCSRFExempt(tc.method, tc.path); got != tc.want {
 			t.Errorf("IsCSRFExempt(%s %s) = %v, want %v", tc.method, tc.path, got, tc.want)

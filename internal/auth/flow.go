@@ -29,11 +29,18 @@ const FlowTTL = 10 * time.Minute
 const flowKeyInfo = "bc-auth-flow"
 
 // Flow intents (SPEC §7.2). IntentLink is issued by the Sign-in methods page
-// (WU-604); IntentBootstrap by the /setup claim page (WU-605).
+// (WU-604); IntentBootstrap by the /setup claim page (WU-605); the passkey
+// intents by the passkey endpoints (WU-612).
 const (
 	IntentLogin     = "login"
 	IntentLink      = "link"
 	IntentBootstrap = "bootstrap"
+	// Passkey ceremonies (WU-612): usernameless sign-in, adding a passkey
+	// while signed in (bound to the session like IntentLink), and creating
+	// an account with a passkey from an invite or the bootstrap token.
+	IntentPasskeyLogin    = "passkey_login"
+	IntentPasskeyRegister = "passkey_register"
+	IntentPasskeySignup   = "passkey_signup"
 )
 
 // Flow is the per-login state carried in the sealed flow cookie between
@@ -62,7 +69,15 @@ type Flow struct {
 	// is sealed into a SameSite=None cookie, because the ACS is a cross-site
 	// POST from the identity provider (SPEC §7.2).
 	SAMLRequestID string `json:"sr,omitempty"`
-	Exp           int64  `json:"exp"`
+	// WebAuthn is a passkey ceremony's session data (challenge, RP id, user
+	// handle, ...) between its begin and finish endpoints (WU-612).
+	WebAuthn json.RawMessage `json:"wa,omitempty"`
+	// SignupName and SignupEmail are what a person typed to create an
+	// account with a passkey (the email only for a bootstrap claim; an
+	// invite supplies its own).
+	SignupName  string `json:"sn,omitempty"`
+	SignupEmail string `json:"se,omitempty"`
+	Exp         int64  `json:"exp"`
 }
 
 // sameSite is the flow cookie's SameSite mode: Lax for OIDC/GitHub, whose
