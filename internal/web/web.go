@@ -934,6 +934,12 @@ func handleChatSessionsPartial(w http.ResponseWriter, r *http.Request) {
 	orgID := r.URL.Query().Get("org_id")
 	projectID := r.URL.Query().Get("project_id")
 	kind := r.URL.Query().Get("kind")
+	// Only the caller's own orgs, and not one requiring single sign-on the
+	// session was not signed in for (WU-613).
+	if !chatOrgAllowed(r, q, sess, orgID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	var sessions []sqlc.ChatSession
 	var err error
 	switch kind {

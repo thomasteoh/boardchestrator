@@ -148,7 +148,8 @@ func NewWithDB(cfg *config.Config, d *sql.DB) *Server {
 		// user's org memberships from the DB so an event is delivered only to
 		// members of its org.
 		s.hub = sse.New(s.bus, sse.SessionUserResolver,
-			sse.WithMembershipResolver(s.membershipResolver()))
+			sse.WithMembershipResolver(s.membershipResolver()),
+			sse.WithOrgFilter(s.sseSSOFilter()))
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -695,6 +696,12 @@ func (s *Server) Start(ctx context.Context) error {
 		action.SetWikiStore(wstore)
 		web.SetWikiStore(wstore)
 
+		// Expired sessions are refused at lookup; the sweep deletes the rows
+		// (SPEC §7.10, WU-613).
+		if s.sessions != nil {
+			go s.sessionSweepLoop(ctx, sessionSweepInterval)
+		}
+
 		// Start the search indexer — subscribes to the event bus.
 		ix := search.NewIndexer(s.db)
 		sub, _ := s.bus.Subscribe(event.Filter{
@@ -1041,6 +1048,51 @@ func (s *Server) membershipResolver() sse.MembershipResolver {
 			return nil
 		}
 		return orgs
+	}
+}
+
+// sessionSweepInterval is how often expired sessions are purged.
+const sessionSweepInterval = time.Hour
+
+// sessionSweepLoop purges expired sessions now and then every interval
+// until ctx ends.
+func (s *Server) sessionSweepLoop(ctx context.Context, interval time.Duration) {
+	sweep := func() {
+		if err := s.sessions.PurgeExpired(ctx); err != nil && ctx.Err() == nil {
+			slog.Warn("session sweep", "error", err)
+		}
+	}
+	sweep()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
+}
+
+// sseSSOFilter drops, from a session's event stream, every organisation
+// that requires single sign-on the session was not signed in for (WU-613,
+// SPEC §7.4): the same check (action.CheckOrgSSO) that gates the org's
+// pages. A lookup error drops the org too.
+func (s *Server) sseSSOFilter() sse.OrgFilter {
+	return func(r *http.Request, orgIDs []string) []string {
+		sess, ok := auth.SessionFrom(r.Context())
+		if !ok || s.db == nil {
+			return nil
+		}
+		q := sqlc.New(s.db)
+		out := make([]string, 0, len(orgIDs))
+		for _, org := range orgIDs {
+			if action.CheckOrgSSO(r.Context(), q, org, sess.UserID, sess.ProviderID) == nil {
+				out = append(out, org)
+			}
+		}
+		return out
 	}
 }
 

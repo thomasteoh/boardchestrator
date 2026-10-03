@@ -2,11 +2,13 @@ package web
 
 import (
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/web/views"
@@ -34,10 +36,15 @@ func handleChatPage(w http.ResponseWriter, r *http.Request) {
 	q := sqlc.New(db)
 	ctx := r.Context()
 
-	// The user's orgs (org-scope memberships).
-	orgs, err := q.FindOrgsByActor(ctx, sess.UserID)
+	// The user's orgs (org-scope memberships), without those requiring
+	// single sign-on this session was not signed in for (WU-613).
+	orgs, refused, err := chatOrgs(r, q, sess)
 	if err != nil {
 		RenderErrorPage(w, r, http.StatusInternalServerError, "Could not load orgs", err.Error())
+		return
+	}
+	if len(orgs) == 0 && refused != nil {
+		RenderSSORequired(w, r, *refused)
 		return
 	}
 	if len(orgs) == 0 {
@@ -131,7 +138,7 @@ func handleChatHistoryPartial(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve the user's org (the chat history read is org-scoped through the
 	// parent session).
-	orgs, err := q.FindOrgsByActor(r.Context(), sess.UserID)
+	orgs, _, err := chatOrgs(r, q, sess)
 	if err != nil || len(orgs) == 0 {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -167,4 +174,44 @@ func handleChatHistoryPartial(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var _ = slog.Debug // keep slog import for future chat handlers
+// chatOrgs is the session user's orgs (org-level memberships) that the
+// session may open: an organisation requiring single sign-on is left out
+// unless the session was signed in through its provider (WU-613, SPEC
+// §7.4). refused is the first such organisation's refusal (nil if none).
+func chatOrgs(r *http.Request, q *sqlc.Queries, sess auth.Session) ([]sqlc.FindOrgsByActorRow, *action.ErrSSORequired, error) {
+	all, err := q.FindOrgsByActor(r.Context(), sess.UserID)
+	if err != nil {
+		return nil, nil, err
+	}
+	var refused *action.ErrSSORequired
+	out := make([]sqlc.FindOrgsByActorRow, 0, len(all))
+	for _, o := range all {
+		err := orgSSOError(r.Context(), sess, o.ID)
+		var sso action.ErrSSORequired
+		switch {
+		case err == nil:
+			out = append(out, o)
+		case errors.As(err, &sso):
+			if refused == nil {
+				refused = &sso
+			}
+		default:
+			slog.Warn("chat: org sso check", "org", o.ID, "err", err)
+		}
+	}
+	return out, refused, nil
+}
+
+// chatOrgAllowed reports whether orgID is one of the session's chat orgs.
+func chatOrgAllowed(r *http.Request, q *sqlc.Queries, sess auth.Session, orgID string) bool {
+	orgs, _, err := chatOrgs(r, q, sess)
+	if err != nil {
+		return false
+	}
+	for _, o := range orgs {
+		if o.ID == orgID {
+			return true
+		}
+	}
+	return false
+}
