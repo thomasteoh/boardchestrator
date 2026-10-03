@@ -150,3 +150,22 @@ func TestBottomNavIsMobileSubset(t *testing.T) {
 		t.Error("Settings must not appear in the mobile bottom nav")
 	}
 }
+
+func TestBaseSignOutOnlyWhenSignedIn(t *testing.T) {
+	anon := renderBase(t, testShell(), "")
+	if strings.Contains(anon, `action="/auth/logout"`) {
+		t.Error("anonymous shell renders sign-out")
+	}
+	s := testShell()
+	s.CSRF = "csrf-tok-1"
+	html := renderBase(t, s, "")
+	for _, want := range []string{
+		`<form method="post" action="/auth/logout"`,
+		`name="csrf_token" value="csrf-tok-1"`,
+		`Sign out`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("signed-in shell missing %q", want)
+		}
+	}
+}

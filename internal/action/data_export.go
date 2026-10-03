@@ -67,7 +67,7 @@ type userExportOutput struct {
 	Watchers      []sqlc.TaskWatcher             `json:"task_watchers"`
 	Filters       []sqlc.SavedFilter             `json:"saved_filters"`
 	Notifications []sqlc.Notification            `json:"notifications"`
-	Sessions      []sqlc.Session                 `json:"sessions"`
+	Sessions      []sqlc.ListUserSessionsRow     `json:"sessions"`
 }
 
 type UserProfile struct {
@@ -135,7 +135,7 @@ func handleUserExport(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 		notifications = []sqlc.Notification{}
 	}
 	if sessions == nil {
-		sessions = []sqlc.Session{}
+		sessions = []sqlc.ListUserSessionsRow{}
 	}
 
 	profile := UserProfile{

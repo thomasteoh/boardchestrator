@@ -20,6 +20,7 @@ CREATE TABLE identities (
     subject   TEXT NOT NULL,
     email     TEXT NOT NULL DEFAULT '',
     token_enc BLOB,
+    last_login_at TEXT, -- 0033
     UNIQUE (provider, subject)
 );
 
@@ -32,11 +33,19 @@ CREATE TABLE sessions (
     ua           TEXT NOT NULL DEFAULT '',
     created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     last_seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    expires_at   TEXT NOT NULL
+    expires_at   TEXT NOT NULL,
+    -- 0033: session provenance (SPEC §7.3 step 6)
+    provider_id  TEXT NOT NULL DEFAULT '',
+    auth_method  TEXT NOT NULL DEFAULT '',
+    idp_sid      TEXT NOT NULL DEFAULT '',
+    idp_subject  TEXT NOT NULL DEFAULT '',
+    id_token_enc TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_sessions_user_id ON sessions (user_id);
 CREATE INDEX idx_sessions_expires_at ON sessions (expires_at);
+CREATE INDEX idx_sessions_provider_sid ON sessions (provider_id, idp_sid);
+CREATE INDEX idx_sessions_provider_subject ON sessions (provider_id, idp_subject);
 
 CREATE TABLE platform_settings (
     id             INTEGER PRIMARY KEY CHECK (id = 1),

@@ -537,15 +537,25 @@ FROM sessions
 WHERE user_id = ?
 `
 
-func (q *Queries) ListUserSessions(ctx context.Context, userID string) ([]Session, error) {
+type ListUserSessionsRow struct {
+	TokenHash  string
+	UserID     string
+	Ip         string
+	Ua         string
+	CreatedAt  string
+	LastSeenAt string
+	ExpiresAt  string
+}
+
+func (q *Queries) ListUserSessions(ctx context.Context, userID string) ([]ListUserSessionsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listUserSessions, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Session
+	var items []ListUserSessionsRow
 	for rows.Next() {
-		var i Session
+		var i ListUserSessionsRow
 		if err := rows.Scan(
 			&i.TokenHash,
 			&i.UserID,

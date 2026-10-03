@@ -10,8 +10,9 @@ import (
 )
 
 const createSession = `-- name: CreateSession :exec
-INSERT INTO sessions (token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO sessions (token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at,
+                      provider_id, auth_method, idp_sid, idp_subject, id_token_enc)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateSessionParams struct {
@@ -22,6 +23,11 @@ type CreateSessionParams struct {
 	CreatedAt  string
 	LastSeenAt string
 	ExpiresAt  string
+	ProviderID string
+	AuthMethod string
+	IdpSid     string
+	IdpSubject string
+	IDTokenEnc string
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
@@ -33,6 +39,11 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 		arg.CreatedAt,
 		arg.LastSeenAt,
 		arg.ExpiresAt,
+		arg.ProviderID,
+		arg.AuthMethod,
+		arg.IdpSid,
+		arg.IdpSubject,
+		arg.IDTokenEnc,
 	)
 	return err
 }
@@ -58,14 +69,30 @@ func (q *Queries) DeleteSession(ctx context.Context, tokenHash string) error {
 }
 
 const getSession = `-- name: GetSession :one
-SELECT token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at
-FROM sessions
-WHERE token_hash = ?
+SELECT s.token_hash, s.user_id, s.ip, s.ua, s.created_at, s.last_seen_at, s.expires_at,
+       s.provider_id, s.auth_method
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.token_hash = ?
+  AND u.deleted_at IS NULL
 `
 
-func (q *Queries) GetSession(ctx context.Context, tokenHash string) (Session, error) {
+type GetSessionRow struct {
+	TokenHash  string
+	UserID     string
+	Ip         string
+	Ua         string
+	CreatedAt  string
+	LastSeenAt string
+	ExpiresAt  string
+	ProviderID string
+	AuthMethod string
+}
+
+// SPEC s7.10: a session whose user is deleted does not resolve.
+func (q *Queries) GetSession(ctx context.Context, tokenHash string) (GetSessionRow, error) {
 	row := q.db.QueryRowContext(ctx, getSession, tokenHash)
-	var i Session
+	var i GetSessionRow
 	err := row.Scan(
 		&i.TokenHash,
 		&i.UserID,
@@ -74,6 +101,8 @@ func (q *Queries) GetSession(ctx context.Context, tokenHash string) (Session, er
 		&i.CreatedAt,
 		&i.LastSeenAt,
 		&i.ExpiresAt,
+		&i.ProviderID,
+		&i.AuthMethod,
 	)
 	return i, err
 }
@@ -85,15 +114,25 @@ WHERE user_id = ?
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListSessionsByUser(ctx context.Context, userID string) ([]Session, error) {
+type ListSessionsByUserRow struct {
+	TokenHash  string
+	UserID     string
+	Ip         string
+	Ua         string
+	CreatedAt  string
+	LastSeenAt string
+	ExpiresAt  string
+}
+
+func (q *Queries) ListSessionsByUser(ctx context.Context, userID string) ([]ListSessionsByUserRow, error) {
 	rows, err := q.db.QueryContext(ctx, listSessionsByUser, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Session
+	var items []ListSessionsByUserRow
 	for rows.Next() {
-		var i Session
+		var i ListSessionsByUserRow
 		if err := rows.Scan(
 			&i.TokenHash,
 			&i.UserID,

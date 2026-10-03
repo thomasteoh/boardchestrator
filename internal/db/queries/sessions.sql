@@ -1,11 +1,16 @@
 -- name: CreateSession :exec
-INSERT INTO sessions (token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO sessions (token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at,
+                      provider_id, auth_method, idp_sid, idp_subject, id_token_enc)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetSession :one
-SELECT token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at
-FROM sessions
-WHERE token_hash = ?;
+-- SPEC s7.10: a session whose user is deleted does not resolve.
+SELECT s.token_hash, s.user_id, s.ip, s.ua, s.created_at, s.last_seen_at, s.expires_at,
+       s.provider_id, s.auth_method
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.token_hash = ?
+  AND u.deleted_at IS NULL;
 
 -- name: ListSessionsByUser :many
 SELECT token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at

@@ -5,371 +5,234 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
-	"time"
+	"strings"
 
-	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
-	"github.com/thomasteoh/boardchestrator/internal/perm"
-	"github.com/thomasteoh/boardchestrator/internal/tenant"
+	"github.com/go-chi/chi/v5"
 )
 
-// OAuthHandler provides the HTTP handlers for Google OIDC login.
-type OAuthHandler struct {
-	Provider       *OIDCProvider
-	GitHub         *GitHubProvider
-	Store          *SessionStore
-	Identity       IdentityStore
-	Bootstrap      BootstrapChecker
-	BaseURL        string
-	SessionCfg     SessionConfig
-	AdminEmails    []string
-	BootstrapToken string
-	// DB is the database handle used for platform-admin grants.
-	DB *sql.DB
-	// SecretKey is the AES-256 key used to encrypt OAuth tokens at rest
-	// (WU-406: GitHub token reuse for wiki edits). Pad via tenant.PadKey.
-	SecretKey []byte
-
-	// stateMap stores pending OAuth state nonces (keyed by state, value is
-	// the redirect path). A real deployment would use encrypted cookies or
-	// the session store; for v1 an in-memory map with cleanup is sufficient.
-	stateMap map[string]stateEntry
+// LoginFailedHandler renders the generic sign-in failure page. The server
+// overrides it with the templ error page; the default is plain text. message
+// is fixed copy chosen by this package and ref is the log reference code;
+// neither ever contains upstream or internal error text.
+var LoginFailedHandler = func(w http.ResponseWriter, _ *http.Request, status int, message, ref string) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = fmt.Fprintf(w, "Sign-in failed. %s Reference: %s\n", message, ref)
 }
 
-type stateEntry struct {
-	nonce     string
-	expiresAt time.Time
+// User-facing copy for login failures, by refusal reason. Everything not
+// listed gets msgGeneric.
+const msgGeneric = "Something went wrong signing you in. Please try again."
+
+var refusalCopy = map[string]string{
+	RefuseUserDeleted:     "This account has been deleted.",
+	RefuseNotBootstrap:    "This instance hasn't been set up yet, and your email isn't on its administrator list.",
+	RefuseNoAccount:       "There's no account for this email. Ask an administrator for an invite.",
+	RefuseEmailUnverified: "Your identity provider didn't confirm your email address.",
+	"logout":              "Something went wrong signing you out. Please try again.",
 }
 
-// NewOAuthHandler builds the handler set with Google and GitHub providers.
-func NewOAuthHandler(cfg OIDCConfig, ghCfg GitHubConfig, store *SessionStore, d *sql.DB, sc SessionConfig) *OAuthHandler {
-	return &OAuthHandler{
-		Provider:   NewOIDCProvider(cfg),
-		GitHub:     NewGitHubProvider(ghCfg),
-		Store:      store,
-		Identity:   NewDBIdentityStore(d),
-		Bootstrap:  NewDBBootstrapStore(d),
-		BaseURL:    cfg.BaseURL,
-		SessionCfg: sc,
-		DB:         d,
-		stateMap:   make(map[string]stateEntry),
+// Handler serves the login routes (SPEC §7.2): GET /auth/{providerID},
+// GET /auth/{providerID}/callback and POST /auth/logout.
+type Handler struct {
+	Connectors map[string]Connector
+	Flows      *FlowSealer
+	Sessions   *SessionStore
+	Resolver   *Resolver
+	BaseURL    string
+	// RequestID returns the request id for log correlation (server wires
+	// server.RequestID); nil logs without one.
+	RequestID func(context.Context) string
+}
+
+// HandlerConfig is everything NewHandler needs.
+type HandlerConfig struct {
+	DB          *sql.DB
+	Sessions    *SessionStore
+	SecretKey   string // raw BC_SECRET_KEY (flow cookie key derivation)
+	EncKey      []byte // 32-byte key for _enc columns
+	BaseURL     string
+	AdminEmails []string
+	Connectors  []Connector
+	RequestID   func(context.Context) string
+}
+
+// NewHandler builds the login handler.
+func NewHandler(cfg HandlerConfig) (*Handler, error) {
+	flows, err := NewFlowSealer(cfg.SecretKey)
+	if err != nil {
+		return nil, err
 	}
-}
-
-// SetBootstrapConfig sets the admin email list and bootstrap token after construction.
-func (h *OAuthHandler) SetBootstrapConfig(adminEmails []string, token string) {
-	h.AdminEmails = adminEmails
-	h.BootstrapToken = token
-}
-
-// ensurePlatformAdmin grants a bootstrap/admin user an Org Owner membership in
-// the platform sentinel org, which covers platform-scope actions (org.create,
-// pricing, providers, ...). It is idempotent and a no-op for non-admin emails.
-// SPEC §6: platform default roles live on the sentinel org (org_id NULL).
-func (h *OAuthHandler) ensurePlatformAdmin(ctx context.Context, w http.ResponseWriter, userID, email string) {
-	isAdmin := false
-	for _, ae := range h.AdminEmails {
-		if ae == email {
-			isAdmin = true
-			break
-		}
+	h := &Handler{
+		Connectors: map[string]Connector{},
+		Flows:      flows,
+		Sessions:   cfg.Sessions,
+		Resolver: &Resolver{
+			DB:          cfg.DB,
+			Sessions:    cfg.Sessions,
+			AdminEmails: cfg.AdminEmails,
+			SecretKey:   cfg.EncKey,
+		},
+		BaseURL:   strings.TrimRight(cfg.BaseURL, "/"),
+		RequestID: cfg.RequestID,
 	}
-	if !isAdmin {
+	for _, c := range cfg.Connectors {
+		h.Connectors[c.ID()] = c
+	}
+	return h, nil
+}
+
+// Routes mounts the login routes on r.
+func (h *Handler) Routes(r chi.Router) {
+	r.Post("/auth/logout", h.Logout)
+	r.Get("/auth/{providerID}", h.Begin)
+	r.Get("/auth/{providerID}/callback", h.Callback)
+}
+
+// Begin starts a login: mints a flow, seals it into the flow cookie, and
+// redirects to the provider.
+func (h *Handler) Begin(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "providerID")
+	c, ok := h.Connectors[id]
+	if !ok {
+		http.NotFound(w, r)
 		return
 	}
+	flow, err := h.Flows.NewFlow(id, IntentLogin)
+	if err != nil {
+		h.fail(w, r, http.StatusInternalServerError, id, "flow_create", err)
+		return
+	}
+	if hint := r.URL.Query().Get("login_hint"); len(hint) <= 254 {
+		flow.LoginHint = hint
+	}
+	dest, err := c.Begin(r.Context(), flow)
+	if err != nil {
+		h.fail(w, r, http.StatusBadGateway, id, "begin", err)
+		return
+	}
+	if err := h.Flows.SetCookie(w, flow); err != nil {
+		h.fail(w, r, http.StatusInternalServerError, id, "flow_seal", err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	// gosec G710 sees login_hint (request input) reach dest. It is only a
+	// URL-encoded query value; the scheme and host come from operator config
+	// or the provider's discovery document, so this is not an open redirect.
+	http.Redirect(w, r, dest, http.StatusFound) //nolint:gosec // G710: host fixed by provider config, see above
+}
 
-	q := sqlc.New(h.DB)
-	// Already a platform admin? No-op.
-	rows, err := q.FindMemberships(ctx, sqlc.FindMembershipsParams{
-		OrgID:        perm.PlatformOrg,
-		ActorType:    "user",
-		ActorID:      userID,
-		ResourceType: "org",
-		ResourceID:   perm.PlatformOrg,
+// Callback completes a login. The flow cookie is cleared on every outcome.
+func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
+	ClearFlowCookie(w)
+	w.Header().Set("Cache-Control", "no-store")
+	id := chi.URLParam(r, "providerID")
+	c, ok := h.Connectors[id]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	flow, err := h.Flows.FromRequest(r)
+	if err != nil {
+		h.fail(w, r, http.StatusBadRequest, id, "flow_cookie", err)
+		return
+	}
+	if err := flow.Matches(id, r.URL.Query().Get("state")); err != nil {
+		h.fail(w, r, http.StatusBadRequest, id, "state", err)
+		return
+	}
+	a, err := c.Complete(r.Context(), r, flow)
+	if err != nil {
+		h.fail(w, r, http.StatusForbidden, id, "assertion", err)
+		return
+	}
+	a.ProviderID = id
+
+	presented := ""
+	if ck, err := r.Cookie(CookieName); err == nil {
+		presented = ck.Value
+	}
+	res, err := h.Resolver.Resolve(r.Context(), LoginRequest{
+		Assertion:        a,
+		Policy:           c.Policy(),
+		AuthMethod:       c.AuthMethod(),
+		PresentedSession: presented,
+		IP:               clientIP(r),
+		UA:               r.UserAgent(),
 	})
 	if err != nil {
-		slog.Warn("auth: check platform membership", "err", err)
-		return
-	}
-	if len(rows) > 0 {
-		return
-	}
-
-	if _, err := q.CreateMembership(ctx, sqlc.CreateMembershipParams{
-		ID:           newID(),
-		OrgID:        perm.PlatformOrg,
-		ActorID:      userID,
-		ActorType:    "user",
-		ResourceType: "org",
-		ResourceID:   perm.PlatformOrg,
-		RoleID:       sql.NullString{String: perm.PlatformOwnerRole, Valid: true},
-	}); err != nil {
-		slog.Warn("auth: grant platform admin", "err", err)
-	}
-}
-
-// bootstrapGate checks whether the caller's email is allowed during pre-bootstrap.
-// Returns an error response if gated.
-func (h *OAuthHandler) bootstrapGate(ctx context.Context, w http.ResponseWriter, email string) bool {
-	bootstrapped, err := h.Bootstrap.IsBootstrapped(ctx)
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return false
-	}
-	if bootstrapped {
-		return true
-	}
-
-	// Token-based bootstrap is handled by WU-103's dedicated token claim page.
-	// Here we just check admin email membership.
-
-	for _, ae := range h.AdminEmails {
-		if ae == email {
-			if err := h.Bootstrap.MarkBootstrapped(ctx); err != nil {
-				http.Error(w, "internal server error", http.StatusInternalServerError)
-				return false
-			}
-			return true
+		var ref *RefusedError
+		if errors.As(err, &ref) {
+			h.fail(w, r, http.StatusForbidden, id, ref.Reason, err)
+			return
 		}
-	}
-
-	http.Error(w, "forbidden: platform not bootstrapped, and you are not an admin", http.StatusForbidden)
-	return false
-}
-
-// HandleGoogleLogin redirects the browser to Google's consent page.
-func (h *OAuthHandler) HandleGoogleLogin(w http.ResponseWriter, r *http.Request) {
-	authURL, state, err := h.Provider.AuthURL()
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		h.fail(w, r, http.StatusInternalServerError, id, "resolve", err)
 		return
 	}
-	h.stateMap[state] = stateEntry{nonce: state, expiresAt: time.Now().Add(15 * time.Minute)}
-	http.Redirect(w, r, authURL, http.StatusFound)
-}
-
-// HandleGoogleCallback handles the OAuth callback from Google.
-func (h *OAuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	state := r.FormValue("state")
-	entry, ok := h.stateMap[state]
-	if !ok || time.Now().After(entry.expiresAt) {
-		http.Error(w, "forbidden: invalid or expired state", http.StatusForbidden)
-		return
-	}
-	delete(h.stateMap, state)
-
-	code := r.FormValue("code")
-	if code == "" {
-		http.Error(w, "bad request: no authorization code", http.StatusBadRequest)
-		return
-	}
-
-	claims, err := h.Provider.Exchange(ctx, code, state, state)
-	if err != nil {
-		http.Error(w, "forbidden: authentication failed: "+err.Error(), http.StatusForbidden)
-		return
-	}
-
-	if !h.bootstrapGate(ctx, w, claims.Email) {
-		return
-	}
-
-	userID, err := LinkOrCreate(ctx, h.Identity, claims)
-	if err != nil {
-		http.Error(w, "internal server error: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Platform admins (bootstrap admins) get an Org Owner membership in the
-	// platform sentinel org, which grants platform-scope actions (org.create,
-	// pricing, providers). Idempotent: no-op if already granted.
-	h.ensurePlatformAdmin(ctx, w, userID, claims.Email)
-
-	raw, _, err := h.Store.Create(ctx, userID, r.RemoteAddr, r.UserAgent())
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	h.SessionCfg.SetCookie(w, raw, time.Now().Add(SlidingTTL))
+	setSessionCookie(w, res.RawToken, res.Session.ExpiresAt)
 	http.Redirect(w, r, h.BaseURL+"/app", http.StatusSeeOther)
 }
 
-// HandleGitHubLogin redirects the browser to GitHub's consent page.
-func (h *OAuthHandler) HandleGitHubLogin(w http.ResponseWriter, r *http.Request) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	state := hex.EncodeToString(b)
-	h.stateMap[state] = stateEntry{nonce: state, expiresAt: time.Now().Add(15 * time.Minute)}
-	http.Redirect(w, r, h.GitHub.AuthURL(state), http.StatusFound)
-}
-
-// HandleGitHubCallback handles the OAuth callback from GitHub.
-func (h *OAuthHandler) HandleGitHubCallback(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	state := r.FormValue("state")
-	entry, ok := h.stateMap[state]
-	if !ok || time.Now().After(entry.expiresAt) {
-		http.Error(w, "forbidden: invalid or expired state", http.StatusForbidden)
-		return
-	}
-	delete(h.stateMap, state)
-
-	code := r.FormValue("code")
-	if code == "" {
-		http.Error(w, "bad request: no authorization code", http.StatusBadRequest)
-		return
-	}
-
-	user, err := h.GitHub.Exchange(ctx, code, state)
-	if err != nil {
-		http.Error(w, "forbidden: authentication failed: "+err.Error(), http.StatusForbidden)
-		return
-	}
-
-	if !h.bootstrapGate(ctx, w, user.Email) {
-		return
-	}
-
-	userID, err := LinkOrCreate(ctx, h.Identity, &GoogleClaims{
-		Sub:           fmt.Sprintf("gh-%d", user.ID),
-		Email:         user.Email,
-		EmailVerified: true,
-		Name:          user.Name,
-		Picture:       user.Avatar,
-	})
-	if err != nil {
-		http.Error(w, "internal server error: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Platform admins (bootstrap admins) get an Org Owner membership in the
-	// platform sentinel org (see ensurePlatformAdmin).
-	h.ensurePlatformAdmin(ctx, w, userID, user.Email)
-
-	// WU-406: encrypt the OAuth access token at rest so the github.connect
-	// action can reuse it (and Phase-5 wiki edits can commit as this user).
-	if len(h.SecretKey) == 32 && user.Token != "" {
-		enc, err := tenant.Encrypt(h.SecretKey, user.Token)
-		if err != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		if err := h.Identity.SetIdentityToken(ctx, userID, "github", enc); err != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+// Logout revokes the current session and clears its cookie (local logout;
+// IdP logout is WU-609). It sits behind the global CSRF middleware.
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	if ck, err := r.Cookie(CookieName); err == nil && ck.Value != "" {
+		if err := h.Sessions.Revoke(r.Context(), ck.Value); err != nil {
+			clearSessionCookie(w)
+			h.fail(w, r, http.StatusInternalServerError, "", "logout", err)
 			return
 		}
 	}
+	clearSessionCookie(w)
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
 
-	raw, _, err := h.Store.Create(ctx, userID, r.RemoteAddr, r.UserAgent())
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
+// fail logs err with a fresh reference code and renders the generic failure
+// page. err is never written to the client.
+func (h *Handler) fail(w http.ResponseWriter, r *http.Request, status int, provider, reason string, err error) {
+	ref := newRef()
+	reqID := ""
+	if h.RequestID != nil {
+		reqID = h.RequestID(r.Context())
 	}
-
-	h.SessionCfg.SetCookie(w, raw, time.Now().Add(SlidingTTL))
-	http.Redirect(w, r, h.BaseURL+"/app", http.StatusSeeOther)
-}
-
-// DBIdentityStore implements IdentityStore using sqlc.
-type DBIdentityStore struct {
-	q *sqlc.Queries
-}
-
-func NewDBIdentityStore(d *sql.DB) *DBIdentityStore {
-	return &DBIdentityStore{q: sqlc.New(d)}
-}
-
-func (s *DBIdentityStore) FindUserByEmail(ctx context.Context, email string) (string, error) {
-	u, err := s.q.FindUserByEmail(ctx, email)
-	if err != nil {
-		return "", err
+	slog.Warn("auth: login failed",
+		"ref", ref, "req_id", reqID, "provider", provider, "reason", reason, "status", status, "err", err)
+	msg, ok := refusalCopy[reason]
+	if !ok {
+		msg = msgGeneric
 	}
-	return u.ID, nil
+	LoginFailedHandler(w, r, status, msg, ref)
 }
 
-func (s *DBIdentityStore) CreateUser(ctx context.Context, email, name, avatarURL string) (string, error) {
-	b := make([]byte, 16)
+// newRef returns a short reference code users can quote to an admin.
+func newRef() string {
+	b := make([]byte, 5)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("auth: generate user id: %w", err)
+		return "unknown"
 	}
-	id := hex.EncodeToString(b)
-	if err := s.q.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:        id,
-		Email:     email,
-		Name:      name,
-		AvatarUrl: avatarURL,
-	}); err != nil {
-		return "", err
-	}
-	return id, nil
+	return strings.ToUpper(hex.EncodeToString(b))
 }
 
-func (s *DBIdentityStore) LinkIdentity(ctx context.Context, userID, provider, subject, email string) error {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return fmt.Errorf("auth: generate identity id: %w", err)
+// clientIP is the request's remote address without the port.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
 	}
-	id := hex.EncodeToString(b)
-	return s.q.LinkIdentity(ctx, sqlc.LinkIdentityParams{
-		ID:       id,
-		UserID:   userID,
-		Provider: provider,
-		Subject:  subject,
-		Email:    email,
-	})
+	return host
 }
 
-// SetIdentityToken stores an encrypted OAuth token against the user's identity.
-func (s *DBIdentityStore) SetIdentityToken(ctx context.Context, userID, provider, tokenEnc string) error {
-	return s.q.SetIdentityToken(ctx, sqlc.SetIdentityTokenParams{
-		TokenEnc: []byte(tokenEnc),
-		UserID:   userID,
-		Provider: provider,
-	})
-}
-
-// newID returns a random hex id (16 bytes) for platform-admin membership rows.
+// newID returns a random hex id (16 bytes).
 func newID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		panic(fmt.Sprintf("auth: crypto/rand failed: %v", err))
 	}
 	return hex.EncodeToString(b[:])
-}
-
-// DBBootstrapStore implements BootstrapChecker using sqlc.
-type DBBootstrapStore struct {
-	q *sqlc.Queries
-}
-
-func NewDBBootstrapStore(d *sql.DB) *DBBootstrapStore {
-	return &DBBootstrapStore{q: sqlc.New(d)}
-}
-
-func (s *DBBootstrapStore) IsBootstrapped(ctx context.Context) (bool, error) {
-	ps, err := s.q.GetPlatformSettings(ctx)
-	if err != nil {
-		return false, err
-	}
-	return ps.BootstrapDone != 0, nil
-}
-
-func (s *DBBootstrapStore) IsAdminEmail(email string) bool {
-	// Admin email check is now handled at the OAuthHandler level via the
-	// AdminEmails field. This stub satisfies the interface; the real gating
-	// logic is in bootstrapGate.
-	return false
-}
-
-func (s *DBBootstrapStore) MarkBootstrapped(ctx context.Context) error {
-	return s.q.SetBootstrapDone(ctx)
 }

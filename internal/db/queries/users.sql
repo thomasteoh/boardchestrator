@@ -8,9 +8,35 @@ WHERE email = ?
 INSERT INTO users (id, email, name, avatar_url)
 VALUES (?, ?, ?, ?);
 
+-- name: FindUserByEmailAnyState :one
+-- Login resolution (SPEC s7.3 step 3): includes deleted users so a deleted
+-- account's email is refused rather than tripping the UNIQUE constraint.
+SELECT id, deleted_at
+FROM users
+WHERE email = ?;
+
 -- name: LinkIdentity :exec
-INSERT INTO identities (id, user_id, provider, subject, email)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO identities (id, user_id, provider, subject, email, last_login_at)
+VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: FindIdentityForLogin :one
+-- Login resolution (SPEC s7.3 step 1): (provider, subject) first, with the
+-- owning user's deletion state so a deleted user is refused.
+SELECT i.id, i.user_id, u.deleted_at
+FROM identities i
+JOIN users u ON u.id = i.user_id
+WHERE i.provider = ?
+  AND i.subject = ?;
+
+-- name: TouchIdentityLogin :exec
+UPDATE identities
+SET email = ?, last_login_at = ?
+WHERE id = ?;
+
+-- name: SetIdentityTokenByID :exec
+UPDATE identities
+SET token_enc = ?
+WHERE id = ?;
 
 -- name: FindIdentityByProviderSubject :one
 SELECT id, user_id, provider, subject, email

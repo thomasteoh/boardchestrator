@@ -2,160 +2,238 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
+	"crypto/subtle"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"strings"
+	"sync"
+	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 )
 
-// OIDCConfig holds Google OIDC client configuration.
+// GoogleIssuer is Google's OIDC issuer.
+const GoogleIssuer = "https://accounts.google.com"
+
+// discoveryTTL is how long a discovered provider is cached (SPEC §7.1).
+const discoveryTTL = time.Hour
+
+// OIDCConfig configures an OpenID Connect connector.
 type OIDCConfig struct {
+	ID           string // provider id, e.g. "google"
+	Issuer       string
 	ClientID     string
 	ClientSecret string
-	BaseURL      string
+	// RedirectURL is the absolute callback URL registered with the IdP.
+	RedirectURL string
+	Scopes      []string // default: openid email profile
+	Policy      ResolvePolicy
+	// Client is the IdP HTTP client; nil = NewIdPClient(nil).
+	Client *http.Client
 }
 
-// OIDCProvider wraps the Google OIDC flow.
-type OIDCProvider struct {
-	cfg    OIDCConfig
-	oauth2 oauth2.Config
+// OIDCConnector signs users in with the authorisation-code flow, PKCE (S256)
+// and a nonce, verifying the ID token's signature, iss, aud and exp with
+// go-oidc. Discovery is lazy and cached, so an unreachable IdP fails only its
+// own logins, never startup.
+type OIDCConnector struct {
+	cfg OIDCConfig
+
+	mu        sync.Mutex
+	provider  *oidc.Provider
+	fetchedAt time.Time
 }
 
-// NewOIDCProvider creates a provider wired to Google's OIDC discovery.
-func NewOIDCProvider(cfg OIDCConfig) *OIDCProvider {
-	return &OIDCProvider{
-		cfg: cfg,
-		oauth2: oauth2.Config{
-			ClientID:     cfg.ClientID,
-			ClientSecret: cfg.ClientSecret,
-			Endpoint:     google.Endpoint,
-			Scopes:       []string{"openid", "email", "profile"},
-			RedirectURL:  cfg.BaseURL + "/auth/google/callback",
-		},
+// NewOIDCConnector builds a connector; no network traffic happens until the
+// first Begin.
+func NewOIDCConnector(cfg OIDCConfig) *OIDCConnector {
+	if len(cfg.Scopes) == 0 {
+		cfg.Scopes = []string{oidc.ScopeOpenID, "email", "profile"}
 	}
-}
-
-// AuthURL returns the Google OAuth URL and a state nonce for CSRF protection.
-func (p *OIDCProvider) AuthURL() (string, string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", "", fmt.Errorf("oidc: generate state: %w", err)
+	if cfg.Client == nil {
+		cfg.Client = NewIdPClient(nil)
 	}
-	state := hex.EncodeToString(b)
-	u := p.oauth2.AuthCodeURL(state, oauth2.AccessTypeOnline)
-	return u, state, nil
+	return &OIDCConnector{cfg: cfg}
 }
 
-// GoogleClaims is the subset of the Google ID token we extract.
-type GoogleClaims struct {
-	Sub           string `json:"sub"`
-	Email         string `json:"email"`
-	EmailVerified bool   `json:"email_verified"`
-	Name          string `json:"name"`
-	Picture       string `json:"picture"`
-}
-
-// Exchange exchanges the auth code for a token, verifies the state nonce,
-// and returns the parsed ID token claims.
-func (p *OIDCProvider) Exchange(ctx context.Context, code, storedState, presentedState string) (*GoogleClaims, error) {
-	if presentedState != storedState {
-		return nil, errors.New("oidc: state mismatch — CSRF detected")
+// NewGoogleConnector is the Google preset: issuer accounts.google.com (or
+// issuer, when non-empty, so tests can point it at oidctest), trusted for
+// email, sign-up allowed (WU-604 makes this configurable).
+func NewGoogleConnector(issuer, clientID, clientSecret, baseURL string, client *http.Client) *OIDCConnector {
+	if issuer == "" {
+		issuer = GoogleIssuer
 	}
-	tok, err := p.oauth2.Exchange(ctx, code)
+	return NewOIDCConnector(OIDCConfig{
+		ID:           "google",
+		Issuer:       issuer,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURL:  baseURL + "/auth/google/callback",
+		Policy:       ResolvePolicy{TrustEmail: true, AllowSignup: true},
+		Client:       client,
+	})
+}
+
+func (c *OIDCConnector) ID() string            { return c.cfg.ID }
+func (c *OIDCConnector) AuthMethod() string    { return AuthMethodOIDC }
+func (c *OIDCConnector) Policy() ResolvePolicy { return c.cfg.Policy }
+
+func (c *OIDCConnector) clientCtx(ctx context.Context) context.Context {
+	// x/oauth2 reads the client from oauth2.HTTPClient; go-oidc from its own
+	// key. They share the same *http.Client.
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.cfg.Client)
+	return oidc.ClientContext(ctx, c.cfg.Client)
+}
+
+func (c *OIDCConnector) discover(ctx context.Context) (*oidc.Provider, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.provider != nil && time.Since(c.fetchedAt) < discoveryTTL {
+		return c.provider, nil
+	}
+	// The provider's key set keeps this context for later JWKS refreshes, so
+	// it must outlive the request.
+	p, err := oidc.NewProvider(c.clientCtx(context.WithoutCancel(ctx)), c.cfg.Issuer)
 	if err != nil {
-		return nil, fmt.Errorf("oidc: token exchange: %w", err)
+		return nil, fmt.Errorf("oidc %s: discovery: %w", c.cfg.ID, err)
 	}
-	rawIDToken, ok := tok.Extra("id_token").(string)
-	if !ok || rawIDToken == "" {
-		return nil, errors.New("oidc: no id_token in response")
-	}
-	parts := strings.Split(rawIDToken, ".")
-	if len(parts) != 3 {
-		return nil, errors.New("oidc: malformed id_token")
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, fmt.Errorf("oidc: decode id_token payload: %w", err)
-	}
-	var claims GoogleClaims
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil, fmt.Errorf("oidc: parse id_token claims: %w", err)
-	}
-	if !claims.EmailVerified {
-		return nil, errors.New("oidc: email not verified by Google")
-	}
-	if claims.Email == "" {
-		return nil, errors.New("oidc: no email in id_token")
-	}
-	return &claims, nil
+	c.provider, c.fetchedAt = p, time.Now()
+	return p, nil
 }
 
-// FetchGoogleUserInfo is a fallback for providers without id_token support.
-func FetchGoogleUserInfo(ctx context.Context, accessToken string) (*GoogleClaims, error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.googleapis.com/oauth2/v2/userinfo", nil)
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("oidc: userinfo: %w", err)
+func (c *OIDCConnector) oauth2Config(p *oidc.Provider) *oauth2.Config {
+	return &oauth2.Config{
+		ClientID:     c.cfg.ClientID,
+		ClientSecret: c.cfg.ClientSecret,
+		Endpoint:     p.Endpoint(),
+		Scopes:       c.cfg.Scopes,
+		RedirectURL:  c.cfg.RedirectURL,
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	if err != nil {
-		return nil, fmt.Errorf("oidc: read userinfo: %w", err)
-	}
-	var claims GoogleClaims
-	if err := json.Unmarshal(body, &claims); err != nil {
-		return nil, fmt.Errorf("oidc: parse userinfo: %w", err)
-	}
-	return &claims, nil
 }
 
-// IdentityStore is the interface for finding/creating users and linking identities.
-type IdentityStore interface {
-	FindUserByEmail(ctx context.Context, email string) (string, error)
-	CreateUser(ctx context.Context, email, name, avatarURL string) (string, error)
-	LinkIdentity(ctx context.Context, userID, provider, subject, email string) error
-	// SetIdentityToken stores an encrypted OAuth token against the user's
-	// identity for the given provider (WU-406 GitHub token reuse).
-	SetIdentityToken(ctx context.Context, userID, provider, tokenEnc string) error
-}
-
-// BootstrapChecker gates first-user-as-admin setup.
-type BootstrapChecker interface {
-	IsBootstrapped(ctx context.Context) (bool, error)
-	IsAdminEmail(email string) bool
-	MarkBootstrapped(ctx context.Context) error
-}
-
-// LinkOrCreate resolves a Google login to a user account.
-func LinkOrCreate(ctx context.Context, store IdentityStore, claims *GoogleClaims) (string, error) {
-	userID, err := store.FindUserByEmail(ctx, claims.Email)
+// Begin returns the IdP authorisation URL carrying state, nonce and the PKCE
+// S256 challenge from flow.
+func (c *OIDCConnector) Begin(ctx context.Context, flow *Flow) (string, error) {
+	p, err := c.discover(ctx)
 	if err != nil {
-		return "", fmt.Errorf("auth: find user by email: %w", err)
+		return "", err
 	}
-	if userID == "" {
-		userID, err = store.CreateUser(ctx, claims.Email, claims.Name, claims.Picture)
+	opts := []oauth2.AuthCodeOption{
+		oidc.Nonce(flow.Nonce),
+		oauth2.S256ChallengeOption(flow.PKCEVerifier),
+	}
+	if flow.LoginHint != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("login_hint", flow.LoginHint))
+	}
+	return c.oauth2Config(p).AuthCodeURL(flow.State, opts...), nil
+}
+
+// oidcClaims are the standard claims read from the ID token and userinfo.
+type oidcClaims struct {
+	Subject       string   `json:"sub"`
+	Email         string   `json:"email"`
+	EmailVerified flexBool `json:"email_verified"`
+	Name          string   `json:"name"`
+	Picture       string   `json:"picture"`
+	Groups        []string `json:"groups"`
+	SID           string   `json:"sid"`
+}
+
+// flexBool accepts JSON true/false and the strings "true"/"false", which some
+// IdPs emit for email_verified.
+type flexBool bool
+
+func (b *flexBool) UnmarshalJSON(d []byte) error {
+	var v any
+	if err := json.Unmarshal(d, &v); err != nil {
+		return err
+	}
+	switch t := v.(type) {
+	case bool:
+		*b = flexBool(t)
+	case string:
+		*b = flexBool(t == "true")
+	default:
+		*b = false
+	}
+	return nil
+}
+
+// Complete exchanges the code (with the PKCE verifier), verifies the ID token
+// and its nonce, and returns the assertion. The handler has already checked
+// state against the flow cookie.
+func (c *OIDCConnector) Complete(ctx context.Context, r *http.Request, flow *Flow) (*Assertion, error) {
+	q := r.URL.Query()
+	if e := q.Get("error"); e != "" {
+		return nil, fmt.Errorf("oidc %s: authorisation error %q", c.cfg.ID, e)
+	}
+	code := q.Get("code")
+	if code == "" {
+		return nil, fmt.Errorf("oidc %s: no code", c.cfg.ID)
+	}
+	p, err := c.discover(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cctx := c.clientCtx(ctx)
+	tok, err := c.oauth2Config(p).Exchange(cctx, code, oauth2.VerifierOption(flow.PKCEVerifier))
+	if err != nil {
+		return nil, fmt.Errorf("oidc %s: token exchange: %w", c.cfg.ID, err)
+	}
+	rawID, _ := tok.Extra("id_token").(string)
+	if rawID == "" {
+		return nil, fmt.Errorf("oidc %s: no id_token", c.cfg.ID)
+	}
+	idt, err := p.Verifier(&oidc.Config{ClientID: c.cfg.ClientID}).Verify(cctx, rawID)
+	if err != nil {
+		return nil, fmt.Errorf("oidc %s: verify id_token: %w", c.cfg.ID, err)
+	}
+	if idt.Nonce == "" || subtle.ConstantTimeCompare([]byte(idt.Nonce), []byte(flow.Nonce)) != 1 {
+		return nil, fmt.Errorf("oidc %s: nonce mismatch", c.cfg.ID)
+	}
+	var cl oidcClaims
+	if err := idt.Claims(&cl); err != nil {
+		return nil, fmt.Errorf("oidc %s: id_token claims: %w", c.cfg.ID, err)
+	}
+	raw := map[string]any{}
+	if err := idt.Claims(&raw); err != nil {
+		return nil, fmt.Errorf("oidc %s: id_token claims: %w", c.cfg.ID, err)
+	}
+
+	// Userinfo only fills claims the ID token lacks, and must be about the
+	// same subject.
+	if cl.Email == "" && p.UserInfoEndpoint() != "" {
+		ui, err := p.UserInfo(cctx, oauth2.StaticTokenSource(tok))
 		if err != nil {
-			return "", fmt.Errorf("auth: create user: %w", err)
+			return nil, fmt.Errorf("oidc %s: userinfo: %w", c.cfg.ID, err)
+		}
+		if ui.Subject != idt.Subject {
+			return nil, fmt.Errorf("oidc %s: userinfo subject mismatch", c.cfg.ID)
+		}
+		var uc oidcClaims
+		if err := ui.Claims(&uc); err != nil {
+			return nil, fmt.Errorf("oidc %s: userinfo claims: %w", c.cfg.ID, err)
+		}
+		cl.Email, cl.EmailVerified = uc.Email, uc.EmailVerified
+		if cl.Name == "" {
+			cl.Name = uc.Name
+		}
+		if cl.Picture == "" {
+			cl.Picture = uc.Picture
 		}
 	}
-	if err := store.LinkIdentity(ctx, userID, "google", claims.Sub, claims.Email); err != nil {
-		return "", fmt.Errorf("auth: link identity: %w", err)
-	}
-	return userID, nil
-}
 
-// HashToken256 returns hex SHA-256 of a token.
-func HashToken256(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+	return &Assertion{
+		ProviderID:    c.cfg.ID,
+		Subject:       idt.Subject,
+		Email:         cl.Email,
+		EmailVerified: bool(cl.EmailVerified),
+		Name:          cl.Name,
+		Picture:       cl.Picture,
+		Groups:        cl.Groups,
+		SID:           cl.SID,
+		IDTokenRaw:    rawID,
+		RawClaims:     raw,
+	}, nil
 }

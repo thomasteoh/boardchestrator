@@ -183,6 +183,11 @@ func (s *Server) setupRoutes() {
 	auth.ForbiddenHandler = func(w http.ResponseWriter, r *http.Request, title, message string) {
 		web.RenderErrorPage(w, r, 403, title, message)
 	}
+	auth.LoginFailedHandler = func(w http.ResponseWriter, r *http.Request, status int, message, ref string) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(status)
+		web.RenderErrorPage(w, r, status, "Sign-in failed", message+" Reference: "+ref)
+	}
 	// Custom error pages for 404, 405, 500.
 	s.mux.NotFound(s.handleNotFound)
 	s.mux.MethodNotAllowed(s.handleMethodNotAllowed)
@@ -194,26 +199,47 @@ func (s *Server) setupRoutes() {
 	}
 	web.Routes(s.mux)
 	if s.db != nil {
-		ah := auth.NewOAuthHandler(auth.OIDCConfig{
-			ClientID:     s.cfg.GoogleClientID,
-			ClientSecret: s.cfg.GoogleClientSecret,
-			BaseURL:      s.cfg.BaseURL,
-		}, auth.GitHubConfig{
+		s.setupAuthRoutes()
+	}
+}
+
+// setupAuthRoutes mounts the login routes (SPEC §7.2) with the built-in
+// Google and GitHub connectors. Session cookies set here use the same
+// always-Secure attributes as the session middleware.
+func (s *Server) setupAuthRoutes() {
+	client := auth.NewIdPClient(nil)
+	var conns []auth.Connector
+	if s.cfg.GoogleClientID != "" {
+		conns = append(conns, auth.NewGoogleConnector(s.cfg.GoogleIssuer,
+			s.cfg.GoogleClientID, s.cfg.GoogleClientSecret, s.cfg.BaseURL, client))
+	}
+	if s.cfg.GitHubClientID != "" {
+		conns = append(conns, auth.NewGitHubConnector(auth.GitHubConfig{
 			ClientID:     s.cfg.GitHubClientID,
 			ClientSecret: s.cfg.GitHubClientSecret,
 			BaseURL:      s.cfg.BaseURL,
-		}, s.sessions, s.db, auth.SessionConfig{
-			Store:    s.sessions,
-			Secret:   s.cfg.SessionSecret,
-			Insecure: true,
-		})
-		ah.SecretKey = tenant.PadKey(s.cfg.SecretKey)
-		ah.SetBootstrapConfig(s.cfg.AdminEmails, s.cfg.BootstrapToken)
-		s.mux.Get("/auth/google", ah.HandleGoogleLogin)
-		s.mux.Get("/auth/google/callback", ah.HandleGoogleCallback)
-		s.mux.Get("/auth/github", ah.HandleGitHubLogin)
-		s.mux.Get("/auth/github/callback", ah.HandleGitHubCallback)
+			WebBase:      s.cfg.GitHubWebBase,
+			APIBase:      s.cfg.GitHubAPIBase,
+			Client:       client,
+		}))
 	}
+	ah, err := auth.NewHandler(auth.HandlerConfig{
+		DB:          s.db,
+		Sessions:    s.sessions,
+		SecretKey:   s.cfg.SecretKey,
+		EncKey:      tenant.PadKey(s.cfg.SecretKey),
+		BaseURL:     s.cfg.BaseURL,
+		AdminEmails: s.cfg.AdminEmails,
+		Connectors:  conns,
+		RequestID:   RequestID,
+	})
+	if err != nil {
+		// Only an empty BC_SECRET_KEY fails here, which config.Load rejects;
+		// without a sealer no login can be safe, so mount no login routes.
+		slog.Error("auth: login routes disabled", "err", err)
+		return
+	}
+	ah.Routes(s.mux)
 }
 
 // Bus returns the server's event bus. The action Dispatcher wires its

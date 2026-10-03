@@ -25,8 +25,14 @@ type Config struct {
 	GoogleClientSecret string
 	GitHubClientID     string
 	GitHubClientSecret string
-	AgentWorkers       int
-	SchedPollInterval  int
+	// IdP endpoint overrides. Not loaded from the environment: tests point the
+	// built-in connectors at in-process fakes (internal/auth/oidctest). Empty
+	// means the real provider. WU-602's provider registry supersedes these.
+	GoogleIssuer      string
+	GitHubWebBase     string
+	GitHubAPIBase     string
+	AgentWorkers      int
+	SchedPollInterval int
 }
 
 // Load reads configuration from environment variables with defaults.

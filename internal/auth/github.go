@@ -3,166 +3,213 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+)
+
+// GitHub endpoints. GitHub is OAuth 2.0, not OIDC (SPEC §7.1).
+const (
+	GitHubWebBase = "https://github.com"
+	GitHubAPIBase = "https://api.github.com"
 )
 
 // GitHubConfig holds GitHub OAuth application credentials.
 type GitHubConfig struct {
 	ClientID     string
 	ClientSecret string
-	BaseURL      string
+	BaseURL      string // Boardchestrator's BC_BASE_URL
+	// WebBase and APIBase override https://github.com and
+	// https://api.github.com (tests point them at httptest fakes).
+	WebBase string
+	APIBase string
+	// Client is the IdP HTTP client; nil = NewIdPClient(nil).
+	Client *http.Client
 }
 
-// GitHubProvider wraps the GitHub OAuth flow (no OIDC — GitHub uses a
-// separate user-info endpoint).
-type GitHubProvider struct {
+// GitHubConnector signs users in with GitHub OAuth. Credentials travel in the
+// POST body of the token exchange, never the URL.
+type GitHubConnector struct {
 	cfg GitHubConfig
+	// Endpoint URLs, fixed at construction from operator config.
+	tokenURL, userURL, emailsURL string
 }
 
-// NewGitHubProvider creates a GitHub OAuth provider.
-func NewGitHubProvider(cfg GitHubConfig) *GitHubProvider {
-	return &GitHubProvider{cfg: cfg}
+// NewGitHubConnector builds the GitHub connector.
+func NewGitHubConnector(cfg GitHubConfig) *GitHubConnector {
+	if cfg.WebBase == "" {
+		cfg.WebBase = GitHubWebBase
+	}
+	if cfg.APIBase == "" {
+		cfg.APIBase = GitHubAPIBase
+	}
+	cfg.WebBase = strings.TrimRight(cfg.WebBase, "/")
+	cfg.APIBase = strings.TrimRight(cfg.APIBase, "/")
+	if cfg.Client == nil {
+		cfg.Client = NewIdPClient(nil)
+	}
+	return &GitHubConnector{
+		cfg:       cfg,
+		tokenURL:  cfg.WebBase + "/login/oauth/access_token",
+		userURL:   cfg.APIBase + "/user",
+		emailsURL: cfg.APIBase + "/user/emails",
+	}
 }
 
-// GitHubUser is the GitHub API user object returned by /user.
-type GitHubUser struct {
-	ID       int64  `json:"id"`
-	Login    string `json:"login"`
-	Email    string `json:"email"`
-	Name     string `json:"name"`
-	Avatar   string `json:"avatar_url"`
-	Primary  bool   `json:"primary"` // from /emails endpoint
-	Verified bool   `json:"verified"`
-	// Token is the OAuth access token captured during Exchange. It is not
-	// populated from the /user JSON; set explicitly after the token exchange.
-	Token string `json:"-"`
+func (c *GitHubConnector) ID() string         { return "github" }
+func (c *GitHubConnector) AuthMethod() string { return AuthMethodGitHub }
+
+// Policy: GitHub returns only verified emails here, so it is trusted for
+// email linking; sign-up allowed until WU-604.
+func (c *GitHubConnector) Policy() ResolvePolicy {
+	return ResolvePolicy{TrustEmail: true, AllowSignup: true}
 }
 
-// AuthURL returns the GitHub OAuth URL and a state nonce.
-func (p *GitHubProvider) AuthURL(state string) string {
-	return fmt.Sprintf(
-		"https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&state=%s&scope=user:email",
-		p.cfg.ClientID, p.cfg.BaseURL+"/auth/github/callback", state,
-	)
+func (c *GitHubConnector) redirectURL() string { return c.cfg.BaseURL + "/auth/github/callback" }
+
+// Begin returns GitHub's authorisation URL for flow.
+func (c *GitHubConnector) Begin(_ context.Context, flow *Flow) (string, error) {
+	v := url.Values{
+		"client_id":    {c.cfg.ClientID},
+		"redirect_uri": {c.redirectURL()},
+		"state":        {flow.State},
+		"scope":        {"read:user user:email"},
+	}
+	if flow.LoginHint != "" {
+		v.Set("login", flow.LoginHint)
+	}
+	return c.cfg.WebBase + "/login/oauth/authorize?" + v.Encode(), nil
 }
 
-// Exchange exchanges the code for an access token and fetches user info.
-// It returns the primary verified email and profile details.
-func (p *GitHubProvider) Exchange(ctx context.Context, code, state string) (*GitHubUser, error) {
-	// POST to GitHub token endpoint.
-	tokenURL := fmt.Sprintf(
-		"https://github.com/login/oauth/access_token?client_id=%s&client_secret=%s&code=%s",
-		p.cfg.ClientID, p.cfg.ClientSecret, code,
-	)
-	// gosec G704 flags tokenURL as attacker-influenced. The scheme and host are
-	// a hardcoded literal (github.com); only query parameters are interpolated,
-	// so the request target cannot be redirected. NOTE: the genuine defect here
-	// is that client_secret travels in the query string at all — see WU-526,
-	// which moves these credentials into a POST body.
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, nil) //nolint:gosec // hardcoded host; credential-in-URL tracked by WU-526
-	if err != nil {
-		return nil, fmt.Errorf("github: token request: %w", err)
+// Complete exchanges the code and reads the user's id, profile and primary
+// verified email.
+func (c *GitHubConnector) Complete(ctx context.Context, r *http.Request, _ *Flow) (*Assertion, error) {
+	q := r.URL.Query()
+	if e := q.Get("error"); e != "" {
+		return nil, fmt.Errorf("github: authorisation error %q", e)
 	}
-	req.Header.Set("Accept", "application/json")
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // same hardcoded-host request as above; see WU-526
-	if err != nil {
-		return nil, fmt.Errorf("github: token exchange: %w", err)
+	code := q.Get("code")
+	if code == "" {
+		return nil, errors.New("github: no code")
 	}
-	defer resp.Body.Close()
-
-	var tokResp struct {
-		AccessToken string `json:"access_token"`
-		TokenType   string `json:"token_type"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&tokResp); err != nil {
-		return nil, fmt.Errorf("github: decode token response: %w", err)
-	}
-	if tokResp.AccessToken == "" {
-		return nil, fmt.Errorf("github: no access_token in response")
-	}
-
-	// Fetch user profile.
-	user, err := fetchGitHubUser(ctx, tokResp.AccessToken)
+	token, err := c.exchange(ctx, code)
 	if err != nil {
 		return nil, err
 	}
 
-	// Fetch primary verified email if not already visible.
-	if user.Email == "" || !user.Verified {
-		emails, err := fetchGitHubEmails(ctx, tokResp.AccessToken)
-		if err != nil {
-			return nil, err
-		}
-		for _, e := range emails {
-			if e.Primary && e.Verified {
-				user.Email = e.Email
-				user.Verified = true
-				break
-			}
-		}
+	var user struct {
+		ID     int64  `json:"id"`
+		Login  string `json:"login"`
+		Name   string `json:"name"`
+		Avatar string `json:"avatar_url"`
 	}
-
-	if user.Email == "" || !user.Verified {
-		return nil, fmt.Errorf("github: no verified primary email — ensure user:email scope is granted")
+	if err := c.getJSON(ctx, token, c.userURL, &user); err != nil {
+		return nil, err
 	}
-	if user.Name == "" {
-		user.Name = user.Login
+	if user.ID == 0 {
+		return nil, errors.New("github: /user returned no id")
 	}
-
-	// Capture the OAuth access token for later GitHub features (WU-406).
-	user.Token = tokResp.AccessToken
-
-	return user, nil
-}
-
-func fetchGitHubUser(ctx context.Context, token string) (*GitHubUser, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user", nil)
-	if err != nil {
-		return nil, fmt.Errorf("github: user request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("github: fetch user: %w", err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	if err != nil {
-		return nil, fmt.Errorf("github: read user: %w", err)
-	}
-	var user GitHubUser
-	if err := json.Unmarshal(body, &user); err != nil {
-		return nil, fmt.Errorf("github: parse user: %w", err)
-	}
-	return &user, nil
-}
-
-func fetchGitHubEmails(ctx context.Context, token string) ([]struct {
-	Email    string `json:"email"`
-	Primary  bool   `json:"primary"`
-	Verified bool   `json:"verified"`
-}, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user/emails", nil)
-	if err != nil {
-		return nil, fmt.Errorf("github: emails request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("github: fetch emails: %w", err)
-	}
-	defer resp.Body.Close()
 	var emails []struct {
 		Email    string `json:"email"`
 		Primary  bool   `json:"primary"`
 		Verified bool   `json:"verified"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
-		return nil, fmt.Errorf("github: parse emails: %w", err)
+	if err := c.getJSON(ctx, token, c.emailsURL, &emails); err != nil {
+		return nil, err
 	}
-	return emails, nil
+	email := ""
+	for _, e := range emails {
+		if e.Primary && e.Verified {
+			email = e.Email
+			break
+		}
+	}
+	if email == "" {
+		return nil, errors.New("github: no verified primary email")
+	}
+	name := user.Name
+	if name == "" {
+		name = user.Login
+	}
+	return &Assertion{
+		ProviderID:    "github",
+		Subject:       strconv.FormatInt(user.ID, 10),
+		Email:         email,
+		EmailVerified: true,
+		Name:          name,
+		Picture:       user.Avatar,
+		RawClaims:     map[string]any{"login": user.Login},
+		AccessToken:   token,
+	}, nil
+}
+
+func (c *GitHubConnector) exchange(ctx context.Context, code string) (string, error) {
+	form := url.Values{
+		"client_id":     {c.cfg.ClientID},
+		"client_secret": {c.cfg.ClientSecret},
+		"code":          {code},
+		"redirect_uri":  {c.redirectURL()},
+	}
+	// gosec G704 taints this request because the callback's code is in the
+	// body. The target URL is fixed operator config (github.com by default),
+	// never request-derived, so there is no SSRF; credentials are in the body.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.tokenURL, strings.NewReader(form.Encode())) //nolint:gosec // G704: URL is operator config, see above
+
+	if err != nil {
+		return "", fmt.Errorf("github: token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.cfg.Client.Do(req) //nolint:gosec // G704: URL is operator config, see above
+	if err != nil {
+		return "", fmt.Errorf("github: token exchange: %w", err)
+	}
+	defer drainClose(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("github: token exchange: status %d", resp.StatusCode)
+	}
+	var tr struct {
+		AccessToken string `json:"access_token"`
+		Error       string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
+		return "", fmt.Errorf("github: decode token response: %w", err)
+	}
+	if tr.AccessToken == "" {
+		return "", fmt.Errorf("github: no access_token (error %q)", tr.Error)
+	}
+	return tr.AccessToken, nil
+}
+
+func (c *GitHubConnector) getJSON(ctx context.Context, token, endpoint string, out any) error {
+	path := strings.TrimPrefix(endpoint, c.cfg.APIBase)
+	// G704: endpoint is c.userURL/c.emailsURL, fixed from operator config at
+	// construction; only the bearer token comes from the exchange.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil) //nolint:gosec // G704: config-fixed URL, see above
+	if err != nil {
+		return fmt.Errorf("github: %s request: %w", path, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := c.cfg.Client.Do(req) //nolint:gosec // G704: config-fixed URL, see above
+	if err != nil {
+		return fmt.Errorf("github: %s: %w", path, err)
+	}
+	defer drainClose(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("github: %s: status %d", path, resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("github: %s: decode: %w", path, err)
+	}
+	return nil
+}
+
+func drainClose(rc io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, rc)
+	_ = rc.Close()
 }

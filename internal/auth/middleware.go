@@ -100,12 +100,6 @@ func cspPolicy(nonce string) string {
 type SessionConfig struct {
 	Store  *SessionStore
 	Secret string // BC_SESSION_SECRET, used to derive CSRF tokens
-
-	// Insecure drops the Secure cookie attribute. Production MUST leave this
-	// false so the __Host- prefix requirement holds. It exists only so tests
-	// can exercise the middleware over plain HTTP (httptest.NewServer is not
-	// TLS); it is never set from config in serve paths.
-	Insecure bool
 }
 
 // Session returns middleware that resolves the session cookie into the request
@@ -185,33 +179,39 @@ func (c SessionConfig) CSRF() func(http.Handler) http.Handler {
 }
 
 // SetCookie writes the session cookie with the production-grade attributes
-// (SPEC §7, §15): __Host- prefix, Secure, HttpOnly, SameSite=Lax, Path=/, no
-// Domain. Secure is dropped only when Insecure is set (test seam).
+// (SPEC §7.10, §15): __Host- prefix, Secure, HttpOnly, SameSite=Lax, Path=/,
+// no Domain. There is no insecure variant: browsers treat http://localhost as
+// a secure context, and Go test clients ignore the Secure attribute.
 func (c SessionConfig) SetCookie(w http.ResponseWriter, raw string, expires time.Time) {
-	// gosec G124: Secure is conditional on c.Insecure, which gosec cannot
-	// prove false. The construction here is correct — the defect is the
-	// production caller that sets Insecure: true (server.go), fixed by WU-526.
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure gated on c.Insecure; caller bug tracked by WU-526
+	setSessionCookie(w, raw, expires)
+}
+
+// ClearCookie expires the session cookie on the client.
+func (c SessionConfig) ClearCookie(w http.ResponseWriter) {
+	clearSessionCookie(w)
+}
+
+func setSessionCookie(w http.ResponseWriter, raw string, expires time.Time) {
+	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    raw,
 		Path:     "/",
 		Expires:  expires,
 		HttpOnly: true,
-		Secure:   !c.Insecure,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
-// ClearCookie expires the session cookie on the client.
-func (c SessionConfig) ClearCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // mirrors SetCookie above; see WU-526
+func clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    "",
 		Path:     "/",
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   !c.Insecure,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 }

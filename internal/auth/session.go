@@ -1,7 +1,7 @@
 // Package auth provides server-side sessions, CSRF protection, and the CSP
-// nonce plumbing (SPEC §7 sessions, §15 security). The OAuth flows and API
-// keys land in later work units; this WU establishes the session store and
-// the security middleware the whole app depends on.
+// nonce plumbing (SPEC §7 sessions, §15 security), plus the login flow:
+// connectors (OIDC, GitHub), the sealed flow cookie, and login resolution.
+// (SPEC §7.1-§7.3).
 package auth
 
 import (
@@ -51,6 +51,19 @@ type Session struct {
 	CreatedAt time.Time
 	LastSeen  time.Time
 	ExpiresAt time.Time
+	// ProviderID and AuthMethod record how the session was established
+	// (SPEC §7.3 step 6); empty for sessions created outside a login flow.
+	ProviderID string
+	AuthMethod string
+}
+
+// SessionMeta is the sign-in provenance recorded on a new session.
+type SessionMeta struct {
+	ProviderID string
+	AuthMethod string // oidc|github|saml|passkey
+	IdPSID     string
+	IdPSubject string
+	IDTokenEnc string
 }
 
 // SessionStore is the server-side session store backed by the sessions table.
@@ -89,21 +102,30 @@ func newToken() (string, error) {
 // Create issues a new session for userID and returns the raw token to set in
 // the client cookie. Only the hash is persisted.
 func (s *SessionStore) Create(ctx context.Context, userID, ip, ua string) (raw string, sess Session, err error) {
+	return s.create(ctx, s.q, userID, ip, ua, SessionMeta{})
+}
+
+// create inserts a session through q, which may be bound to a transaction
+// (login resolution creates the session in the same transaction as the
+// identity writes).
+func (s *SessionStore) create(ctx context.Context, q *sqlc.Queries, userID, ip, ua string, meta SessionMeta) (raw string, sess Session, err error) {
 	raw, err = newToken()
 	if err != nil {
 		return "", Session{}, err
 	}
 	now := s.now().UTC()
 	sess = Session{
-		TokenHash: hashToken(raw),
-		UserID:    userID,
-		IP:        ip,
-		UA:        ua,
-		CreatedAt: now,
-		LastSeen:  now,
-		ExpiresAt: now.Add(SlidingTTL),
+		TokenHash:  hashToken(raw),
+		UserID:     userID,
+		IP:         ip,
+		UA:         ua,
+		CreatedAt:  now,
+		LastSeen:   now,
+		ExpiresAt:  now.Add(SlidingTTL),
+		ProviderID: meta.ProviderID,
+		AuthMethod: meta.AuthMethod,
 	}
-	if err := s.q.CreateSession(ctx, sqlc.CreateSessionParams{
+	if err := q.CreateSession(ctx, sqlc.CreateSessionParams{
 		TokenHash:  sess.TokenHash,
 		UserID:     sess.UserID,
 		Ip:         sess.IP,
@@ -111,6 +133,11 @@ func (s *SessionStore) Create(ctx context.Context, userID, ip, ua string) (raw s
 		CreatedAt:  sess.CreatedAt.Format(timeFormat),
 		LastSeenAt: sess.LastSeen.Format(timeFormat),
 		ExpiresAt:  sess.ExpiresAt.Format(timeFormat),
+		ProviderID: meta.ProviderID,
+		AuthMethod: meta.AuthMethod,
+		IdpSid:     meta.IdPSID,
+		IdpSubject: meta.IdPSubject,
+		IDTokenEnc: meta.IDTokenEnc,
 	}); err != nil {
 		return "", Session{}, fmt.Errorf("auth: create session: %w", err)
 	}
@@ -118,7 +145,8 @@ func (s *SessionStore) Create(ctx context.Context, userID, ip, ua string) (raw s
 }
 
 // Lookup resolves a raw token to a live session, sliding its expiry forward.
-// An expired session is deleted and reported as ErrNoSession. The returned
+// An expired session is deleted and reported as ErrNoSession, as is a session
+// whose user has been deleted (SPEC §7.10). The returned
 // session carries its refreshed expiry so callers can re-set the cookie.
 func (s *SessionStore) Lookup(ctx context.Context, raw string) (Session, error) {
 	if raw == "" {
@@ -200,7 +228,7 @@ func (s *SessionStore) PurgeExpired(ctx context.Context) error {
 	return nil
 }
 
-func rowToSession(row sqlc.Session) (Session, error) {
+func rowToSession(row sqlc.GetSessionRow) (Session, error) {
 	created, err := time.Parse(timeFormat, row.CreatedAt)
 	if err != nil {
 		return Session{}, fmt.Errorf("auth: parse created_at %q: %w", row.CreatedAt, err)
@@ -214,12 +242,14 @@ func rowToSession(row sqlc.Session) (Session, error) {
 		return Session{}, fmt.Errorf("auth: parse expires_at %q: %w", row.ExpiresAt, err)
 	}
 	return Session{
-		TokenHash: row.TokenHash,
-		UserID:    row.UserID,
-		IP:        row.Ip,
-		UA:        row.Ua,
-		CreatedAt: created.UTC(),
-		LastSeen:  seen.UTC(),
-		ExpiresAt: exp.UTC(),
+		TokenHash:  row.TokenHash,
+		UserID:     row.UserID,
+		IP:         row.Ip,
+		UA:         row.Ua,
+		CreatedAt:  created.UTC(),
+		LastSeen:   seen.UTC(),
+		ExpiresAt:  exp.UTC(),
+		ProviderID: row.ProviderID,
+		AuthMethod: row.AuthMethod,
 	}, nil
 }

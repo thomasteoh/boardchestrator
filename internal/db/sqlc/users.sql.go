@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createUser = `-- name: CreateUser :exec
@@ -76,9 +77,18 @@ type FindIdentityByUserAndProviderParams struct {
 	Provider string
 }
 
-func (q *Queries) FindIdentityByUserAndProvider(ctx context.Context, arg FindIdentityByUserAndProviderParams) (Identity, error) {
+type FindIdentityByUserAndProviderRow struct {
+	ID       string
+	UserID   string
+	Provider string
+	Subject  string
+	Email    string
+	TokenEnc []byte
+}
+
+func (q *Queries) FindIdentityByUserAndProvider(ctx context.Context, arg FindIdentityByUserAndProviderParams) (FindIdentityByUserAndProviderRow, error) {
 	row := q.db.QueryRowContext(ctx, findIdentityByUserAndProvider, arg.UserID, arg.Provider)
-	var i Identity
+	var i FindIdentityByUserAndProviderRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -87,6 +97,34 @@ func (q *Queries) FindIdentityByUserAndProvider(ctx context.Context, arg FindIde
 		&i.Email,
 		&i.TokenEnc,
 	)
+	return i, err
+}
+
+const findIdentityForLogin = `-- name: FindIdentityForLogin :one
+SELECT i.id, i.user_id, u.deleted_at
+FROM identities i
+JOIN users u ON u.id = i.user_id
+WHERE i.provider = ?
+  AND i.subject = ?
+`
+
+type FindIdentityForLoginParams struct {
+	Provider string
+	Subject  string
+}
+
+type FindIdentityForLoginRow struct {
+	ID        string
+	UserID    string
+	DeletedAt sql.NullString
+}
+
+// Login resolution (SPEC s7.3 step 1): (provider, subject) first, with the
+// owning user's deletion state so a deleted user is refused.
+func (q *Queries) FindIdentityForLogin(ctx context.Context, arg FindIdentityForLoginParams) (FindIdentityForLoginRow, error) {
+	row := q.db.QueryRowContext(ctx, findIdentityForLogin, arg.Provider, arg.Subject)
+	var i FindIdentityForLoginRow
+	err := row.Scan(&i.ID, &i.UserID, &i.DeletedAt)
 	return i, err
 }
 
@@ -110,6 +148,26 @@ func (q *Queries) FindUserByEmail(ctx context.Context, email string) (User, erro
 		&i.CreatedAt,
 		&i.DeletedAt,
 	)
+	return i, err
+}
+
+const findUserByEmailAnyState = `-- name: FindUserByEmailAnyState :one
+SELECT id, deleted_at
+FROM users
+WHERE email = ?
+`
+
+type FindUserByEmailAnyStateRow struct {
+	ID        string
+	DeletedAt sql.NullString
+}
+
+// Login resolution (SPEC s7.3 step 3): includes deleted users so a deleted
+// account's email is refused rather than tripping the UNIQUE constraint.
+func (q *Queries) FindUserByEmailAnyState(ctx context.Context, email string) (FindUserByEmailAnyStateRow, error) {
+	row := q.db.QueryRowContext(ctx, findUserByEmailAnyState, email)
+	var i FindUserByEmailAnyStateRow
+	err := row.Scan(&i.ID, &i.DeletedAt)
 	return i, err
 }
 
@@ -154,16 +212,17 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 }
 
 const linkIdentity = `-- name: LinkIdentity :exec
-INSERT INTO identities (id, user_id, provider, subject, email)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO identities (id, user_id, provider, subject, email, last_login_at)
+VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type LinkIdentityParams struct {
-	ID       string
-	UserID   string
-	Provider string
-	Subject  string
-	Email    string
+	ID          string
+	UserID      string
+	Provider    string
+	Subject     string
+	Email       string
+	LastLoginAt sql.NullString
 }
 
 func (q *Queries) LinkIdentity(ctx context.Context, arg LinkIdentityParams) error {
@@ -173,6 +232,7 @@ func (q *Queries) LinkIdentity(ctx context.Context, arg LinkIdentityParams) erro
 		arg.Provider,
 		arg.Subject,
 		arg.Email,
+		arg.LastLoginAt,
 	)
 	return err
 }
@@ -203,6 +263,39 @@ type SetIdentityTokenParams struct {
 
 func (q *Queries) SetIdentityToken(ctx context.Context, arg SetIdentityTokenParams) error {
 	_, err := q.db.ExecContext(ctx, setIdentityToken, arg.TokenEnc, arg.UserID, arg.Provider)
+	return err
+}
+
+const setIdentityTokenByID = `-- name: SetIdentityTokenByID :exec
+UPDATE identities
+SET token_enc = ?
+WHERE id = ?
+`
+
+type SetIdentityTokenByIDParams struct {
+	TokenEnc []byte
+	ID       string
+}
+
+func (q *Queries) SetIdentityTokenByID(ctx context.Context, arg SetIdentityTokenByIDParams) error {
+	_, err := q.db.ExecContext(ctx, setIdentityTokenByID, arg.TokenEnc, arg.ID)
+	return err
+}
+
+const touchIdentityLogin = `-- name: TouchIdentityLogin :exec
+UPDATE identities
+SET email = ?, last_login_at = ?
+WHERE id = ?
+`
+
+type TouchIdentityLoginParams struct {
+	Email       string
+	LastLoginAt sql.NullString
+	ID          string
+}
+
+func (q *Queries) TouchIdentityLogin(ctx context.Context, arg TouchIdentityLoginParams) error {
+	_, err := q.db.ExecContext(ctx, touchIdentityLogin, arg.Email, arg.LastLoginAt, arg.ID)
 	return err
 }
 

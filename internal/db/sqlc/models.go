@@ -177,12 +177,13 @@ type IdempotencyKey struct {
 }
 
 type Identity struct {
-	ID       string
-	UserID   string
-	Provider string
-	Subject  string
-	Email    string
-	TokenEnc []byte
+	ID          string
+	UserID      string
+	Provider    string
+	Subject     string
+	Email       string
+	TokenEnc    []byte
+	LastLoginAt sql.NullString
 }
 
 type Invite struct {
@@ -413,6 +414,11 @@ type Session struct {
 	CreatedAt  string
 	LastSeenAt string
 	ExpiresAt  string
+	ProviderID string
+	AuthMethod string
+	IdpSid     string
+	IdpSubject string
+	IDTokenEnc string
 }
 
 type Skill struct {

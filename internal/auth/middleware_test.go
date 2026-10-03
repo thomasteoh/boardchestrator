@@ -90,8 +90,7 @@ func mwStack(t *testing.T, ok http.HandlerFunc) (http.Handler, *auth.SessionStor
 		t.Fatalf("seed user: %v", err)
 	}
 	store := auth.NewSessionStore(d)
-	// Insecure so httptest (plain HTTP) sees the cookie; production keeps Secure.
-	sc := auth.SessionConfig{Store: store, Secret: "test-secret", Insecure: true}
+	sc := auth.SessionConfig{Store: store, Secret: "test-secret"}
 	h := auth.CSP()(sc.Session()(sc.CSRF()(ok)))
 	return h, store, sc
 }
@@ -185,7 +184,7 @@ func TestCSRFMutationWithoutSessionRejected(t *testing.T) {
 }
 
 func TestSessionCookieAttributes(t *testing.T) {
-	// Production config (Insecure=false) must emit __Host--compatible cookies.
+	// Session cookies are always __Host--compatible.
 	sc := auth.SessionConfig{Secret: "s"}
 	rec := httptest.NewRecorder()
 	sc.SetCookie(rec, "rawtoken", timeIn(3600))
@@ -215,7 +214,7 @@ func TestSessionMiddlewarePopulatesContext(t *testing.T) {
 		t.Fatalf("seed user: %v", err)
 	}
 	store := auth.NewSessionStore(d)
-	sc := auth.SessionConfig{Store: store, Secret: "test-secret", Insecure: true}
+	sc := auth.SessionConfig{Store: store, Secret: "test-secret"}
 	h := sc.Session()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, gotSession = auth.SessionFrom(r.Context())
 		gotCSRF = auth.CSRFFrom(r.Context())
