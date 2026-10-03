@@ -119,3 +119,13 @@ To be precise about which way this fails: it is a **broken API, not a CSRF bypas
 **Options:** for (1), (a) keep; (b) let idp upgrade a manual membership to the mapped role (would change a manual grant, which §7.5 forbids). For (3), (a) keep; (b) skip reconciliation when the claim is absent (safer against misconfiguration, but a user removed from their last group would keep access).
 **Recommendation:** (a) for both.
 **Answer:** (3): option (b), per the WU-609 brief (orchestrator, 2026-10-04); implemented in WU-609. (1) and (2): no answer yet; the WU-608 behaviour stands.
+
+## Q13 — SAML email verification comes from `trust_email` (WU-610)
+
+**Context:** SAML assertions carry no "email verified" flag. The WU-610 brief said to treat a SAML provider's email as verified only when the provider's `trust_email` is set. That is Q8's option 3, which Q8 recommended against for OIDC because it ties linking trust to verification.
+
+**Decision taken in WU-610 (non-blocking, per the brief):** `EmailVerified = email present && trust_email`. An untrusted SAML provider's email is never verified, so it can't link by email or sign up by open sign-up or bootstrap. Invites and org JIT on verified domains still work, as Q8's answer allows for unverified emails. A trusted provider links by email under §7.3, and org-owned providers link only on the org's verified domains. The admin form says this in plain words.
+
+**Options:** (a) keep; (b) add a separate per-provider "emails are verified" flag for SAML, so trust (linking) and verification (sign-up) can be set independently.
+**Recommendation:** (a). For SAML the admin who configures the IdP is the only possible source of verification, so a second flag adds a setting without adding safety.
+**Answer:**
