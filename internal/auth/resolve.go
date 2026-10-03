@@ -267,6 +267,9 @@ func (rv *Resolver) resolveTx(ctx context.Context, q *sqlc.Queries, req LoginReq
 		}
 	}
 	meta := SessionMeta{ProviderID: a.ProviderID, AuthMethod: req.AuthMethod, IdPSID: a.SID, IdPSubject: a.Subject}
+	if a.IdPSubject != "" {
+		meta.IdPSubject = a.IdPSubject
+	}
 	if a.IDTokenRaw != "" && len(rv.SecretKey) == 32 {
 		enc, err := tenant.Encrypt(rv.SecretKey, a.IDTokenRaw)
 		if err != nil {

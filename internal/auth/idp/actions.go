@@ -137,6 +137,12 @@ type ProviderInput struct {
 	// when it publishes an end_session_endpoint (SPEC §7.6). Default: the
 	// preset's SupportsLogout. Always off for GitHub.
 	IdPLogout *bool `json:"idp_logout,omitempty"`
+	// MetadataURL / MetadataXML describe a SAML IdP (exactly one; WU-610).
+	// For SAML, ClaimMap keys are subject, email, name and groups (attribute
+	// names) and ClientID/ClientSecret/Scopes must be empty. The SP key pair
+	// is generated on create and never returned.
+	MetadataURL string `json:"metadata_url,omitempty"`
+	MetadataXML string `json:"metadata_xml,omitempty"`
 	// Enabled applies to idp.create only (default true); use
 	// idp.enable/idp.disable afterwards.
 	Enabled *bool `json:"enabled,omitempty"`
@@ -162,9 +168,13 @@ type ProviderView struct {
 	AllowedTenants []string          `json:"allowed_tenants"`
 	Position       int64             `json:"position"`
 	IdPLogout      bool              `json:"idp_logout"`
-	IdentityCount  int64             `json:"identity_count"`
-	CreatedAt      string            `json:"created_at"`
-	UpdatedAt      string            `json:"updated_at"`
+	// SAML only: IdP metadata source and the (public) SP certificate.
+	MetadataURL   string `json:"metadata_url,omitempty"`
+	MetadataXML   string `json:"metadata_xml,omitempty"`
+	SPCert        string `json:"sp_cert,omitempty"`
+	IdentityCount int64  `json:"identity_count"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 func viewOf(r sqlc.ListPlatformAuthProvidersRow) ProviderView {
@@ -175,6 +185,7 @@ func viewOf(r sqlc.ListPlatformAuthProvidersRow) ProviderView {
 		ClaimMap: map[string]string{}, TrustEmail: r.TrustEmail == 1,
 		AllowSignup: r.AllowSignup == 1, AllowedTenants: []string{},
 		Position: r.Position, IdPLogout: r.IdpLogout == 1, IdentityCount: r.IdentityCount,
+		MetadataURL: r.SamlMetadataUrl, MetadataXML: r.SamlMetadataXml, SPCert: r.SpCert,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	}
 	_ = json.Unmarshal([]byte(r.ClaimMapJson), &v.ClaimMap)
@@ -236,8 +247,12 @@ func platformRow(ctx context.Context, q *action.Queries, id string) (sqlc.AuthPr
 type normalised struct {
 	kind, preset, displayName, issuer, clientID, scopes string
 	claimMapJSON, tenantsJSON                           string
+	metadataURL, metadataXML                            string
 	trust, signup, idpLogout                            int64
 }
+
+// maxMetadataXML bounds pasted SAML IdP metadata.
+const maxMetadataXML = 512 << 10
 
 // normalise validates in against its preset. existing is the stored row on
 // update (nil on create) and supplies defaults for omitted fields.
@@ -248,7 +263,7 @@ func normalise(in ProviderInput, existing *sqlc.AuthProvider) (normalised, error
 		return n, invalid("unknown preset %q", in.Preset)
 	}
 	switch p.Kind {
-	case KindOIDC, KindGitHub:
+	case KindOIDC, KindGitHub, KindSAML:
 	default:
 		return n, invalid("preset %q is not supported yet", p.ID)
 	}
@@ -275,6 +290,12 @@ func normalise(in ProviderInput, existing *sqlc.AuthProvider) (normalised, error
 		if err := plainText(k, v, 2048); err != nil {
 			return n, err
 		}
+	}
+	if p.Kind == KindSAML {
+		if err := normaliseSAML(in, &n); err != nil {
+			return n, err
+		}
+		return n, normalisePolicy(in, p, existing, &n)
 	}
 	issuer, err := p.ExpandIssuer(in.Params)
 	if err != nil {
@@ -348,7 +369,11 @@ func normalise(in ProviderInput, existing *sqlc.AuthProvider) (normalised, error
 		return n, fmt.Errorf("idp: tenants: %w", err)
 	}
 	n.tenantsJSON = string(b)
+	return n, normalisePolicy(in, p, existing, &n)
+}
 
+// normalisePolicy fills the sign-in policy fields shared by every kind.
+func normalisePolicy(in ProviderInput, p Preset, existing *sqlc.AuthProvider, n *normalised) error {
 	trust, signup := p.TrustEmail, false
 	if existing != nil {
 		trust, signup = existing.TrustEmail == 1, existing.AllowSignup == 1
@@ -368,8 +393,59 @@ func normalise(in ProviderInput, existing *sqlc.AuthProvider) (normalised, error
 	if in.IdPLogout != nil {
 		logout = *in.IdPLogout
 	}
-	n.idpLogout = b2i(logout && p.Kind == KindOIDC)
-	return n, nil
+	n.idpLogout = b2i(logout && (p.Kind == KindOIDC || p.Kind == KindSAML))
+	return nil
+}
+
+// normaliseSAML validates the SAML-specific fields: IdP metadata (one of
+// URL or XML, XML parsed now), attribute overrides, and no OIDC fields.
+func normaliseSAML(in ProviderInput, n *normalised) error {
+	if strings.TrimSpace(in.ClientID) != "" || in.ClientSecret != "" || strings.TrimSpace(in.Scopes) != "" ||
+		len(in.Params) > 0 || len(in.AllowedTenants) > 0 {
+		return invalid("SAML providers take IdP metadata, not a client ID, secret, scopes, issuer or tenants")
+	}
+	n.tenantsJSON = "[]"
+	mu, mx := strings.TrimSpace(in.MetadataURL), strings.TrimSpace(in.MetadataXML)
+	switch {
+	case mu != "" && mx != "":
+		return invalid("give either a metadata URL or metadata XML, not both")
+	case mu != "":
+		if err := plainText("metadata URL", mu, 2048); err != nil {
+			return err
+		}
+		if err := ValidateMetadataURL(mu); err != nil {
+			return invalid("%v", err)
+		}
+	case mx != "":
+		if len(mx) > maxMetadataXML {
+			return invalid("metadata XML is too large")
+		}
+		if _, err := ParseIdPMetadata([]byte(mx)); err != nil {
+			return invalid("%v", err)
+		}
+	default:
+		return invalid("a SAML provider needs the identity provider's metadata URL or XML")
+	}
+	n.metadataURL, n.metadataXML = mu, mx
+	claims := map[string]string{}
+	for k, v := range in.ClaimMap {
+		v = strings.TrimSpace(v)
+		if err := plainText("attribute "+k, v, maxClaimPath); err != nil {
+			return err
+		}
+		if v != "" {
+			claims[k] = v
+		}
+	}
+	b, err := json.Marshal(claims)
+	if err != nil {
+		return fmt.Errorf("idp: attribute map: %w", err)
+	}
+	if _, err := ParseSAMLAttrs(string(b)); err != nil {
+		return invalid("%v", err)
+	}
+	n.claimMapJSON = string(b)
+	return nil
 }
 
 func presetHasParam(p Preset, name string) bool {
@@ -401,6 +477,22 @@ func plainText(field, v string, limit int) error {
 		}
 	}
 	return nil
+}
+
+// spKeyPair generates and seals a SAML provider's SP key pair ("" for other
+// kinds).
+func spKeyPair(secretKey []byte, kind, id string) (keyEnc, cert string, err error) {
+	if kind != KindSAML {
+		return "", "", nil
+	}
+	keyPEM, cert, err := GenerateSPKeyPair(id)
+	if err != nil {
+		return "", "", err
+	}
+	if keyEnc, err = sealSPKey(secretKey, keyPEM); err != nil {
+		return "", "", err
+	}
+	return keyEnc, cert, nil
 }
 
 // sealSecret validates and encrypts a client secret.
@@ -454,6 +546,10 @@ func handleCreate(ctx context.Context, ac action.ActionCtx, in json.RawMessage) 
 	} else if n.kind == KindGitHub {
 		return nil, invalid("GitHub needs a client secret")
 	}
+	keyEnc, cert, err := spKeyPair(ac.SecretKey, n.kind, input.ID)
+	if err != nil {
+		return nil, err
+	}
 	pos := int64(0)
 	if input.Position != nil {
 		pos = *input.Position
@@ -466,6 +562,7 @@ func handleCreate(ctx context.Context, ac action.ActionCtx, in json.RawMessage) 
 		Enabled: b2i(enabled), Issuer: n.issuer, ClientID: n.clientID, ClientSecretEnc: secretEnc,
 		Scopes: n.scopes, ClaimMapJson: n.claimMapJSON, TrustEmail: n.trust, AllowSignup: n.signup,
 		AllowedTenantsJson: n.tenantsJSON, Position: pos, IdpLogout: n.idpLogout,
+		SamlMetadataUrl: n.metadataURL, SamlMetadataXml: n.metadataXML, SpKeyEnc: keyEnc, SpCert: cert,
 	}); err != nil {
 		return nil, fmt.Errorf("idp.create: %w", err)
 	}
@@ -502,7 +599,8 @@ func handleUpdate(ctx context.Context, ac action.ActionCtx, in json.RawMessage) 
 		Preset: n.preset, DisplayName: n.displayName, Issuer: n.issuer, ClientID: n.clientID,
 		ClientSecretEnc: secretEnc, Scopes: n.scopes, ClaimMapJson: n.claimMapJSON,
 		TrustEmail: n.trust, AllowSignup: n.signup, AllowedTenantsJson: n.tenantsJSON,
-		Position: pos, IdpLogout: n.idpLogout, ID: row.ID,
+		Position: pos, IdpLogout: n.idpLogout, SamlMetadataUrl: n.metadataURL, SamlMetadataXml: n.metadataXML,
+		ID: row.ID,
 	}); err != nil {
 		return nil, fmt.Errorf("idp.update: %w", err)
 	}

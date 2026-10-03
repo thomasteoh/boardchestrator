@@ -33,6 +33,8 @@ type Preset struct {
 	// SupportsLogout: the IdP publishes an end_session_endpoint (WU-609).
 	SupportsLogout bool
 	DocsURL        string
+	// MetadataHelp tells admins where a SAML preset's IdP metadata lives.
+	MetadataHelp string
 }
 
 // PresetParam is one issuer-template placeholder.
@@ -157,10 +159,31 @@ var presets = map[string]Preset{
 		TrustEmail: true,
 		DocsURL:    "https://docs.github.com/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app",
 	},
+	// SAML 2.0 presets (WU-610): data only, one connector. The IdP is
+	// described by its metadata (URL or pasted XML); attribute names default
+	// to the common Entra/ADFS claim URIs and LDAP-style names.
+	"entra-saml": {
+		ID: "entra-saml", DisplayName: "Microsoft Entra (SAML)", Kind: KindSAML,
+		SupportsLogout: true,
+		DocsURL:        "https://learn.microsoft.com/entra/identity/enterprise-apps/add-application-portal-setup-sso",
+		MetadataHelp:   "The App Federation Metadata Url from the enterprise application's Single sign-on page.",
+	},
+	"okta-saml": {
+		ID: "okta-saml", DisplayName: "Okta (SAML)", Kind: KindSAML,
+		SupportsLogout: true,
+		DocsURL:        "https://help.okta.com/en-us/content/topics/apps/apps_app_integration_wizard_saml.htm",
+		MetadataHelp:   "The Metadata URL from the application's Sign On tab.",
+	},
+	"saml": {
+		ID: "saml", DisplayName: "SAML 2.0", Kind: KindSAML,
+		SupportsLogout: true,
+		DocsURL:        "https://docs.oasis-open.org/security/saml/Post2.0/sstc-saml-tech-overview-2.0.html",
+		MetadataHelp:   "The identity provider's SAML metadata URL, or paste the metadata XML below.",
+	},
 }
 
 // PresetIDs lists the presets in display order.
-var PresetIDs = []string{"google", "microsoft", "github", "gitlab", "okta", "auth0", "keycloak", "zitadel", "authentik", "generic"}
+var PresetIDs = []string{"google", "microsoft", "github", "gitlab", "okta", "auth0", "keycloak", "zitadel", "authentik", "generic", "entra-saml", "okta-saml", "saml"}
 
 // LookupPreset returns the preset with id ("" = generic).
 func LookupPreset(id string) (Preset, bool) {

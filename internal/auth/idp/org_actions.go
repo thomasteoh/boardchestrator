@@ -152,14 +152,14 @@ func orgRow(ctx context.Context, ac action.ActionCtx, id string) (sqlc.AuthProvi
 }
 
 // orgPreset refuses presets an organisation cannot use: GitHub OAuth is
-// not an organisation identity provider, and SAML arrives in WU-610.
+// not an organisation identity provider. SAML is allowed (WU-610).
 func orgPreset(id string) error {
 	p, ok := LookupPreset(id)
 	if !ok || id == "" {
 		return invalid("unknown preset %q", id)
 	}
-	if p.Kind != KindOIDC {
-		return invalid("organisation sign-in providers must use OpenID Connect; %s isn't supported here", p.DisplayName)
+	if p.Kind != KindOIDC && p.Kind != KindSAML {
+		return invalid("organisation sign-in providers must use OpenID Connect or SAML; %s isn't supported here", p.DisplayName)
 	}
 	return nil
 }
@@ -206,6 +206,10 @@ func handleOrgCreate(ctx context.Context, ac action.ActionCtx, in json.RawMessag
 			return nil, err
 		}
 	}
+	keyEnc, cert, err := spKeyPair(ac.SecretKey, n.kind, pin.ID)
+	if err != nil {
+		return nil, err
+	}
 	pos := int64(0)
 	if pin.Position != nil {
 		pos = *pin.Position
@@ -218,6 +222,7 @@ func handleOrgCreate(ctx context.Context, ac action.ActionCtx, in json.RawMessag
 		Enabled: b2i(enabled), Issuer: n.issuer, ClientID: n.clientID, ClientSecretEnc: secretEnc,
 		Scopes: n.scopes, ClaimMapJson: n.claimMapJSON, TrustEmail: n.trust,
 		AllowedTenantsJson: n.tenantsJSON, Position: pos, IdpLogout: n.idpLogout,
+		SamlMetadataUrl: n.metadataURL, SamlMetadataXml: n.metadataXML, SpKeyEnc: keyEnc, SpCert: cert,
 	}); err != nil {
 		return nil, fmt.Errorf("org.idp.create: %w", err)
 	}
@@ -261,6 +266,7 @@ func handleOrgUpdate(ctx context.Context, ac action.ActionCtx, in json.RawMessag
 		Preset: n.preset, DisplayName: n.displayName, Issuer: n.issuer, ClientID: n.clientID,
 		ClientSecretEnc: secretEnc, Scopes: n.scopes, ClaimMapJson: n.claimMapJSON,
 		TrustEmail: n.trust, AllowedTenantsJson: n.tenantsJSON, Position: pos, IdpLogout: n.idpLogout,
+		SamlMetadataUrl: n.metadataURL, SamlMetadataXml: n.metadataXML,
 		ID: row.ID, OrgID: orgNull(ac.Org),
 	}); err != nil {
 		return nil, fmt.Errorf("org.idp.update: %w", err)
@@ -362,12 +368,18 @@ func handleOrgDiscover(ctx context.Context, ac action.ActionCtx, in json.RawMess
 		if err != nil {
 			return nil, err
 		}
+		if row.Kind != KindOIDC {
+			return nil, invalid("only OpenID Connect providers publish discovery documents")
+		}
 		issuer, presetID = row.Issuer, row.Preset
 	default:
 		if err := orgPreset(di.Preset); err != nil {
 			return nil, err
 		}
 		p, _ := LookupPreset(di.Preset)
+		if p.Kind != KindOIDC {
+			return nil, invalid("only OpenID Connect providers publish discovery documents")
+		}
 		for k := range di.Params {
 			if !presetHasParam(p, k) {
 				return nil, invalid("preset %s has no parameter %q", p.ID, k)

@@ -61,6 +61,9 @@ type Options struct {
 	// refused unless OrgAllowPrivate (BC_ORG_IDP_ALLOW_PRIVATE, Q11).
 	OrgClient       *http.Client
 	OrgAllowPrivate bool
+	// SAMLReplay remembers SAML assertion ids across every SAML connector
+	// (nil = a new cache); it outlives connector rebuilds on invalidation.
+	SAMLReplay *auth.ReplayCache
 	// GitHubAPIBase overrides the API base derived from a github row's
 	// issuer (tests point it at a fake). Empty = api.github.com for
 	// github.com, else <issuer>/api/v3 (GitHub Enterprise Server).
@@ -106,6 +109,9 @@ func New(opts Options) *Registry {
 	}
 	if opts.OrgClient == nil {
 		opts.OrgClient = NewOrgIdPClient(opts.OrgAllowPrivate)
+	}
+	if opts.SAMLReplay == nil {
+		opts.SAMLReplay = auth.NewReplayCache(0)
 	}
 	opts.BaseURL = strings.TrimRight(opts.BaseURL, "/")
 	return &Registry{opts: opts}
@@ -208,8 +214,8 @@ func (r *Registry) build(row sqlc.AuthProvider) (auth.Connector, error) {
 		// and outbound traffic through the org SSRF guard.
 		policy.OrgID, policy.AllowSignup = row.OrgID.String, false
 		client = r.opts.OrgClient
-		if row.Kind != KindOIDC {
-			return nil, fmt.Errorf("organisation providers must be OpenID Connect, not %s", row.Kind)
+		if row.Kind != KindOIDC && row.Kind != KindSAML {
+			return nil, fmt.Errorf("organisation providers must be OpenID Connect or SAML, not %s", row.Kind)
 		}
 	}
 	switch row.Kind {
@@ -237,7 +243,7 @@ func (r *Registry) build(row sqlc.AuthProvider) (auth.Connector, error) {
 		cfg.Client = client
 		return NewOIDCConnector(cfg), nil
 	case KindSAML:
-		return nil, errors.New("SAML providers are not supported yet")
+		return r.samlConnector(row, policy, client)
 	}
 	return nil, fmt.Errorf("unknown kind %q", row.Kind)
 }
@@ -276,4 +282,25 @@ func (r *Registry) oidcConfig(row sqlc.AuthProvider, secret string, policy auth.
 		}
 	}
 	return cfg, nil
+}
+
+// samlConnector builds a SAML connector from its row: the SP key is
+// decrypted here, IdP metadata parsed (pasted) or fetched lazily (URL).
+func (r *Registry) samlConnector(row sqlc.AuthProvider, policy auth.ResolvePolicy, client *http.Client) (auth.Connector, error) {
+	if p, ok := LookupPreset(row.Preset); !ok || p.Kind != KindSAML {
+		return nil, fmt.Errorf("unknown SAML preset %q", row.Preset)
+	}
+	keyPEM, err := tenant.Decrypt(r.opts.EncKey, row.SpKeyEnc)
+	if err != nil {
+		return nil, errors.New("SAML SP key cannot be decrypted (BC_SECRET_KEY changed?)")
+	}
+	attrs, err := ParseSAMLAttrs(row.ClaimMapJson)
+	if err != nil {
+		return nil, err
+	}
+	return NewSAMLConnector(SAMLConfig{
+		ID: row.ID, BaseURL: r.opts.BaseURL, MetadataURL: row.SamlMetadataUrl, MetadataXML: row.SamlMetadataXml,
+		KeyPEM: keyPEM, CertPEM: row.SpCert, Attrs: attrs, Policy: policy, IdPLogout: row.IdpLogout == 1,
+		Client: client, Replay: r.opts.SAMLReplay,
+	})
 }

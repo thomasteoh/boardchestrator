@@ -45,8 +45,14 @@ type Assertion struct {
 	// an empty one (SPEC §7.5).
 	GroupsClaim string
 	SID         string
-	IDTokenRaw  string
-	RawClaims   map[string]any
+	// IdPSubject, when set, is recorded as sessions.idp_subject instead of
+	// Subject: the SAML NameID, which IdP-initiated logout names even when
+	// the identity's subject comes from an attribute (WU-610).
+	IdPSubject string
+	// IDTokenRaw is sealed into sessions.id_token_enc as the logout hint:
+	// the OIDC ID token, or the SAML NameID/SessionIndex (JSON).
+	IDTokenRaw string
+	RawClaims  map[string]any
 	// AccessToken is the provider's OAuth access token, kept only where a
 	// feature reuses it (GitHub, WU-406); it is stored encrypted.
 	AccessToken string

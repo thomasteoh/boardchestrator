@@ -15,8 +15,15 @@ func TestPresetIDsCoverEveryPreset(t *testing.T) {
 		if !ok || p.ID != id {
 			t.Errorf("preset %q missing or misnamed", id)
 		}
-		if p.DisplayName == "" || p.DocsURL == "" || len(p.Scopes) == 0 {
+		if p.DisplayName == "" || p.DocsURL == "" {
 			t.Errorf("preset %q incomplete: %+v", id, p)
+		}
+		// SAML presets have no scopes; they need metadata guidance instead.
+		if p.Kind == KindSAML && (p.MetadataHelp == "" || len(p.Scopes) != 0) {
+			t.Errorf("SAML preset %q lacks metadata help or has scopes: %+v", id, p)
+		}
+		if p.Kind != KindSAML && len(p.Scopes) == 0 {
+			t.Errorf("preset %q has no scopes: %+v", id, p)
 		}
 		if p.Kind == KindOIDC && (!slices.Contains(p.Scopes, "openid") || p.Claims.Email == "" || p.Claims.Name == "") {
 			t.Errorf("OIDC preset %q lacks openid scope or core claims: %+v", id, p)
