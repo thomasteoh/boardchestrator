@@ -181,6 +181,9 @@ func handleUserDelete(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 	if err := ac.Tx.DeleteUserIdentities(ctx, input.UserID); err != nil {
 		return nil, fmt.Errorf("user.delete: identities: %w", err)
 	}
+	if err := ac.Tx.DeleteUserWebAuthnCredentials(ctx, input.UserID); err != nil {
+		return nil, fmt.Errorf("user.delete: passkeys: %w", err)
+	}
 	if err := ac.Tx.DeleteUserSessions(ctx, input.UserID); err != nil {
 		return nil, fmt.Errorf("user.delete: sessions: %w", err)
 	}

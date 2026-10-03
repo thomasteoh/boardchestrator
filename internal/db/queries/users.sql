@@ -11,7 +11,8 @@ VALUES (?, ?, ?, ?);
 -- name: FindUserByEmailAnyState :one
 -- Login resolution (SPEC s7.3 step 3): includes deleted users so a deleted
 -- account's email is refused rather than tripping the UNIQUE constraint.
-SELECT id, deleted_at
+-- email_verified = 0 (a passkey bootstrap claim, WU-612) is never linked to.
+SELECT id, deleted_at, email_verified
 FROM users
 WHERE email = ?;
 

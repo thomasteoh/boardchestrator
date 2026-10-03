@@ -10,7 +10,9 @@ CREATE TABLE users (
     theme      TEXT NOT NULL DEFAULT 'system',
     timezone   TEXT NOT NULL DEFAULT 'UTC',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    deleted_at TEXT
+    deleted_at TEXT,
+    webauthn_handle BLOB, -- 0040
+    email_verified INTEGER NOT NULL DEFAULT 1 -- 0040
 );
 
 CREATE TABLE identities (
@@ -867,3 +869,27 @@ CREATE TABLE scim_group_members (
 );
 
 CREATE INDEX idx_scim_group_members_user ON scim_group_members (org_id, user_id);
+
+-- 0040: passkeys (WU-612)
+CREATE UNIQUE INDEX idx_users_webauthn_handle ON users (webauthn_handle)
+    WHERE webauthn_handle IS NOT NULL;
+
+CREATE TABLE webauthn_credentials (
+    id                 TEXT PRIMARY KEY,
+    user_id            TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    credential_id      BLOB NOT NULL UNIQUE,
+    public_key         BLOB NOT NULL,
+    sign_count         INTEGER NOT NULL DEFAULT 0,
+    aaguid             BLOB NOT NULL DEFAULT x'',
+    transports_json    TEXT NOT NULL DEFAULT '[]',
+    attestation_type   TEXT NOT NULL DEFAULT '',
+    attestation_format TEXT NOT NULL DEFAULT '',
+    user_verified      INTEGER NOT NULL DEFAULT 0,
+    backup_eligible    INTEGER NOT NULL DEFAULT 0,
+    backup_state       INTEGER NOT NULL DEFAULT 0,
+    name               TEXT NOT NULL,
+    created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    last_used_at       TEXT
+);
+
+CREATE INDEX idx_webauthn_credentials_user ON webauthn_credentials (user_id);

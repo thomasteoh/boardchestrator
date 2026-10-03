@@ -166,9 +166,20 @@ WHERE email = ?
   AND deleted_at IS NULL
 `
 
-func (q *Queries) FindUserByEmail(ctx context.Context, email string) (User, error) {
+type FindUserByEmailRow struct {
+	ID        string
+	Email     string
+	Name      string
+	AvatarUrl string
+	Theme     string
+	Timezone  string
+	CreatedAt string
+	DeletedAt sql.NullString
+}
+
+func (q *Queries) FindUserByEmail(ctx context.Context, email string) (FindUserByEmailRow, error) {
 	row := q.db.QueryRowContext(ctx, findUserByEmail, email)
-	var i User
+	var i FindUserByEmailRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
@@ -183,22 +194,24 @@ func (q *Queries) FindUserByEmail(ctx context.Context, email string) (User, erro
 }
 
 const findUserByEmailAnyState = `-- name: FindUserByEmailAnyState :one
-SELECT id, deleted_at
+SELECT id, deleted_at, email_verified
 FROM users
 WHERE email = ?
 `
 
 type FindUserByEmailAnyStateRow struct {
-	ID        string
-	DeletedAt sql.NullString
+	ID            string
+	DeletedAt     sql.NullString
+	EmailVerified int64
 }
 
 // Login resolution (SPEC s7.3 step 3): includes deleted users so a deleted
 // account's email is refused rather than tripping the UNIQUE constraint.
+// email_verified = 0 (a passkey bootstrap claim, WU-612) is never linked to.
 func (q *Queries) FindUserByEmailAnyState(ctx context.Context, email string) (FindUserByEmailAnyStateRow, error) {
 	row := q.db.QueryRowContext(ctx, findUserByEmailAnyState, email)
 	var i FindUserByEmailAnyStateRow
-	err := row.Scan(&i.ID, &i.DeletedAt)
+	err := row.Scan(&i.ID, &i.DeletedAt, &i.EmailVerified)
 	return i, err
 }
 
@@ -251,9 +264,20 @@ FROM users
 WHERE id = ?
 `
 
-func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
+type GetUserRow struct {
+	ID        string
+	Email     string
+	Name      string
+	AvatarUrl string
+	Theme     string
+	Timezone  string
+	CreatedAt string
+	DeletedAt sql.NullString
+}
+
+func (q *Queries) GetUser(ctx context.Context, id string) (GetUserRow, error) {
 	row := q.db.QueryRowContext(ctx, getUser, id)
-	var i User
+	var i GetUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,

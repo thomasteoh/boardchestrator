@@ -657,14 +657,34 @@ type Team struct {
 }
 
 type User struct {
-	ID        string
-	Email     string
-	Name      string
-	AvatarUrl string
-	Theme     string
-	Timezone  string
-	CreatedAt string
-	DeletedAt sql.NullString
+	ID             string
+	Email          string
+	Name           string
+	AvatarUrl      string
+	Theme          string
+	Timezone       string
+	CreatedAt      string
+	DeletedAt      sql.NullString
+	WebauthnHandle []byte
+	EmailVerified  int64
+}
+
+type WebauthnCredential struct {
+	ID                string
+	UserID            string
+	CredentialID      []byte
+	PublicKey         []byte
+	SignCount         int64
+	Aaguid            []byte
+	TransportsJson    string
+	AttestationType   string
+	AttestationFormat string
+	UserVerified      int64
+	BackupEligible    int64
+	BackupState       int64
+	Name              string
+	CreatedAt         string
+	LastUsedAt        sql.NullString
 }
 
 type Webhook struct {

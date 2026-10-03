@@ -20,12 +20,24 @@ import (
 var ErrLastSignInMethod = fmt.Errorf("%w: you can't remove your only sign-in method", ErrInvalidInput)
 
 // SignInMethodCount is the number of ways userID can sign in. It is the one
-// place that knows what counts as a sign-in method: identities today; WU-612
-// adds webauthn_credentials here.
+// place that knows what counts as a sign-in method: linked identities, plus
+// passkeys while the platform has them turned on (a passkey nobody can use
+// must not keep a user's last identity from counting as the last).
 func SignInMethodCount(ctx context.Context, q *sqlc.Queries, userID string) (int64, error) {
 	n, err := q.CountUserIdentities(ctx, userID)
 	if err != nil {
 		return 0, fmt.Errorf("count identities: %w", err)
+	}
+	on, err := PasskeysEnabled(ctx, q)
+	if err != nil {
+		return 0, err
+	}
+	if on {
+		p, err := q.CountUserWebAuthnCredentials(ctx, userID)
+		if err != nil {
+			return 0, fmt.Errorf("count passkeys: %w", err)
+		}
+		n += p
 	}
 	return n, nil
 }

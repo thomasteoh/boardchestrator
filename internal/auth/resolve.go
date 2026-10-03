@@ -420,7 +420,12 @@ func (rv *Resolver) linkOrSignUp(ctx context.Context, q *sqlc.Queries, req Login
 			if existing.DeletedAt.Valid || existing.ID == formerMemberUserID {
 				return unseenOutcome{}, refuse(RefuseUserDeleted)
 			}
-			return unseenOutcome{userID: existing.ID}, nil
+			// An address nobody confirmed (a passkey bootstrap claim, WU-612)
+			// does not make the IdP's user that account's owner: fall
+			// through to sign-up, which refuses the taken address.
+			if existing.EmailVerified != 0 {
+				return unseenOutcome{userID: existing.ID}, nil
+			}
 		case !errors.Is(err, sql.ErrNoRows):
 			return unseenOutcome{}, fmt.Errorf("auth: find user by email: %w", err)
 		}
