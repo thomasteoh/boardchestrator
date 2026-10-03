@@ -392,6 +392,32 @@ type SyncInput struct {
 
 type memberKey struct{ rt, rid string }
 
+// keepLastOwner reports whether sync must leave m alone because it is the
+// org's last owner membership and the change (a new role, or "" for removal)
+// would leave the org without an owner (WU-613). It audits the decision.
+func keepLastOwner(ctx context.Context, q *sqlc.Queries, in SyncInput, m sqlc.Membership, newRole string) (bool, error) {
+	if m.ResourceType != "org" || m.ResourceID != in.OrgID {
+		return false, nil
+	}
+	if newRole != "" {
+		r, err := RoleForOrg(ctx, q, in.OrgID, newRole)
+		if err != nil {
+			return false, err
+		}
+		if OwnerEquivalent(r) {
+			return false, nil
+		}
+	}
+	last, err := IsLastOwnerMembership(ctx, q, in.OrgID, m.ID)
+	if err != nil || !last {
+		return false, err
+	}
+	if err := AuditOwnerPreserved(ctx, q, in.OrgID, in.UserID, m.ID, "group_sync", in.Actor, in.Now); err != nil {
+		return false, fmt.Errorf("group sync: audit: %w", err)
+	}
+	return true, nil
+}
+
 // ReconcileIdPMemberships makes the user's source='idp' memberships in
 // in.OrgID match the org's group mappings for in.Groups (SPEC §7.5): it
 // inserts missing ones, updates the role where the resource matches, and
@@ -474,6 +500,14 @@ func ReconcileIdPMemberships(ctx context.Context, q *sqlc.Queries, in SyncInput)
 		case cur.Source != MembershipSourceIdP:
 			res.Kept = append(res.Kept, sm)
 		case !cur.RoleID.Valid || cur.RoleID.String != role:
+			keep, err := keepLastOwner(ctx, q, in, cur, role)
+			if err != nil {
+				return res, err
+			}
+			if keep {
+				res.Kept = append(res.Kept, sm)
+				continue
+			}
 			if _, err := q.UpdateIdPMembershipRole(ctx, sqlc.UpdateIdPMembershipRoleParams{
 				RoleID: sql.NullString{String: role, Valid: true}, ID: cur.ID, OrgID: in.OrgID,
 			}); err != nil {
@@ -490,6 +524,14 @@ func ReconcileIdPMemberships(ctx context.Context, q *sqlc.Queries, in SyncInput)
 	}
 	sort.Slice(stale, func(i, j int) bool { return stale[i].ID < stale[j].ID })
 	for _, m := range stale {
+		keep, err := keepLastOwner(ctx, q, in, m, "")
+		if err != nil {
+			return res, err
+		}
+		if keep {
+			res.Kept = append(res.Kept, SyncedMembership{ResourceType: m.ResourceType, ResourceID: m.ResourceID, RoleID: m.RoleID.String})
+			continue
+		}
 		if _, err := q.DeleteIdPMembership(ctx, sqlc.DeleteIdPMembershipParams{ID: m.ID, OrgID: in.OrgID}); err != nil {
 			return res, fmt.Errorf("group sync: remove: %w", err)
 		}

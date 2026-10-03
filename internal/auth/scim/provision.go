@@ -489,9 +489,30 @@ func (o *op) deleteUser(ctx context.Context, su sqlc.ScimUser) error {
 // already refuses them this one.
 func (o *op) deprovision(ctx context.Context, su sqlc.ScimUser, act string) error {
 	org := o.c.OrgID
-	mems, err := o.q.DeleteUserOrgMemberships(ctx, sqlc.DeleteUserOrgMembershipsParams{OrgID: org, ActorID: su.UserID})
+	// Last-owner protection (WU-613): the org's only owner keeps that one
+	// membership; everything else is still deprovisioned.
+	owners, err := action.OrgOwnerMemberships(ctx, o.q, org)
+	if err != nil {
+		return fmt.Errorf("scim: owners: %w", err)
+	}
+	keep := ""
+	if len(owners) == 1 && owners[0].ActorID == su.UserID {
+		keep = owners[0].ID
+	}
+	var mems int64
+	if keep != "" {
+		mems, err = o.q.DeleteUserOrgMembershipsExcept(ctx, sqlc.DeleteUserOrgMembershipsExceptParams{OrgID: org, ActorID: su.UserID, ID: keep})
+	} else {
+		mems, err = o.q.DeleteUserOrgMemberships(ctx, sqlc.DeleteUserOrgMembershipsParams{OrgID: org, ActorID: su.UserID})
+	}
 	if err != nil {
 		return fmt.Errorf("scim: remove memberships: %w", err)
+	}
+	if keep != "" {
+		now, _ := time.Parse(timeFormat, o.now)
+		if err := action.AuditOwnerPreserved(ctx, o.q, org, su.UserID, keep, "scim", o.c.Actor, now); err != nil {
+			return fmt.Errorf("scim: audit: %w", err)
+		}
 	}
 	keys, err := o.q.RevokeUserOrgAPIKeys(ctx, sqlc.RevokeUserOrgAPIKeysParams{
 		Now: sql.NullString{String: o.now, Valid: true}, OrgID: org, UserID: su.UserID,
@@ -499,7 +520,14 @@ func (o *op) deprovision(ctx context.Context, su sqlc.ScimUser, act string) erro
 	if err != nil {
 		return fmt.Errorf("scim: revoke api keys: %w", err)
 	}
-	left, err := o.q.CountUserMembershipOrgs(ctx, su.UserID)
+	// The preserved owner membership does not keep the person signed in:
+	// sessions go when nothing but it is left.
+	var left int64
+	if keep != "" {
+		left, err = o.q.CountUserMembershipOrgsExcept(ctx, sqlc.CountUserMembershipOrgsExceptParams{ActorID: su.UserID, OrgID: org})
+	} else {
+		left, err = o.q.CountUserMembershipOrgs(ctx, su.UserID)
+	}
 	if err != nil {
 		return fmt.Errorf("scim: count memberships: %w", err)
 	}

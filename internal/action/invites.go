@@ -142,14 +142,22 @@ func handleMemberRemove(ctx context.Context, ac ActionCtx, in json.RawMessage) (
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("member.remove: %w", err)
 	}
+	org := scopedOrg(ac, input.OrgID)
+	guard, err := NewOwnerGuard(ctx, ac.Tx.Queries, org)
+	if err != nil {
+		return nil, fmt.Errorf("member.remove: %w", err)
+	}
 	if err := ac.Tx.DeleteMembership(ctx, sqlc.DeleteMembershipParams{
-		OrgID:        input.OrgID,
+		OrgID:        org,
 		ActorID:      input.ActorID,
 		ActorType:    input.ActorType,
 		ResourceType: input.ResourceType,
 		ResourceID:   input.ResourceID,
 	}); err != nil {
 		return nil, fmt.Errorf("member.remove: %w", err)
+	}
+	if err := guard.Check(ctx); err != nil {
+		return nil, err
 	}
 	return nil, nil
 }
