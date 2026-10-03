@@ -301,12 +301,31 @@ type OrgCapAlert struct {
 	CreatedAt string
 }
 
+type OrgDomain struct {
+	ID          string
+	OrgID       string
+	Domain      string
+	VerifyToken string
+	VerifiedAt  sql.NullString
+	CreatedAt   string
+}
+
 type OrgSecret struct {
 	ID         string
 	OrgID      string
 	Key        string
 	Ciphertext string
 	CreatedAt  string
+}
+
+type OrgSsoSetting struct {
+	OrgID            string
+	EnforceSso       int64
+	JitEnabled       int64
+	JitDefaultRoleID sql.NullString
+	GroupClaim       string
+	GroupSync        int64
+	UpdatedAt        string
 }
 
 type PlatformSetting struct {

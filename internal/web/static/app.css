@@ -1561,3 +1561,9 @@ a {
 }
 .bc-signin-method-name { font-weight: 600; }
 .bc-signin-method .bc-inline-form { margin-left: auto; }
+
+/* Org settings -> Single sign-on, /login SSO box (WU-606) */
+.bc-login-subtitle { margin: 0 0 var(--bc-space-2); font-size: var(--bc-text-base); font-weight: 600; }
+.bc-sso-domain { display: flex; flex-direction: column; gap: var(--bc-space-2); padding-bottom: var(--bc-space-2); }
+.bc-sso-domain .bc-signin-method { border-bottom: 0; }
+.bc-sso-domain-actions { margin-left: auto; }

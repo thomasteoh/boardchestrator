@@ -56,6 +56,19 @@ var refRe = regexp.MustCompile(`^[A-Z0-9]{4,16}$`)
 
 // handleLogin serves GET /login (SPEC §7.2).
 func handleLogin(w http.ResponseWriter, r *http.Request) {
+	renderLogin(w, r, loginExtras{})
+}
+
+// loginExtras is state the /login page shows only when re-rendered by home-
+// realm discovery (WU-606).
+type loginExtras struct {
+	ssoEmail    string
+	ssoNotFound bool
+}
+
+// renderLogin renders the sign-in page for r's query (return_to, invite,
+// error, signed_out).
+func renderLogin(w http.ResponseWriter, r *http.Request, x loginExtras) {
 	q := r.URL.Query()
 	returnTo := auth.SafeReturnTo(q.Get("return_to"))
 	inviteToken := q.Get("invite")
@@ -84,6 +97,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 			d.ErrorRef = ref
 		}
 	}
+	var orgProviders []string
 	if src := identityCfg().providers; src != nil {
 		ps, err := src.Providers(r.Context())
 		if err != nil {
@@ -91,6 +105,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, p := range ps {
 			if p.OrgID != "" {
+				orgProviders = append(orgProviders, p.ID)
 				continue // org-owned providers are reached through SSO discovery
 			}
 			hq := url.Values{}
@@ -108,6 +123,9 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 				ID: p.ID, Name: p.DisplayName, Preset: p.Preset, Href: templ.SafeURL(href),
 			})
 		}
+	}
+	if c := loginSSOForm(orgProviders, x, returnTo, inviteToken); c != nil {
+		d.SSO = c
 	}
 	s := shellData(r, "Sign in", "")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

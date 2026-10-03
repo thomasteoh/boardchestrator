@@ -772,3 +772,26 @@ CREATE TABLE auth_providers (
 );
 
 CREATE INDEX idx_auth_providers_org ON auth_providers (org_id);
+
+-- 0036: organisation email domains and SSO settings (WU-606)
+CREATE TABLE org_domains (
+    id           TEXT PRIMARY KEY,
+    org_id       TEXT NOT NULL REFERENCES orgs (id) ON DELETE CASCADE,
+    domain       TEXT NOT NULL,
+    verify_token TEXT NOT NULL,
+    verified_at  TEXT,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (org_id, domain)
+);
+
+CREATE UNIQUE INDEX idx_org_domains_verified ON org_domains (domain) WHERE verified_at IS NOT NULL;
+
+CREATE TABLE org_sso_settings (
+    org_id              TEXT PRIMARY KEY REFERENCES orgs (id) ON DELETE CASCADE,
+    enforce_sso         INTEGER NOT NULL DEFAULT 0,
+    jit_enabled         INTEGER NOT NULL DEFAULT 0,
+    jit_default_role_id TEXT REFERENCES roles (id) ON DELETE SET NULL,
+    group_claim         TEXT NOT NULL DEFAULT '',
+    group_sync          INTEGER NOT NULL DEFAULT 0,
+    updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);

@@ -12,6 +12,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/yuin/goldmark v1.8.5
+	golang.org/x/net v0.56.0
 	golang.org/x/oauth2 v0.36.0
 	modernc.org/sqlite v1.46.1
 )
@@ -50,7 +51,7 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
-	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

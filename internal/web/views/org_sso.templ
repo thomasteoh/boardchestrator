@@ -1,0 +1,169 @@
+package views
+
+// OrgSSOURL is Org settings → Single sign-on for orgID.
+func OrgSSOURL(orgID string) string {
+	return "/app/org/" + orgID + "/settings/sso"
+}
+
+// OrgDomainRow is one email domain on the SSO page.
+type OrgDomainRow struct {
+	ID     string
+	Domain string
+	// Status is pending, verified or taken (another org verified it).
+	Status     string
+	VerifiedAt string
+	// RecordName/RecordValue are the TXT record to publish while pending.
+	RecordName  string
+	RecordValue string
+}
+
+// OrgSSOData is everything Org settings → Single sign-on shows.
+type OrgSSOData struct {
+	OrgID   string
+	OrgName string
+	Domains []OrgDomainRow
+	// Notice and Error are fixed copy chosen by the handler ("" = none).
+	Notice string
+	Error  string
+	// Later sections (nil renders nothing): the org's identity provider and
+	// SSO enforcement (WU-607), JIT provisioning and group → role mappings
+	// (WU-608), SCIM tokens (WU-611).
+	Provider     templ.Component
+	Enforcement  templ.Component
+	Provisioning templ.Component
+	SCIM         templ.Component
+}
+
+// OrgSSOPage is GET /app/org/{orgID}/settings/sso (WU-606).
+templ OrgSSOPage(s Shell, d OrgSSOData, breadcrumbs []Breadcrumb) {
+	@Base(s) {
+		@Breadcrumbs(breadcrumbs)
+		<div class="bc-settings-page">
+			<nav class="bc-tab-nav" aria-label="Organisation settings">
+				<a href={ templ.URL("/app/org/" + d.OrgID + "/settings") } class="bc-tab-link">General</a>
+				<a href={ templ.URL("/app/org/" + d.OrgID + "/people") } class="bc-tab-link">People</a>
+				<a href={ templ.URL("/app/org/" + d.OrgID + "/roles") } class="bc-tab-link">Roles</a>
+				<a href={ templ.URL(OrgSSOURL(d.OrgID)) } class="bc-tab-link" aria-current="page">Single sign-on</a>
+			</nav>
+			<h1>Single sign-on</h1>
+			if d.Notice != "" {
+				<p class="bc-alert bc-alert-info" role="status">{ d.Notice }</p>
+			}
+			if d.Error != "" {
+				<p class="bc-alert bc-alert-error" role="alert">{ d.Error }</p>
+			}
+			<section aria-labelledby="sso-domains">
+				<h2 id="sso-domains">Email domains</h2>
+				<p class="bc-muted">Verify the email domains your organisation owns. People who enter an address on a verified domain at sign-in are sent to your organisation's identity provider.</p>
+				if len(d.Domains) == 0 {
+					<p class="bc-empty-state">No domains yet. Add one below.</p>
+				} else {
+					<ul class="bc-signin-methods" aria-label="Email domains">
+						for _, dm := range d.Domains {
+							<li class="bc-sso-domain">
+								<div class="bc-signin-method">
+									<span class="bc-signin-method-name">{ dm.Domain }</span>
+									switch dm.Status {
+										case "verified":
+											<span class="bc-badge">Verified</span>
+											if dm.VerifiedAt != "" {
+												<span class="bc-hint">Verified { dm.VerifiedAt }</span>
+											}
+										case "taken":
+											<span class="bc-badge bc-badge-muted">Verified by another organisation</span>
+										default:
+											<span class="bc-badge bc-badge-muted">Pending verification</span>
+									}
+									<span class="bc-row-actions bc-sso-domain-actions">
+										if dm.Status == "pending" {
+											<form method="post" action={ templ.SafeURL(OrgSSOURL(d.OrgID) + "/domains/" + dm.ID + "/verify") } class="bc-inline-form" hx-boost="false">
+												<input type="hidden" name="csrf_token" value={ s.CSRF }/>
+												<button type="submit" class="bc-btn bc-btn-sm bc-btn-primary">Verify</button>
+											</form>
+										}
+										<form method="post" action={ templ.SafeURL(OrgSSOURL(d.OrgID) + "/domains/" + dm.ID + "/remove") } class="bc-inline-form" hx-boost="false">
+											<input type="hidden" name="csrf_token" value={ s.CSRF }/>
+											<button type="submit" class="bc-btn bc-btn-sm bc-btn-danger">Remove</button>
+										</form>
+									</span>
+								</div>
+								if dm.Status == "pending" {
+									<div class="bc-callout">
+										<p>Add this TXT record at your DNS host, then select Verify. DNS changes can take a while to appear.</p>
+										<dl class="bc-dl">
+											<dt>Name</dt>
+											<dd><code class="bc-copyable">{ dm.RecordName }</code></dd>
+											<dt>Value</dt>
+											<dd><code class="bc-copyable">{ dm.RecordValue }</code></dd>
+										</dl>
+									</div>
+								}
+							</li>
+						}
+					</ul>
+				}
+				<form method="post" action={ templ.SafeURL(OrgSSOURL(d.OrgID) + "/domains") } class="bc-form bc-form-wide" hx-boost="false">
+					<input type="hidden" name="csrf_token" value={ s.CSRF }/>
+					<label>
+						Domain
+						<input type="text" name="domain" required maxlength="253" placeholder="example.com" autocomplete="off" spellcheck="false" class="bc-input"/>
+					</label>
+					<div class="bc-form-actions">
+						<button type="submit" class="bc-btn bc-btn-primary">Add domain</button>
+					</div>
+				</form>
+			</section>
+			// Slot: the organisation's identity provider (WU-607).
+			if d.Provider != nil {
+				<section aria-labelledby="sso-provider">
+					<h2 id="sso-provider">Identity provider</h2>
+					@d.Provider
+				</section>
+			}
+			// Slot: SSO enforcement (WU-607).
+			if d.Enforcement != nil {
+				<section aria-labelledby="sso-enforcement">
+					<h2 id="sso-enforcement">Enforcement</h2>
+					@d.Enforcement
+				</section>
+			}
+			// Slot: JIT provisioning and group → role mappings (WU-608).
+			if d.Provisioning != nil {
+				<section aria-labelledby="sso-provisioning">
+					<h2 id="sso-provisioning">Provisioning</h2>
+					@d.Provisioning
+				</section>
+			}
+			// Slot: SCIM tokens (WU-611).
+			if d.SCIM != nil {
+				<section aria-labelledby="sso-scim">
+					<h2 id="sso-scim">SCIM provisioning</h2>
+					@d.SCIM
+				</section>
+			}
+		</div>
+	}
+}
+
+// LoginSSOForm is the /login "Sign in with SSO" box (home-realm discovery,
+// WU-606). It is a GET form: the lookup changes nothing, and a hit redirects
+// to /auth/{id}?login_hint=<email>, which carries the address in a URL anyway.
+templ LoginSSOForm(email, returnTo, invite string, notFound bool) {
+	<h2 class="bc-login-subtitle">Sign in with SSO</h2>
+	if notFound {
+		<p class="bc-alert bc-alert-info" role="alert">We couldn't find single sign-on for that address. Use one of the options above.</p>
+	}
+	<form method="get" action="/auth/sso/discover" class="bc-form" hx-boost="false">
+		if returnTo != "" {
+			<input type="hidden" name="return_to" value={ returnTo }/>
+		}
+		if invite != "" {
+			<input type="hidden" name="invite" value={ invite }/>
+		}
+		<label>
+			Work email
+			<input type="email" name="email" value={ email } required maxlength="254" autocomplete="email" class="bc-input"/>
+		</label>
+		<button type="submit" class="bc-btn">Continue with SSO</button>
+	</form>
+}

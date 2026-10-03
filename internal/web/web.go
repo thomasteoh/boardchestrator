@@ -1457,6 +1457,12 @@ func Routes(r chi.Router) {
 
 	// Sign-in page and Platform Admin → Identity providers (WU-603)
 	r.Get("/login", handleLogin)
+	r.Get(SSODiscoverURL, handleSSODiscover)
+	// Org settings -> Single sign-on (WU-606)
+	r.Get("/app/org/{orgID}/settings/sso", handleOrgSSO)
+	r.Post("/app/org/{orgID}/settings/sso/domains", handleOrgDomainPost("org.domain.add", "added"))
+	r.Post("/app/org/{orgID}/settings/sso/domains/{id}/verify", handleOrgDomainPost("org.domain.verify", "verified"))
+	r.Post("/app/org/{orgID}/settings/sso/domains/{id}/remove", handleOrgDomainPost("org.domain.remove", "removed"))
 	r.Get(views.IdPAdminBase, handleIdPList)
 	r.Post(views.IdPAdminBase, handleIdPCreate)
 	r.Get(views.IdPAdminBase+"/new", handleIdPNew)
