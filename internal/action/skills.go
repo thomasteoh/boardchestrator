@@ -71,6 +71,32 @@ type SkillBundle struct {
 	Version        int           `json:"version,omitempty"` // imported at this version (or next free if 0)
 }
 
+// Redacted implements SecretResult (WU-613, the WU-522 sweep): skill.export
+// returns the decrypted MCP endpoint credentials to its caller only; every
+// stored copy (events, webhooks, idempotency, audit) drops the token and the
+// extra header values.
+func (b SkillBundle) Redacted() any {
+	c := b
+	c.McpEndpoints = make([]McpEndpoint, 0, len(b.McpEndpoints))
+	for _, ep := range b.McpEndpoints {
+		r := McpEndpoint{URL: ep.URL, Name: ep.Name, AuthType: ep.AuthType}
+		if ep.AuthToken != "" {
+			r.AuthToken = redactedValue
+		}
+		if len(ep.ExtraHeaders) > 0 {
+			r.ExtraHeaders = make(map[string]string, len(ep.ExtraHeaders))
+			for k := range ep.ExtraHeaders {
+				r.ExtraHeaders[k] = redactedValue
+			}
+		}
+		c.McpEndpoints = append(c.McpEndpoints, r)
+	}
+	return c
+}
+
+// redactedValue replaces a secret in a stored copy of a result.
+const redactedValue = "[redacted]"
+
 func init() {
 	Register(Definition{
 		Name:       "skill.create",

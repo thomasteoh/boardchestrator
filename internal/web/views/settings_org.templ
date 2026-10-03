@@ -38,6 +38,7 @@ templ OrgSettingsPage(s Shell, orgID, name, context, visibility, storageBackend,
 			<a href={ templ.URL("/app/org/"+orgID+"/people") } class="bc-tab-link">People</a>
 			<a href={ templ.URL("/app/org/"+orgID+"/roles") } class="bc-tab-link">Roles</a>
 			<a href={ templ.URL(OrgSSOURL(orgID)) } class="bc-tab-link">Single sign-on</a>
+			<a href={ templ.URL(OrgAPIKeysURL(orgID)) } class="bc-tab-link">API keys</a>
 		</nav>
 	}
 }

@@ -120,11 +120,21 @@ func handleMemberInvite(ctx context.Context, ac ActionCtx, in json.RawMessage) (
 	if err != nil {
 		return nil, fmt.Errorf("member.invite: %w", err)
 	}
-	return map[string]any{
-		"id":     id,
-		"token":  token,
-		"expiry": expiresAt,
-	}, nil
+	return InviteCreated{ID: id, Token: token, Expiry: expiresAt}, nil
+}
+
+// InviteCreated is member.invite's result. Token is the invite secret,
+// returned to the inviter once; Redacted drops it for every stored copy
+// (WU-613, the WU-522 sweep).
+type InviteCreated struct {
+	ID     string `json:"id"`
+	Token  string `json:"token"`
+	Expiry string `json:"expiry"`
+}
+
+// Redacted implements SecretResult.
+func (c InviteCreated) Redacted() any {
+	return map[string]string{"id": c.ID, "expiry": c.Expiry}
 }
 
 func handleMemberRemove(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
