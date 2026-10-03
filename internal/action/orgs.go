@@ -188,6 +188,7 @@ func handleOrgCreate(ctx context.Context, ac ActionCtx, in json.RawMessage) (any
 		ResourceType: "org",
 		ResourceID:   id,
 		RoleID:       sql.NullString{String: ownerRole.ID, Valid: true},
+		Source:       MembershipSourceManual,
 	}); err != nil {
 		return nil, fmt.Errorf("org.create: seed owner membership: %w", err)
 	}

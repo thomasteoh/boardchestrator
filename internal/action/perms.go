@@ -193,6 +193,7 @@ func handleMembershipCreate(ctx context.Context, ac ActionCtx, in json.RawMessag
 		ResourceType: input.ResourceType,
 		ResourceID:   input.ResourceID,
 		RoleID:       sql.NullString{String: input.RoleID, Valid: input.RoleID != ""},
+		Source:       MembershipSourceManual,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("membership.create: %w", err)

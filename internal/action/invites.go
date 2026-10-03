@@ -223,6 +223,7 @@ func AcceptInvite(ctx context.Context, q *sqlc.Queries, token, userID string, no
 		ResourceType: invite.ResourceType,
 		ResourceID:   invite.ResourceID,
 		RoleID:       invite.RoleID,
+		Source:       MembershipSourceInvite,
 	}); err != nil {
 		return InviteAcceptance{}, fmt.Errorf("create membership: %w", err)
 	}

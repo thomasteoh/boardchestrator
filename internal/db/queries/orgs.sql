@@ -110,13 +110,13 @@ WHERE id = ? AND org_id = ?
 RETURNING id, org_id, name, is_system, grants_json, created_at;
 
 -- name: FindMemberships :many
-SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at, source
 FROM memberships
 WHERE org_id = ? AND actor_type = ? AND actor_id = ?
   AND resource_type = ? AND resource_id = ?;
 
 -- name: FindMembershipsForActor :many
-SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at, source
 FROM memberships
 WHERE org_id = ? AND actor_type = ? AND actor_id = ?;
 
@@ -127,9 +127,9 @@ WHERE actor_id = ? AND actor_type = 'user' AND resource_type = 'org'
 ORDER BY org_id;
 
 -- name: CreateMembershipFromOrgQuery :one
-INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id, role_id)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at;
+INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at, source;
 
 -- name: DeleteMembershipByID :exec
 DELETE FROM memberships

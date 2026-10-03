@@ -123,11 +123,28 @@ var ErrSSONoProvider = fmt.Errorf("%w: add and enable an identity provider for t
 type OrgSSOView struct {
 	OrgID      string `json:"org_id"`
 	EnforceSSO bool   `json:"enforce_sso"`
+	// JIT provisioning and group sync (WU-608, SPEC §7.5).
+	JITEnabled       bool   `json:"jit_enabled"`
+	JITDefaultRoleID string `json:"jit_default_role_id"`
+	GroupClaim       string `json:"group_claim"`
+	GroupSync        bool   `json:"group_sync"`
 }
 
+// orgSSOInput is a partial update: absent fields keep their stored value.
 type orgSSOInput struct {
-	OrgID      string `json:"org_id,omitempty"`
-	EnforceSSO *bool  `json:"enforce_sso"`
+	OrgID            string  `json:"org_id,omitempty"`
+	EnforceSSO       *bool   `json:"enforce_sso,omitempty"`
+	JITEnabled       *bool   `json:"jit_enabled,omitempty"`
+	JITDefaultRoleID *string `json:"jit_default_role_id,omitempty"`
+	GroupClaim       *string `json:"group_claim,omitempty"`
+	GroupSync        *bool   `json:"group_sync,omitempty"`
+}
+
+func ssoView(orgID string, st sqlc.OrgSsoSetting) OrgSSOView {
+	return OrgSSOView{
+		OrgID: orgID, EnforceSSO: st.EnforceSso == 1, JITEnabled: st.JitEnabled == 1,
+		JITDefaultRoleID: st.JitDefaultRoleID.String, GroupClaim: st.GroupClaim, GroupSync: st.GroupSync == 1,
+	}
 }
 
 func init() {
@@ -150,12 +167,14 @@ func handleOrgSSOGet(ctx context.Context, ac ActionCtx, _ json.RawMessage) (any,
 	if err != nil {
 		return nil, fmt.Errorf("org.sso.get: %w", err)
 	}
-	return OrgSSOView{OrgID: ac.Org, EnforceSSO: st.EnforceSso == 1}, nil
+	return ssoView(ac.Org, st), nil
 }
 
-// handleOrgSSOUpdate turns enforcement on or off. Turning it on needs an
-// enabled org provider and the caller's own session to be signed in through
-// one, so nobody can lock themselves (and everyone else) out by mistake.
+// handleOrgSSOUpdate changes enforcement and the provisioning settings;
+// absent fields are left alone. Turning enforcement on needs an enabled org
+// provider and the caller's own session to be signed in through one, so
+// nobody can lock themselves (and everyone else) out by mistake. The JIT
+// default role must be usable in the org and not an owner role.
 func handleOrgSSOUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
 	var input orgSSOInput
 	dec := json.NewDecoder(strings.NewReader(string(in)))
@@ -165,17 +184,35 @@ func handleOrgSSOUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage) (
 			return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 		}
 	}
-	if input.EnforceSSO == nil {
-		return nil, fmt.Errorf("%w: enforce_sso is required", ErrInvalidInput)
+	provisioning := input.JITEnabled != nil || input.JITDefaultRoleID != nil || input.GroupClaim != nil || input.GroupSync != nil
+	if input.EnforceSSO == nil && !provisioning {
+		return nil, fmt.Errorf("%w: nothing to change", ErrInvalidInput)
 	}
-	on := *input.EnforceSSO
+	if input.EnforceSSO != nil {
+		if err := setEnforcement(ctx, ac, *input.EnforceSSO); err != nil {
+			return nil, err
+		}
+	}
+	if provisioning {
+		if err := setProvisioning(ctx, ac, input); err != nil {
+			return nil, err
+		}
+	}
+	st, err := ac.Tx.GetOrgSSOSettings(ctx, ac.Org)
+	if err != nil {
+		return nil, fmt.Errorf("org.sso.update: %w", err)
+	}
+	return ssoView(ac.Org, st), nil
+}
+
+func setEnforcement(ctx context.Context, ac ActionCtx, on bool) error {
 	if on {
 		ids, err := ac.Tx.ListEnabledOrgAuthProviderIDs(ctx, sql.NullString{String: ac.Org, Valid: true})
 		if err != nil {
-			return nil, fmt.Errorf("org.sso.update: providers: %w", err)
+			return fmt.Errorf("org.sso.update: providers: %w", err)
 		}
 		if len(ids) == 0 {
-			return nil, ErrSSONoProvider
+			return ErrSSONoProvider
 		}
 		ok := false
 		for _, id := range ids {
@@ -184,7 +221,7 @@ func handleOrgSSOUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage) (
 			}
 		}
 		if !ok {
-			return nil, ErrSSOLockout
+			return ErrSSOLockout
 		}
 	}
 	v := int64(0)
@@ -192,7 +229,64 @@ func handleOrgSSOUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage) (
 		v = 1
 	}
 	if err := ac.Tx.SetOrgSSOEnforce(ctx, sqlc.SetOrgSSOEnforceParams{OrgID: ac.Org, EnforceSso: v}); err != nil {
-		return nil, fmt.Errorf("org.sso.update: %w", err)
+		return fmt.Errorf("org.sso.update: %w", err)
 	}
-	return OrgSSOView{OrgID: ac.Org, EnforceSSO: on}, nil
+	return nil
+}
+
+// setProvisioning applies the JIT and group-sync fields over the stored
+// settings (WU-608).
+func setProvisioning(ctx context.Context, ac ActionCtx, input orgSSOInput) error {
+	if ac.Org == PlatformOrgID {
+		return ErrPlatformOrgSSO
+	}
+	cur := sqlc.OrgSsoSetting{}
+	st, err := ac.Tx.GetOrgSSOSettings(ctx, ac.Org)
+	switch {
+	case err == nil:
+		cur = st
+	case !errors.Is(err, sql.ErrNoRows):
+		return fmt.Errorf("org.sso.update: %w", err)
+	}
+	b := func(p *bool, old int64) int64 {
+		if p == nil {
+			return old
+		}
+		if *p {
+			return 1
+		}
+		return 0
+	}
+	jit := b(input.JITEnabled, cur.JitEnabled)
+	sync := b(input.GroupSync, cur.GroupSync)
+	role := cur.JitDefaultRoleID
+	if input.JITDefaultRoleID != nil {
+		id := strings.TrimSpace(*input.JITDefaultRoleID)
+		role = sql.NullString{String: id, Valid: id != ""}
+	}
+	claim := cur.GroupClaim
+	if input.GroupClaim != nil {
+		claim = strings.TrimSpace(*input.GroupClaim)
+		if !validGroupClaim(claim) {
+			return ErrGroupClaim
+		}
+	}
+	if role.Valid {
+		r, err := RoleForOrg(ctx, ac.Tx.Queries, ac.Org, role.String)
+		if err != nil {
+			return err
+		}
+		if OwnerEquivalent(r) {
+			return ErrJITOwnerRole
+		}
+	}
+	if jit == 1 && !role.Valid {
+		return ErrJITNoRole
+	}
+	if err := ac.Tx.SetOrgSSOProvisioning(ctx, sqlc.SetOrgSSOProvisioningParams{
+		OrgID: ac.Org, JitEnabled: jit, JitDefaultRoleID: role, GroupClaim: claim, GroupSync: sync,
+	}); err != nil {
+		return fmt.Errorf("org.sso.update: %w", err)
+	}
+	return nil
 }

@@ -35,8 +35,8 @@ const (
 	SignupOpen      = "open"
 	SignupInvite    = "invite"
 	SignupBootstrap = "bootstrap"
-	// SignupJIT is reserved for org JIT provisioning (SPEC §7.5, WU-607/608);
-	// see signUpMethod.
+	// SignupJIT is org JIT provisioning (SPEC §7.5, WU-608); see
+	// signUpMethod and orgProvisioning.
 	SignupJIT = "jit"
 )
 
@@ -53,7 +53,8 @@ func (e *RefusedError) Error() string { return "auth: login refused: " + e.Reaso
 func refuse(reason string) error { return &RefusedError{Reason: reason} }
 
 // Resolver maps a verified Assertion to a user and a fresh session
-// (SPEC §7.3): steps 1-4 (org JIT is WU-607/608), 5 and 6.
+// (SPEC §7.3): steps 1-6, plus org JIT provisioning and group sync (§7.5)
+// for sign-ins through an organisation's own provider.
 type Resolver struct {
 	DB          *sql.DB
 	Sessions    *SessionStore
@@ -64,6 +65,9 @@ type Resolver struct {
 	// Bootstrap checks a bootstrap flow's token (SPEC §7.3 step 5). nil:
 	// only BC_ADMIN_EMAILS can claim the platform.
 	Bootstrap *Bootstrap
+	// Events receives membership.synced events after the login commits
+	// (nil drops them).
+	Events action.EventSink
 }
 
 // LoginRequest is one resolution attempt.
@@ -104,6 +108,11 @@ type LoginResult struct {
 	SignupMethod string
 	// InviteOrgID is the org whose invite was accepted during sign-up.
 	InviteOrgID string
+	// JITOrgID is set when this login created a JIT org membership.
+	JITOrgID string
+	// Synced is the group sync outcome for an org provider with group sync
+	// on (nil otherwise).
+	Synced *action.SyncResult
 }
 
 func (rv *Resolver) isAdmin(email string) bool {
@@ -133,6 +142,9 @@ func (rv *Resolver) Resolve(ctx context.Context, req LoginRequest) (*LoginResult
 	})
 	if err != nil {
 		return nil, err
+	}
+	if res.Synced != nil && res.Synced.Changed() && rv.Events != nil {
+		rv.Events.Emit(ctx, res.Synced.Event(action.Actor{Type: action.ActorUser, ID: res.UserID, IP: req.IP}))
 	}
 	return res, nil
 }
@@ -212,12 +224,19 @@ func (rv *Resolver) resolveTx(ctx context.Context, q *sqlc.Queries, req LoginReq
 				out.detail["invite_id"] = acc.InviteID
 				out.detail["org_id"] = acc.OrgID
 			}
+			if out.method == SignupJIT {
+				out.detail["org_id"] = req.Policy.OrgID
+			}
 			if err := writeAudit(ctx, q, out.userID, "auth.signup", a.ProviderID, req.IP, now, out.detail); err != nil {
 				return nil, err
 			}
 		}
 	default:
 		return nil, fmt.Errorf("auth: find identity: %w", err)
+	}
+
+	if err := rv.orgProvisioning(ctx, q, req, res, now); err != nil {
+		return nil, err
 	}
 
 	if isAdmin || tokenClaim {
@@ -414,10 +433,12 @@ func (rv *Resolver) linkOrSignUp(ctx context.Context, q *sqlc.Queries, req Login
 //     gate in resolveTx already checked which).
 //   - open: the provider allows sign-up and verified the email.
 //
-// Org JIT (SPEC §7.5) is WU-608: it goes between bootstrap and open, as
-// "req.Policy.OrgID != "" with jit_enabled and VerifiedOrgForEmail(email) ==
-// req.Policy.OrgID", returning SignupJIT; the membership is then created next to
-// the invite acceptance in resolveTx.
+//   - jit: the provider is org-owned, the org has JIT on with a usable
+//     default role, and the asserted email is on a domain that org verified
+//     (SPEC §7.5). Per Q8 the org vouches for its own IdP on its own
+//     domains, so the IdP need not mark the email verified. The membership
+//     is created by orgProvisioning. JIT never links: an existing user with
+//     the email is refused by the caller like any other sign-up.
 func (rv *Resolver) signUpMethod(ctx context.Context, q *sqlc.Queries, req LoginRequest, verified, bootstrapClaim bool) (method, email string, err error) {
 	a := req.Assertion
 	if req.InviteToken != "" {
@@ -430,13 +451,20 @@ func (rv *Resolver) signUpMethod(ctx context.Context, q *sqlc.Queries, req Login
 		}
 		// An invalid invite grants nothing; the other rules still apply.
 	}
+	if verified && bootstrapClaim {
+		return SignupBootstrap, a.Email, nil
+	}
+	if ok, err := jitApplies(ctx, q, req.Policy.OrgID, a.Email); err != nil {
+		return "", "", err
+	} else if ok {
+		return SignupJIT, a.Email, nil
+	}
 	if !verified {
-		// Without an invite, an unverified email can never claim an address.
+		// Without an invite or org JIT, an unverified email can never claim
+		// an address.
 		return "", "", refuse(RefuseEmailUnverified)
 	}
 	switch {
-	case bootstrapClaim:
-		return SignupBootstrap, a.Email, nil
 	case req.Policy.AllowSignup && req.Policy.OrgID == "":
 		// Org-owned providers never allow open sign-up (an org owner must
 		// not be able to mint platform users); they sign people up by
@@ -444,6 +472,96 @@ func (rv *Resolver) signUpMethod(ctx context.Context, q *sqlc.Queries, req Login
 		return SignupOpen, a.Email, nil
 	}
 	return "", "", refuse(RefuseNoAccount)
+}
+
+// jitApplies reports whether org JIT provisioning covers email for a
+// sign-in through a provider owned by orgID: JIT on with a usable default
+// role, and email on a domain orgID verified.
+func jitApplies(ctx context.Context, q *sqlc.Queries, orgID, email string) (bool, error) {
+	if orgID == "" || email == "" {
+		return false, nil
+	}
+	role, err := action.JITDefaultRole(ctx, q, orgID)
+	if err != nil || role == "" {
+		return false, err
+	}
+	org, err := action.VerifiedOrgForEmail(ctx, q, email)
+	if err != nil {
+		return false, fmt.Errorf("auth: verified domain: %w", err)
+	}
+	return org == orgID, nil
+}
+
+// orgProvisioning runs for every login through an org-owned provider
+// (SPEC §7.5), after the user is known: group sync first (when the org has
+// it on), then JIT, which gives a user on a verified domain who still holds
+// no org-level membership in the org one with the default role
+// (source='jit'). Platform providers never provision anything.
+func (rv *Resolver) orgProvisioning(ctx context.Context, q *sqlc.Queries, req LoginRequest, res *LoginResult, now string) error {
+	orgID := req.Policy.OrgID
+	if orgID == "" || orgID == perm.PlatformOrg {
+		return nil
+	}
+	a := req.Assertion
+	st, err := q.GetOrgSSOSettings(ctx, orgID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("auth: org sso settings: %w", err)
+	}
+	if st.GroupSync == 1 {
+		groups := a.Groups
+		if st.GroupClaim != "" {
+			groups = ClaimGroups(a.RawClaims, st.GroupClaim)
+		}
+		sr, err := action.ReconcileIdPMemberships(ctx, q, action.SyncInput{
+			OrgID: orgID, UserID: res.UserID, ProviderID: a.ProviderID, Groups: groups,
+			Actor: action.Actor{Type: action.ActorUser, ID: res.UserID}, IP: req.IP, Now: rv.Sessions.now(),
+		})
+		if err != nil {
+			return fmt.Errorf("auth: group sync: %w", err)
+		}
+		res.Synced = &sr
+	}
+	ok, err := jitApplies(ctx, q, orgID, a.Email)
+	if err != nil || !ok {
+		return err
+	}
+	rows, err := q.FindMembershipsForActor(ctx, sqlc.FindMembershipsForActorParams{
+		OrgID: orgID, ActorType: "user", ActorID: res.UserID,
+	})
+	if err != nil {
+		return fmt.Errorf("auth: jit memberships: %w", err)
+	}
+	for _, m := range rows {
+		if m.ResourceType == "org" && m.ResourceID == orgID {
+			return nil
+		}
+	}
+	role, err := action.JITDefaultRole(ctx, q, orgID)
+	if err != nil {
+		return err
+	}
+	memID := newID()
+	if err := q.CreateSourcedMembership(ctx, sqlc.CreateSourcedMembershipParams{
+		ID: memID, OrgID: orgID, ActorID: res.UserID, ResourceType: "org", ResourceID: orgID,
+		RoleID: sql.NullString{String: role, Valid: true}, Source: action.MembershipSourceJIT,
+	}); err != nil {
+		return fmt.Errorf("auth: jit membership: %w", err)
+	}
+	res.JITOrgID = orgID
+	dj, err := json.Marshal(map[string]string{"provider": a.ProviderID, "membership_id": memID, "role_id": role})
+	if err != nil {
+		return fmt.Errorf("auth: audit detail: %w", err)
+	}
+	if err := q.CreateAuditLog(ctx, sqlc.CreateAuditLogParams{
+		ID: newID(), OrgID: sql.NullString{String: orgID, Valid: true}, ActorType: "user", ActorID: res.UserID,
+		Action: "membership.jit", Subject: res.UserID, DetailJson: string(dj), Ip: req.IP, CreatedAt: now,
+	}); err != nil {
+		return fmt.Errorf("auth: audit membership.jit: %w", err)
+	}
+	return nil
 }
 
 // ensurePlatformAdmin grants a BC_ADMIN_EMAILS user an Org Owner membership in
@@ -470,6 +588,7 @@ func ensurePlatformAdmin(ctx context.Context, q *sqlc.Queries, userID string) er
 		ResourceType: "org",
 		ResourceID:   perm.PlatformOrg,
 		RoleID:       sql.NullString{String: perm.PlatformOwnerRole, Valid: true},
+		Source:       action.MembershipSourceManual,
 	}); err != nil {
 		return fmt.Errorf("auth: grant platform admin: %w", err)
 	}

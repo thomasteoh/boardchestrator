@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 )
 
@@ -89,6 +90,8 @@ type HandlerConfig struct {
 	Providers  ConnectorSource
 	Connectors []Connector
 	RequestID  func(context.Context) string
+	// Events receives login-time events (membership.synced, WU-608).
+	Events action.EventSink
 }
 
 // NewHandler builds the login handler.
@@ -110,6 +113,7 @@ func NewHandler(cfg HandlerConfig) (*Handler, error) {
 			Sessions:    cfg.Sessions,
 			AdminEmails: cfg.AdminEmails,
 			SecretKey:   cfg.EncKey,
+			Events:      cfg.Events,
 			Bootstrap: &Bootstrap{
 				DB: cfg.DB, EnvToken: cfg.BootstrapToken, AdminEmails: cfg.AdminEmails,
 			},

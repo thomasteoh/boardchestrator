@@ -212,6 +212,17 @@ type Identity struct {
 	CreatedAt   sql.NullString
 }
 
+type IdpGroupMapping struct {
+	ID           string
+	OrgID        string
+	ProviderID   sql.NullString
+	GroupValue   string
+	RoleID       string
+	ResourceType string
+	ResourceID   string
+	CreatedAt    string
+}
+
 type Invite struct {
 	ID           string
 	OrgID        string
@@ -257,6 +268,7 @@ type Membership struct {
 	ResourceID   string
 	RoleID       sql.NullString
 	CreatedAt    string
+	Source       string
 }
 
 type ModelPricing struct {

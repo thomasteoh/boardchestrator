@@ -253,6 +253,7 @@ func (s *Server) setupAuthRoutes() {
 		BootstrapToken: s.cfg.BootstrapToken,
 		Providers:      reg,
 		RequestID:      RequestID,
+		Events:         s.EventSink(),
 	})
 	if err != nil {
 		// Only an empty BC_SECRET_KEY fails here, which config.Load rejects;

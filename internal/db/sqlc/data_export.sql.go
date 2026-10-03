@@ -75,7 +75,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID string) error {
 }
 
 const listOrgMemberships = `-- name: ListOrgMemberships :many
-SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at, source
 FROM memberships
 WHERE org_id = ?
 `
@@ -98,6 +98,7 @@ func (q *Queries) ListOrgMemberships(ctx context.Context, orgID string) ([]Membe
 			&i.ResourceID,
 			&i.RoleID,
 			&i.CreatedAt,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}

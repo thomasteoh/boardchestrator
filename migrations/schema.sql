@@ -167,6 +167,8 @@ CREATE TABLE memberships (
     resource_id TEXT NOT NULL DEFAULT '',
     role_id TEXT REFERENCES roles(id),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
+    source TEXT NOT NULL DEFAULT 'manual'
+        CHECK (source IN ('manual', 'invite', 'jit', 'idp', 'scim')), -- 0037
     UNIQUE(org_id, actor_id, actor_type, resource_type, resource_id)
 );
 -- Seed system roles (SPEC §6, copy-on-edit).
@@ -795,3 +797,18 @@ CREATE TABLE org_sso_settings (
     group_sync          INTEGER NOT NULL DEFAULT 0,
     updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+-- 0037: IdP group -> role mappings (WU-608); memberships.source is above.
+CREATE TABLE idp_group_mappings (
+    id            TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL REFERENCES orgs (id) ON DELETE CASCADE,
+    provider_id   TEXT REFERENCES auth_providers (id) ON DELETE CASCADE,
+    group_value   TEXT NOT NULL,
+    role_id       TEXT NOT NULL REFERENCES roles (id) ON DELETE CASCADE,
+    resource_type TEXT NOT NULL CHECK (resource_type IN ('org', 'team', 'project')),
+    resource_id   TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE UNIQUE INDEX idx_idp_group_mappings_key
+    ON idp_group_mappings (org_id, COALESCE(provider_id, ''), group_value, resource_type, resource_id);

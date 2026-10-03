@@ -101,7 +101,7 @@ FROM roles
 WHERE org_id = ?;
 
 -- name: ListOrgMemberships :many
-SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at, source
 FROM memberships
 WHERE org_id = ?;
 
