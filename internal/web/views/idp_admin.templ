@@ -95,6 +95,17 @@ type IdPForm struct {
 	OrgOwned bool
 	// IDPrefix is the id prefix an org provider must carry.
 	IDPrefix string
+	// SAML (WU-610): IdP metadata source, and the SP details to register
+	// with the IdP (entity id = metadata URL, ACS, SLO, certificate).
+	MetadataURL  string
+	MetadataXML  string
+	MetadataHelp string
+	SAMLEntityID string
+	SAMLACSURL   string
+	SAMLSLOURL   string
+	SAMLCertURL  string
+	// SPCertPEM is the provider's SP certificate (public), once created.
+	SPCertPEM string
 }
 
 func (f IdPForm) base() string {
@@ -112,6 +123,8 @@ func (f IdPForm) action() templ.SafeURL {
 }
 
 func (f IdPForm) isOIDC() bool { return f.Kind == "oidc" }
+
+func (f IdPForm) isSAML() bool { return f.Kind == "saml" }
 
 // IdPDiscoverData is the "Test discovery" result fragment.
 type IdPDiscoverData struct {
@@ -259,6 +272,49 @@ templ IdPFormPage(s Shell, f IdPForm) {
 // IdPFormBody is the provider form: callback URL and the fields. The
 // platform admin page and Org settings -> Single sign-on both use it.
 templ IdPFormBody(csrf string, f IdPForm) {
+	if f.isSAML() {
+		@samlSPDetails(f)
+	} else {
+		@callbackDetails(f)
+	}
+	<form method="post" action={ f.action() } class="bc-form bc-form-wide" hx-boost="false">
+		<input type="hidden" name="csrf_token" value={ csrf }/>
+		<input type="hidden" name="preset" value={ f.Preset }/>
+		@idpFormFields(f)
+	</form>
+}
+
+// samlSPDetails is what an admin registers at a SAML identity provider.
+templ samlSPDetails(f IdPForm) {
+	<div class="bc-callout">
+		<p>Register this service provider with { f.PresetName }:</p>
+		<dl class="bc-dl">
+			<dt>Entity ID (identifier) and metadata URL</dt>
+			<dd><code class="bc-copyable">{ f.SAMLEntityID }</code></dd>
+			<dt>Assertion consumer service (reply URL), HTTP-POST</dt>
+			<dd><code class="bc-copyable">{ f.SAMLACSURL }</code></dd>
+			<dt>Single logout URL</dt>
+			<dd><code class="bc-copyable">{ f.SAMLSLOURL }</code></dd>
+		</dl>
+		if f.Editing {
+			<p><a class="bc-link" href={ templ.SafeURL(f.SAMLCertURL) } download>Download the signing certificate</a> (also in the metadata; enabled providers only).</p>
+			if f.SPCertPEM != "" {
+				<details>
+					<summary>Signing certificate (PEM)</summary>
+					<pre class="bc-copyable">{ f.SPCertPEM }</pre>
+				</details>
+			}
+		} else {
+			<p class="bc-hint">Replace <code>your-id</code> with the provider ID you choose below. A signing key and certificate are generated when you add the provider; the key never leaves this server.</p>
+		}
+		<p class="bc-hint">Name ID: configure a <strong>persistent</strong> identifier (Entra: "Persistent"; Okta: "Persistent"). Transient identifiers can't be used, and email-style identifiers can be reassigned to someone else, so they're accepted only if you set the subject attribute to <code>NameID</code> below.</p>
+		if f.DocsURL != "" {
+			<p class="bc-hint"><a class="bc-link" href={ templ.SafeURL(f.DocsURL) } rel="noopener noreferrer" target="_blank">{ f.PresetName } set-up guide</a></p>
+		}
+	</div>
+}
+
+templ callbackDetails(f IdPForm) {
 	<div class="bc-callout">
 		<p><strong>Callback URL</strong> to register with { f.PresetName }:</p>
 		<p><code class="bc-copyable">{ f.CallbackURL }</code></p>
@@ -275,39 +331,66 @@ templ IdPFormBody(csrf string, f IdPForm) {
 			<p class="bc-hint"><a class="bc-link" href={ templ.SafeURL(f.DocsURL) } rel="noopener noreferrer" target="_blank">{ f.PresetName } set-up guide</a></p>
 		}
 	</div>
-	<form method="post" action={ f.action() } class="bc-form bc-form-wide" hx-boost="false">
-		<input type="hidden" name="csrf_token" value={ csrf }/>
-		<input type="hidden" name="preset" value={ f.Preset }/>
-		<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
-			<legend>Provider</legend>
-			<label>
-				Provider ID
-				if f.Editing {
-					<input class="bc-input" type="text" value={ f.ID } readonly/>
+}
+
+templ idpFormFields(f IdPForm) {
+	<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
+		<legend>Provider</legend>
+		<label>
+			Provider ID
+			if f.Editing {
+				<input class="bc-input" type="text" value={ f.ID } readonly/>
+			} else {
+				<input class="bc-input" type="text" name="id" value={ f.ID } required pattern="[a-z0-9][a-z0-9-]{0,62}" maxlength="63" autocomplete="off"/>
+				if f.IDPrefix != "" {
+					<span class="bc-hint">Must start with <code>{ f.IDPrefix }</code>, for example <code>{ f.IDPrefix }sso</code>. Lower-case letters, digits and hyphens. It appears in the callback URL and can't be changed later.</span>
 				} else {
-					<input class="bc-input" type="text" name="id" value={ f.ID } required pattern="[a-z0-9][a-z0-9-]{0,62}" maxlength="63" autocomplete="off"/>
-					if f.IDPrefix != "" {
-						<span class="bc-hint">Must start with <code>{ f.IDPrefix }</code>, for example <code>{ f.IDPrefix }sso</code>. Lower-case letters, digits and hyphens. It appears in the callback URL and can't be changed later.</span>
-					} else {
-						<span class="bc-hint">Lower-case letters, digits and hyphens. It appears in the callback URL and can't be changed later.</span>
-					}
+					<span class="bc-hint">Lower-case letters, digits and hyphens. It appears in the callback URL and can't be changed later.</span>
+				}
+			}
+		</label>
+		<label>
+			Display name
+			<input class="bc-input" type="text" name="display_name" value={ f.DisplayName } maxlength="100" placeholder={ f.PresetName }/>
+			<span class="bc-hint">Shown on the sign-in button as "Continue with …".</span>
+		</label>
+		for _, p := range f.Params {
+			<label>
+				{ p.Label }
+				<input class="bc-input" type="text" name={ "param_" + p.Name } value={ p.Value } placeholder={ p.Default } required?={ p.Required }/>
+				if p.Help != "" {
+					<span class="bc-hint">{ p.Help }</span>
+				}
+			</label>
+		}
+	</fieldset>
+	if f.isSAML() {
+		<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
+			<legend>Identity provider metadata</legend>
+			<label>
+				Metadata URL
+				<input class="bc-input" type="url" name="metadata_url" value={ f.MetadataURL } maxlength="2048" autocomplete="off"/>
+				if f.MetadataHelp != "" {
+					<span class="bc-hint">{ f.MetadataHelp } Fetched over https and cached for an hour.</span>
 				}
 			</label>
 			<label>
-				Display name
-				<input class="bc-input" type="text" name="display_name" value={ f.DisplayName } maxlength="100" placeholder={ f.PresetName }/>
-				<span class="bc-hint">Shown on the sign-in button as "Continue with …".</span>
+				Or metadata XML
+				<textarea class="bc-input bc-textarea" name="metadata_xml" rows="6">{ f.MetadataXML }</textarea>
+				<span class="bc-hint">Paste the metadata document instead of a URL. Give one or the other.</span>
 			</label>
-			for _, p := range f.Params {
+		</fieldset>
+		<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
+			<legend>Attributes</legend>
+			for _, c := range f.Claims {
 				<label>
-					{ p.Label }
-					<input class="bc-input" type="text" name={ "param_" + p.Name } value={ p.Value } placeholder={ p.Default } required?={ p.Required }/>
-					if p.Help != "" {
-						<span class="bc-hint">{ p.Help }</span>
-					}
+					{ c.Label } attribute
+					<input class="bc-input" type="text" name={ "claim_" + c.Key } value={ c.Value } placeholder={ c.Default }/>
 				</label>
 			}
+			<span class="bc-hint">Leave blank for the defaults shown. Use the attribute's Name (often a URI). Set Subject to <code>NameID</code> to accept a non-persistent (for example email) Name ID.</span>
 		</fieldset>
+	} else {
 		<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
 			<legend>Client credentials</legend>
 			<label>
@@ -326,84 +409,87 @@ templ IdPFormBody(csrf string, f IdPForm) {
 				<input class="bc-input" type="password" name="client_secret" value="" autocomplete="new-password" maxlength="4096"/>
 			</label>
 		</fieldset>
-		if f.isOIDC() {
-			<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
-				<legend>Scopes and claims</legend>
-				<label>
-					Scopes
-					<input class="bc-input" type="text" name="scopes" value={ f.Scopes } placeholder={ f.DefaultScopes }/>
-					<span class="bc-hint">Space-separated. Leave blank for the defaults; must include openid.</span>
-				</label>
-				for _, c := range f.Claims {
-					<label>
-						{ c.Label } claim
-						<input class="bc-input" type="text" name={ "claim_" + c.Key } value={ c.Value } placeholder={ c.Default }/>
-					</label>
-				}
-				<span class="bc-hint">Leave a claim blank to use the default shown. Nested claims use dots, e.g. <code>realm_access.roles</code>.</span>
-				if f.ShowTenants {
-					<label>
-						Allowed tenants
-						<textarea class="bc-input bc-textarea" name="allowed_tenants" rows="3">{ f.AllowedTenants }</textarea>
-						<span class="bc-hint">Multi-tenant mode only (tenant organizations or common): one directory (tenant) ID per line. Blank allows any tenant.</span>
-					</label>
-				}
-				<div>
-					<button type="button" class="bc-btn bc-btn-secondary" hx-post={ f.base() + "/discover" } hx-include="closest form" hx-target="#discover-result" hx-swap="innerHTML">Test discovery</button>
-					<div id="discover-result" aria-live="polite"></div>
-				</div>
-			</fieldset>
-		}
+	}
+	if f.isOIDC() {
 		<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
-			<legend>Sign-in policy</legend>
-			<label class="bc-check">
-				<input class="bc-checkbox" type="checkbox" name="trust_email" value="1" checked?={ f.TrustEmail }/>
-				Trust this provider's verified email addresses
-			</label>
-			if f.OrgOwned {
-				<p class="bc-alert bc-alert-warning">
-					When trusted, a first sign-in through this provider is linked to an existing account with the same verified email, but only for addresses on this organisation's verified domains. Addresses on other domains are never linked. New people join through an invitation, or on their first sign-in when just-in-time provisioning is on.
-				</p>
-			} else {
-				<p class="bc-alert bc-alert-warning">
-					When trusted, a first sign-in through this provider is linked to an existing account with the same verified email. Only trust a provider whose users can't choose or change their own email address, such as your organisation's own directory. Trusting a provider you don't control lets anyone who can register that email there take over the matching account here.
-				</p>
-				<label class="bc-check">
-					<input class="bc-checkbox" type="checkbox" name="allow_signup" value="1" checked?={ f.AllowSignup }/>
-					Let anyone who signs in through this provider create an account
-				</label>
-			}
-			if f.isOIDC() {
-				<label class="bc-check">
-					<input class="bc-checkbox" type="checkbox" name="idp_logout" value="1" checked?={ f.IdPLogout }/>
-					Sign out of the identity provider too
-				</label>
-				<span class="bc-hint">When someone signs out here, also end their session at { f.PresetName }, if it publishes a sign-out endpoint. Otherwise only this site's session ends.</span>
-			}
+			<legend>Scopes and claims</legend>
 			<label>
-				Position
-				<input class="bc-input" type="number" name="position" value={ f.Position } min="0" max="100000"/>
-				<span class="bc-hint">Lower numbers appear first on the sign-in page.</span>
+				Scopes
+				<input class="bc-input" type="text" name="scopes" value={ f.Scopes } placeholder={ f.DefaultScopes }/>
+				<span class="bc-hint">Space-separated. Leave blank for the defaults; must include openid.</span>
 			</label>
-			if !f.Editing {
-				<label class="bc-check">
-					<input class="bc-checkbox" type="checkbox" name="enabled" value="1" checked?={ f.Enabled }/>
-					Show on the sign-in page straight away
+			for _, c := range f.Claims {
+				<label>
+					{ c.Label } claim
+					<input class="bc-input" type="text" name={ "claim_" + c.Key } value={ c.Value } placeholder={ c.Default }/>
 				</label>
 			}
-		</fieldset>
-		if !f.ReadOnly {
-			<div class="bc-form-actions">
-				<button type="submit" class="bc-btn bc-btn-primary">
-					if f.Editing {
-						Save changes
-					} else {
-						Add provider
-					}
-				</button>
+			<span class="bc-hint">Leave a claim blank to use the default shown. Nested claims use dots, e.g. <code>realm_access.roles</code>.</span>
+			if f.ShowTenants {
+				<label>
+					Allowed tenants
+					<textarea class="bc-input bc-textarea" name="allowed_tenants" rows="3">{ f.AllowedTenants }</textarea>
+					<span class="bc-hint">Multi-tenant mode only (tenant organizations or common): one directory (tenant) ID per line. Blank allows any tenant.</span>
+				</label>
+			}
+			<div>
+				<button type="button" class="bc-btn bc-btn-secondary" hx-post={ f.base() + "/discover" } hx-include="closest form" hx-target="#discover-result" hx-swap="innerHTML">Test discovery</button>
+				<div id="discover-result" aria-live="polite"></div>
 			</div>
+		</fieldset>
+	}
+	<fieldset class="bc-fieldset" disabled?={ f.ReadOnly }>
+		<legend>Sign-in policy</legend>
+		<label class="bc-check">
+			<input class="bc-checkbox" type="checkbox" name="trust_email" value="1" checked?={ f.TrustEmail }/>
+			Trust this provider's verified email addresses
+		</label>
+		if f.isSAML() {
+			<p class="bc-hint">SAML has no "email verified" flag. When trusted, every email address this provider asserts is treated as verified; when not, its addresses are never used to link accounts.</p>
 		}
-	</form>
+		if f.OrgOwned {
+			<p class="bc-alert bc-alert-warning">
+				When trusted, a first sign-in through this provider is linked to an existing account with the same verified email, but only for addresses on this organisation's verified domains. Addresses on other domains are never linked. New people join through an invitation, or on their first sign-in when just-in-time provisioning is on.
+			</p>
+		} else {
+			<p class="bc-alert bc-alert-warning">
+				When trusted, a first sign-in through this provider is linked to an existing account with the same verified email. Only trust a provider whose users can't choose or change their own email address, such as your organisation's own directory. Trusting a provider you don't control lets anyone who can register that email there take over the matching account here.
+			</p>
+			<label class="bc-check">
+				<input class="bc-checkbox" type="checkbox" name="allow_signup" value="1" checked?={ f.AllowSignup }/>
+				Let anyone who signs in through this provider create an account
+			</label>
+		}
+		if f.isOIDC() || f.isSAML() {
+			<label class="bc-check">
+				<input class="bc-checkbox" type="checkbox" name="idp_logout" value="1" checked?={ f.IdPLogout }/>
+				Sign out of the identity provider too
+			</label>
+			<span class="bc-hint">When someone signs out here, also end their session at { f.PresetName }, if it publishes a sign-out endpoint. Otherwise only this site's session ends.</span>
+		}
+		<label>
+			Position
+			<input class="bc-input" type="number" name="position" value={ f.Position } min="0" max="100000"/>
+			<span class="bc-hint">Lower numbers appear first on the sign-in page.</span>
+		</label>
+		if !f.Editing {
+			<label class="bc-check">
+				<input class="bc-checkbox" type="checkbox" name="enabled" value="1" checked?={ f.Enabled }/>
+				Show on the sign-in page straight away
+			</label>
+		}
+	</fieldset>
+	if !f.ReadOnly {
+		<div class="bc-form-actions">
+			<button type="submit" class="bc-btn bc-btn-primary">
+				if f.Editing {
+					Save changes
+				} else {
+					Add provider
+				}
+			</button>
+		</div>
+	}
 }
 
 // IdPDiscoverResult is the HTMX fragment for "Test discovery".

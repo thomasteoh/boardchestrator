@@ -109,13 +109,13 @@ func orgSSOSections(r *http.Request, actor action.Actor, orgID string, d *views.
 	return nil
 }
 
-// orgPresets are the presets an organisation can use: OpenID Connect only
-// (GitHub OAuth is not an organisation IdP; SAML arrives in WU-610).
+// orgPresets are the presets an organisation can use: OpenID Connect and
+// SAML (GitHub OAuth is not an organisation IdP).
 func orgPresets() []views.IdPPresetOption {
 	var out []views.IdPPresetOption
 	for _, id := range idp.PresetIDs {
 		pr, ok := idp.LookupPreset(id)
-		if !ok || pr.Kind != idp.KindOIDC {
+		if !ok || (pr.Kind != idp.KindOIDC && pr.Kind != idp.KindSAML) {
 			continue
 		}
 		out = append(out, views.IdPPresetOption{ID: pr.ID, Name: pr.DisplayName, Kind: pr.Kind})
@@ -132,6 +132,9 @@ func orgIdPForm(r *http.Request, orgID string, p idp.Preset, fv formValues, edit
 		if !editing {
 			f.CallbackURL = idp.CallbackURL(identityCfg().baseURL, prefix+"your-id")
 			f.BackChannelURL = auth.BackChannelLogoutURL(identityCfg().baseURL, prefix+"your-id")
+			if p.Kind == idp.KindSAML {
+				setSAMLForm(&f, p, fv, identityCfg().baseURL, prefix+"your-id")
+			}
 		}
 	}
 	return f
@@ -173,7 +176,7 @@ func handleOrgIdPNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, ok := idp.LookupPreset(r.URL.Query().Get("preset"))
-	if !ok || r.URL.Query().Get("preset") == "" || p.Kind != idp.KindOIDC {
+	if !ok || r.URL.Query().Get("preset") == "" || (p.Kind != idp.KindOIDC && p.Kind != idp.KindSAML) {
 		http.Redirect(w, r, views.OrgSSOURL(url.PathEscape(orgID)), http.StatusSeeOther) //nolint:gosec // G710: same-origin fixed path
 		return
 	}
@@ -208,7 +211,9 @@ func handleOrgIdPEdit(w http.ResponseWriter, r *http.Request) {
 		id: v.ID, displayName: v.DisplayName, params: v.Params, clientID: v.ClientID,
 		scopes: v.Scopes, claims: v.ClaimMap, trust: v.TrustEmail, idpLogout: v.IdPLogout,
 		tenants: strings.Join(v.AllowedTenants, "\n"), position: strconv.FormatInt(v.Position, 10), enabled: v.Enabled,
+		metadataURL: v.MetadataURL, metadataXML: v.MetadataXML,
 	}, true)
+	f.SPCertPEM = v.SPCert
 	f.SecretSet = v.SecretSet
 	f.Kind = v.Kind
 	renderOrgIdPForm(w, r, orgID, http.StatusOK, f)

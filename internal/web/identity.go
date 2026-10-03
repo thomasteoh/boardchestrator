@@ -335,7 +335,7 @@ func idpListData(ps []idp.ProviderView) views.IdPListData {
 	}
 	for _, id := range idp.PresetIDs {
 		pr, ok := idp.LookupPreset(id)
-		if !ok || (pr.Kind != idp.KindOIDC && pr.Kind != idp.KindGitHub) {
+		if !ok {
 			continue
 		}
 		d.Presets = append(d.Presets, views.IdPPresetOption{ID: pr.ID, Name: pr.DisplayName, Kind: pr.Kind})
@@ -354,7 +354,7 @@ func handleIdPNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, ok := idp.LookupPreset(r.URL.Query().Get("preset"))
-	if !ok || r.URL.Query().Get("preset") == "" || (p.Kind != idp.KindOIDC && p.Kind != idp.KindGitHub) {
+	if !ok || r.URL.Query().Get("preset") == "" {
 		http.Redirect(w, r, views.IdPAdminBase, http.StatusSeeOther)
 		return
 	}
@@ -387,7 +387,9 @@ func handleIdPEdit(w http.ResponseWriter, r *http.Request) {
 		id: v.ID, displayName: v.DisplayName, params: v.Params, clientID: v.ClientID,
 		scopes: v.Scopes, claims: v.ClaimMap, trust: v.TrustEmail, signup: v.AllowSignup,
 		idpLogout: v.IdPLogout, tenants: tenants, position: strconv.FormatInt(v.Position, 10), enabled: v.Enabled,
+		metadataURL: v.MetadataURL, metadataXML: v.MetadataXML,
 	}, true)
+	f.SPCertPEM = v.SPCert
 	f.SecretSet = v.SecretSet
 	f.ReadOnly = v.ManagedBy == "env"
 	f.Kind = v.Kind
@@ -443,6 +445,7 @@ func idpSave(w http.ResponseWriter, r *http.Request, editID string) {
 			if out, gerr := idpDispatch(r, actor, idp.ActionGet, map[string]string{"id": editID}); gerr == nil {
 				v, _ := out.(idp.ProviderView)
 				f.SecretSet = v.SecretSet
+				f.SPCertPEM = v.SPCert
 				f.ReadOnly = v.ManagedBy == "env"
 			}
 		}
@@ -500,6 +503,7 @@ func handleIdPDiscover(w http.ResponseWriter, r *http.Request) {
 // formValues is the admin form as submitted (or as loaded for editing).
 type formValues struct {
 	id, preset, displayName, clientID, secret, scopes, tenants, position string
+	metadataURL, metadataXML                                             string
 	params, claims                                                       map[string]string
 	trust, signup, enabled, idpLogout                                    bool
 }
@@ -514,6 +518,7 @@ func readFormValues(r *http.Request, editID string) formValues {
 		params: map[string]string{}, claims: map[string]string{},
 		trust: f.Get("trust_email") == "1", signup: f.Get("allow_signup") == "1",
 		enabled: f.Get("enabled") == "1", idpLogout: f.Get("idp_logout") == "1",
+		metadataURL: strings.TrimSpace(f.Get("metadata_url")), metadataXML: strings.TrimSpace(f.Get("metadata_xml")),
 	}
 	if editID != "" {
 		fv.id = editID
@@ -541,6 +546,7 @@ func (fv formValues) input(editing bool) (idp.ProviderInput, error) {
 		ID: fv.id, Preset: fv.preset, DisplayName: fv.displayName, Params: fv.params,
 		ClientID: fv.clientID, ClientSecret: fv.secret, Scopes: fv.scopes, ClaimMap: fv.claims,
 		TrustEmail: &trust, AllowSignup: &signup, IdPLogout: &logout,
+		MetadataURL: fv.metadataURL, MetadataXML: fv.metadataXML,
 	}
 	in.AllowedTenants = strings.FieldsFunc(fv.tenants, func(r rune) bool {
 		return r == '\n' || r == '\r' || r == ',' || r == ' ' || r == '\t'
@@ -584,6 +590,10 @@ func buildIdPForm(p idp.Preset, fv formValues, editing bool) views.IdPForm {
 	f.CallbackURL = idp.CallbackURL(base, cbID)
 	f.PostLogoutURL = auth.PostLogoutRedirectURL(base)
 	f.BackChannelURL = auth.BackChannelLogoutURL(base, cbID)
+	if p.Kind == idp.KindSAML {
+		setSAMLForm(&f, p, fv, base, cbID)
+		return f
+	}
 	for _, pp := range p.Params {
 		f.Params = append(f.Params, views.IdPParamField{
 			Name: pp.Name, Label: pp.Label, Help: pp.Help, Value: fv.params[pp.Name],
@@ -610,5 +620,28 @@ func renderIdPForm(w http.ResponseWriter, r *http.Request, status int, f views.I
 	w.WriteHeader(status)
 	if err := views.IdPFormPage(s, f).Render(r.Context(), w); err != nil {
 		slog.Error("render identity provider form", "err", err)
+	}
+}
+
+// samlAttrLabels are the SAML attribute overrides on the form, with the
+// defaults shown as placeholders.
+var samlAttrLabels = [][3]string{
+	{"subject", "Subject", "persistent NameID"},
+	{"email", "Email", "emailaddress claim, mail or email"},
+	{"name", "Name", "displayName or name claim (else given name + surname)"},
+	{"groups", "Groups", "groups claim, groups or memberOf"},
+}
+
+// setSAMLForm fills the SAML parts of the provider form: SP details to give
+// the IdP, metadata source and attribute overrides.
+func setSAMLForm(f *views.IdPForm, p idp.Preset, fv formValues, base, id string) {
+	f.MetadataURL, f.MetadataXML, f.MetadataHelp = fv.metadataURL, fv.metadataXML, p.MetadataHelp
+	f.SAMLEntityID = auth.SAMLEntityID(base, id)
+	f.SAMLACSURL = auth.SAMLACSURL(base, id)
+	f.SAMLSLOURL = auth.SAMLSLOURL(base, id)
+	f.SAMLCertURL = auth.SAMLCertificateURL(base, id)
+	f.Claims = nil
+	for _, c := range samlAttrLabels {
+		f.Claims = append(f.Claims, views.IdPClaimField{Key: c[0], Label: c[1], Value: fv.claims[c[0]], Default: c[2]})
 	}
 }

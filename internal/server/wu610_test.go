@@ -740,3 +740,115 @@ func TestSAMLRateLimited(t *testing.T) {
 		t.Fatalf("SLO not rate limited: %d", r.StatusCode)
 	}
 }
+
+func (h *smHarness) postValues(b *oidctest.Browser, path string, form url.Values) (*http.Response, string) {
+	h.t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, h.app.URL+path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := b.Do(req)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	return resp, string(body)
+}
+
+// The platform and org provider forms offer the SAML presets, show the SP
+// details to register, create through the actions and never show the key.
+func TestSAMLAdminPages(t *testing.T) {
+	h := newSMHarness(t, smOpts{})
+	seedSSOOrgs(t, h)
+	if err := grantPlatformOwner(h, "u-admin"); err != nil {
+		t.Fatal(err)
+	}
+	ip := samltest.New(t)
+	b := oidctest.NewBrowser(t)
+	_, csrf := h.signedIn(b, "u-admin")
+
+	list := h.follow(b, "/admin/identity-providers")
+	for _, p := range []string{"new?preset=entra-saml", "new?preset=okta-saml", "new?preset=saml"} {
+		if !strings.Contains(list.Body, p) {
+			t.Errorf("list lacks %s", p)
+		}
+	}
+	form := h.follow(b, "/admin/identity-providers/new?preset=entra-saml")
+	for _, want := range []string{
+		auth.SAMLACSURL(h.app.URL, "your-id"), auth.SAMLSLOURL(h.app.URL, "your-id"), auth.SAMLEntityID(h.app.URL, "your-id"),
+		`name="metadata_url"`, `name="metadata_xml"`, `name="claim_subject"`, "persistent", `name="idp_logout"`,
+	} {
+		if !strings.Contains(form.Body, want) {
+			t.Errorf("SAML form lacks %q", want)
+		}
+	}
+	if strings.Contains(form.Body, `name="client_secret"`) {
+		t.Error("SAML form asks for a client secret")
+	}
+	resp, body := h.postValues(b, "/admin/identity-providers", url.Values{
+		"csrf_token": {csrf}, "preset": {"entra-saml"}, "id": {"entra"}, "metadata_xml": {ip.MetadataXML()},
+		"claim_groups": {"roles"}, "trust_email": {"1"}, "idp_logout": {"1"}, "enabled": {"1"},
+	})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("create via form: %d %s", resp.StatusCode, body)
+	}
+	if h.n(`SELECT COUNT(*) FROM auth_providers WHERE id='entra' AND kind='saml' AND sp_key_enc <> '' AND claim_map_json='{"groups":"roles"}'`) != 1 {
+		t.Fatal("form did not create the SAML provider")
+	}
+	edit := h.follow(b, "/admin/identity-providers/entra/edit")
+	if !strings.Contains(edit.Body, "BEGIN CERTIFICATE") || strings.Contains(edit.Body, "PRIVATE KEY") ||
+		!strings.Contains(edit.Body, auth.SAMLACSURL(h.app.URL, "entra")) || !strings.Contains(edit.Body, "/auth/saml/entra/certificate") {
+		t.Fatal("edit page: certificate / SP details")
+	}
+	// Sign-in page lists it like any other provider.
+	h.srv.IdP().Invalidate()
+	if login := h.follow(oidctest.NewBrowser(t), "/login"); !strings.Contains(login.Body, `href="/auth/entra"`) {
+		t.Fatal("/login lacks the SAML provider")
+	}
+	// Bad metadata re-renders with our message.
+	resp, body = h.postValues(b, "/admin/identity-providers", url.Values{
+		"csrf_token": {csrf}, "preset": {"saml"}, "id": {"bad"}, "metadata_xml": {"<x/>"},
+	})
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "metadata") {
+		t.Fatalf("bad metadata: %d", resp.StatusCode)
+	}
+
+	// Org owner: the SSO page offers SAML presets and the form works.
+	ab := oidctest.NewBrowser(t)
+	_, acsrf := h.signedIn(ab, "u-alice")
+	sso := h.follow(ab, "/app/org/org-acme/settings/sso")
+	if !strings.Contains(sso.Body, "preset=saml") {
+		t.Fatal("org SSO page lacks SAML")
+	}
+	of := h.follow(ab, "/app/org/org-acme/settings/sso/providers/new?preset=saml")
+	if !strings.Contains(of.Body, auth.SAMLACSURL(h.app.URL, "acme-your-id")) {
+		t.Fatal("org SAML form lacks the prefixed ACS URL")
+	}
+	resp, body = h.postValues(ab, "/app/org/org-acme/settings/sso/providers", url.Values{
+		"csrf_token": {acsrf}, "preset": {"saml"}, "id": {"acme-saml"}, "metadata_url": {ip.MetadataURL()}, "enabled": {"1"},
+	})
+	if resp.StatusCode != http.StatusSeeOther || h.n(`SELECT COUNT(*) FROM auth_providers WHERE id='acme-saml' AND org_id='org-acme' AND kind='saml'`) != 1 {
+		t.Fatalf("org create via form: %d %s", resp.StatusCode, body)
+	}
+}
+
+// An org provider's metadata URL is fetched through the org SSRF guard:
+// loopback is refused unless BC_ORG_IDP_ALLOW_PRIVATE (Q11).
+func TestSAMLOrgMetadataSSRFGuard(t *testing.T) {
+	h := newSMHarness(t, smOpts{blockOrgPrivate: true})
+	seedSSOOrgs(t, h)
+	ip := samltest.New(t)
+	d, _ := orgDispatcher(h)
+	if _, err := call(d, user("u-alice", ""), "org-acme", idp.ActionOrgCreate, map[string]any{
+		"id": "acme-saml", "preset": "saml", "metadata_url": ip.MetadataURL(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h.srv.IdP().Invalidate()
+	r, err := oidctest.NewBrowser(t).Get(h.app.URL + "/auth/acme-saml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.StatusCode != http.StatusBadGateway {
+		t.Fatalf("loopback metadata fetched for an org provider: %d", r.StatusCode)
+	}
+}
