@@ -129,7 +129,8 @@ auth_providers(id, org_id NULL, kind, preset, display_name, enabled, managed_by,
 org_domains(id, org_id, domain, verify_token, verified_at, created_at,
             UNIQUE(org_id,domain))                                      -- + UNIQUE(domain) WHERE verified_at IS NOT NULL
 org_sso_settings(org_id PK, enforce_sso, jit_enabled, jit_default_role_id, group_claim, group_sync)
-idp_group_mappings(id, org_id, provider_id NULL, group_value, role_id, resource_type, resource_id)
+idp_group_mappings(id, org_id, provider_id NULL, group_value, role_id, resource_type, resource_id,
+                   created_at)            -- UNIQUE(org_id, COALESCE(provider_id,''), group_value, resource_type, resource_id)
 scim_tokens(id, org_id, name, prefix, token_hash, created_by, last_used_at, revoked_at, created_at)
 scim_users(id, org_id, user_id, external_id, user_name, active, created_at, updated_at)
 scim_groups(id, org_id, external_id, display_name, created_at, updated_at)
@@ -263,6 +264,7 @@ All writes in resolution go through internal (non-registered) functions in one t
 
 - JIT applies when the assertion came from an org-owned provider with `jit_enabled`, the email domain is verified for that org, and no user exists: create user + org membership (`source='jit'`) with `jit_default_role_id`.
 - `idp_group_mappings(org_id, provider_id NULL, group_value, role_id, resource_type, resource_id)`. On every sign-in through a provider of that org (and on SCIM group changes), compute the desired set of `(resource, role)` from the user's groups and reconcile **only memberships with `source='idp'`**: insert missing, delete stale. Memberships with `source` `manual|invite|jit` are never removed by sync. Reconciliation emits `membership.synced` events and audit rows.
+- As built (WU-608): JIT also adds the default org membership for an **existing** user who signs in through the org's provider with an address on the org's verified domains and holds no org-level membership there; JIT never links an unseen identity to an existing user (only step 3 does). The default role must be usable in the org and may not be the Owner role or any role granting `*` (checked on save and again at sign-in). Settings live in `org.sso.update` (`jit_enabled`, `jit_default_role_id`, `group_claim`, `group_sync`); mappings are managed by `org.idp_mapping.list|create|delete` (`ScopeOrg`, `org.sso`). Mappings with `provider_id` NULL apply to all the org's providers; `group_claim` (when set) replaces the provider's claim-map `groups` path. Sync runs only when `group_sync=1`, inside the login transaction, and never for platform providers or the platform org. Where a non-idp membership already holds a mapped resource it is left alone (Q12); several mappings onto one resource: the oldest wins. Audit rows: `auth.signup` (method `jit`), `membership.jit`, `membership.synced` (org-scoped, ids only).
 
 ### 7.6 Logout
 

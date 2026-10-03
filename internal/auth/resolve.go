@@ -432,7 +432,6 @@ func (rv *Resolver) linkOrSignUp(ctx context.Context, q *sqlc.Queries, req Login
 //     BC_ADMIN_EMAILS address or a flow that proved the bootstrap token (the
 //     gate in resolveTx already checked which).
 //   - open: the provider allows sign-up and verified the email.
-//
 //   - jit: the provider is org-owned, the org has JIT on with a usable
 //     default role, and the asserted email is on a domain that org verified
 //     (SPEC §7.5). Per Q8 the org vouches for its own IdP on its own

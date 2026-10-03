@@ -109,3 +109,13 @@ To be precise about which way this fails: it is a **broken API, not a CSRF bypas
 **Options:** (a) keep this; (b) replace the boolean with a CIDR allow-list (`BC_ORG_IDP_ALLOW_CIDRS`) so operators can open one subnet rather than all private space; (c) per-org override set by a platform admin.
 **Recommendation:** (a) now; (b) if an operator asks for it.
 **Answer:**
+
+## Q12 — Group sync when a membership already exists at the mapped resource (WU-608)
+
+**Context:** SPEC §7.5 says sync reconciles only `source='idp'` memberships and never touches `manual|invite|jit` ones. The `memberships` table allows one membership per user per resource (`UNIQUE(org_id, actor_id, actor_type, resource_type, resource_id)`), so when a mapping targets a resource where the user already holds a non-idp membership, sync cannot add a second one. Separately, an IdP that stops sending the group claim (misconfiguration, or Entra omitting `groups` for a user with none) looks the same as "member of no groups".
+
+**Decision taken in WU-608 (non-blocking):** (1) the existing non-idp membership wins: sync leaves it and its role alone and reports the mapping as `kept` in the `membership.synced` result; an admin who wants sync to manage that resource removes the manual membership. JIT likewise only adds its default org membership when the user has no org-level membership after sync, so an org-scope mapping and JIT never fight. (2) When several mappings target the same resource with different roles, the oldest mapping wins (deterministic; grants are not merged into a synthetic role). (3) An absent group claim is treated as an empty group list, so sync removes every `idp` membership; orgs that cannot rely on the claim leave `group_sync` off.
+
+**Options:** for (1), (a) keep; (b) let idp upgrade a manual membership to the mapped role (would change a manual grant, which §7.5 forbids). For (3), (a) keep; (b) skip reconciliation when the claim is absent (safer against misconfiguration, but a user removed from their last group would keep access).
+**Recommendation:** (a) for both.
+**Answer:**
