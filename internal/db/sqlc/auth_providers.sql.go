@@ -24,8 +24,9 @@ func (q *Queries) CountIdentitiesByProvider(ctx context.Context, provider string
 const createAuthProvider = `-- name: CreateAuthProvider :exec
 INSERT INTO auth_providers (id, org_id, kind, preset, display_name, enabled, managed_by, issuer,
                             client_id, client_secret_enc, scopes, claim_map_json,
-                            trust_email, allow_signup, allowed_tenants_json, position, idp_logout)
-VALUES (?, NULL, ?, ?, ?, ?, 'ui', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            trust_email, allow_signup, allowed_tenants_json, position, idp_logout,
+                            saml_metadata_url, saml_metadata_xml, sp_key_enc, sp_cert)
+VALUES (?, NULL, ?, ?, ?, ?, 'ui', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateAuthProviderParams struct {
@@ -44,8 +45,14 @@ type CreateAuthProviderParams struct {
 	AllowedTenantsJson string
 	Position           int64
 	IdpLogout          int64
+	SamlMetadataUrl    string
+	SamlMetadataXml    string
+	SpKeyEnc           string
+	SpCert             string
 }
 
+// sp_key_enc and sp_cert are the SAML SP key pair (WU-610), generated once on
+// create and never changed by updates.
 func (q *Queries) CreateAuthProvider(ctx context.Context, arg CreateAuthProviderParams) error {
 	_, err := q.db.ExecContext(ctx, createAuthProvider,
 		arg.ID,
@@ -63,6 +70,10 @@ func (q *Queries) CreateAuthProvider(ctx context.Context, arg CreateAuthProvider
 		arg.AllowedTenantsJson,
 		arg.Position,
 		arg.IdpLogout,
+		arg.SamlMetadataUrl,
+		arg.SamlMetadataXml,
+		arg.SpKeyEnc,
+		arg.SpCert,
 	)
 	return err
 }
@@ -242,6 +253,7 @@ SELECT p.id, p.kind, p.preset, p.display_name, p.enabled, p.managed_by, p.issuer
        p.client_id, CAST(p.client_secret_enc <> '' AS INTEGER) AS has_secret,
        p.scopes, p.claim_map_json, p.trust_email, p.allow_signup,
        p.allowed_tenants_json, p.position, p.created_at, p.updated_at, p.idp_logout,
+       p.saml_metadata_url, p.saml_metadata_xml, p.sp_cert,
        CAST((SELECT COUNT(*) FROM identities i WHERE i.provider = p.id) AS INTEGER) AS identity_count
 FROM auth_providers p
 WHERE p.org_id IS NULL
@@ -267,6 +279,9 @@ type ListPlatformAuthProvidersRow struct {
 	CreatedAt          string
 	UpdatedAt          string
 	IdpLogout          int64
+	SamlMetadataUrl    string
+	SamlMetadataXml    string
+	SpCert             string
 	IdentityCount      int64
 }
 
@@ -303,6 +318,9 @@ func (q *Queries) ListPlatformAuthProviders(ctx context.Context) ([]ListPlatform
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.IdpLogout,
+			&i.SamlMetadataUrl,
+			&i.SamlMetadataXml,
+			&i.SpCert,
 			&i.IdentityCount,
 		); err != nil {
 			return nil, err
@@ -363,6 +381,8 @@ SET preset               = ?,
     allowed_tenants_json = ?,
     position             = ?,
     idp_logout           = ?,
+    saml_metadata_url    = ?,
+    saml_metadata_xml    = ?,
     updated_at           = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ? AND org_id IS NULL AND managed_by = 'ui'
 `
@@ -380,6 +400,8 @@ type UpdateAuthProviderParams struct {
 	AllowedTenantsJson string
 	Position           int64
 	IdpLogout          int64
+	SamlMetadataUrl    string
+	SamlMetadataXml    string
 	ID                 string
 }
 
@@ -399,6 +421,8 @@ func (q *Queries) UpdateAuthProvider(ctx context.Context, arg UpdateAuthProvider
 		arg.AllowedTenantsJson,
 		arg.Position,
 		arg.IdpLogout,
+		arg.SamlMetadataUrl,
+		arg.SamlMetadataXml,
 		arg.ID,
 	)
 	if err != nil {

@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"strings"
 )
 
 const createSession = `-- name: CreateSession :exec
@@ -122,6 +123,39 @@ type DeleteSessionsByIdPSubjectParams struct {
 // never pass an empty subject.
 func (q *Queries) DeleteSessionsByIdPSubject(ctx context.Context, arg DeleteSessionsByIdPSubjectParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteSessionsByIdPSubject, arg.ProviderID, arg.IdpSubject)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteSessionsBySubjectSIDs = `-- name: DeleteSessionsBySubjectSIDs :execrows
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_subject = ? AND idp_sid IN (/*SLICE:sids*/?)
+`
+
+type DeleteSessionsBySubjectSIDsParams struct {
+	ProviderID string
+	IdpSubject string
+	Sids       []string
+}
+
+// SAML IdP-initiated logout naming a NameID and one or more SessionIndex
+// values (sqlc.slice): sessions must match the subject and one of them.
+func (q *Queries) DeleteSessionsBySubjectSIDs(ctx context.Context, arg DeleteSessionsBySubjectSIDsParams) (int64, error) {
+	query := deleteSessionsBySubjectSIDs
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.ProviderID)
+	queryParams = append(queryParams, arg.IdpSubject)
+	if len(arg.Sids) > 0 {
+		for _, v := range arg.Sids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:sids*/?", strings.Repeat(",?", len(arg.Sids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:sids*/?", "NULL", 1)
+	}
+	result, err := q.db.ExecContext(ctx, query, queryParams...)
 	if err != nil {
 		return 0, err
 	}

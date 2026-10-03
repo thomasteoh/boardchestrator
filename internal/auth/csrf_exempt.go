@@ -17,12 +17,17 @@ type CSRFExemption struct {
 // other means and never reads the session cookie: the session middleware
 // skips these paths too, so SessionFrom is always empty in their handlers.
 // Later WUs append their own entries here (and to the test asserting the
-// list): SAML ACS and SLO (WU-610), SCIM (WU-611), passkey login finish
-// (WU-612).
+// list): SCIM (WU-611), passkey login finish (WU-612).
 var csrfExemptions = [...]CSRFExemption{
 	// OIDC Back-Channel Logout 1.0: a server-to-server POST from the IdP,
 	// authenticated by the signed logout_token (WU-609).
 	{Method: http.MethodPost, Pattern: BackChannelLogoutPattern},
+	// SAML ACS: the IdP's cross-site HTTP-POST binding response, verified by
+	// its XML signature and bound to the SameSite=None flow cookie (WU-610).
+	{Method: http.MethodPost, Pattern: SAMLACSPattern},
+	// SAML SLO, HTTP-POST binding: a signed LogoutRequest or LogoutResponse
+	// from the IdP (WU-610).
+	{Method: http.MethodPost, Pattern: SAMLSLOPattern},
 }
 
 // CSRFExemptions returns a copy of the exemption list.

@@ -59,3 +59,9 @@ WHERE provider_id = ? AND idp_sid = ? AND idp_subject = ?;
 -- never pass an empty subject.
 DELETE FROM sessions
 WHERE provider_id = ? AND idp_subject = ?;
+
+-- name: DeleteSessionsBySubjectSIDs :execrows
+-- SAML IdP-initiated logout naming a NameID and one or more SessionIndex
+-- values (sqlc.slice): sessions must match the subject and one of them.
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_subject = ? AND idp_sid IN (sqlc.slice('sids'));

@@ -17,6 +17,8 @@ import (
 func TestCSRFExemptionListExact(t *testing.T) {
 	want := []auth.CSRFExemption{
 		{Method: http.MethodPost, Pattern: "/auth/oidc/{providerID}/backchannel-logout"},
+		{Method: http.MethodPost, Pattern: "/auth/saml/{providerID}/acs"},
+		{Method: http.MethodPost, Pattern: "/auth/saml/{providerID}/slo"},
 	}
 	if got := auth.CSRFExemptions(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("CSRF exemptions = %+v, want %+v", got, want)
@@ -40,6 +42,14 @@ func TestIsCSRFExempt(t *testing.T) {
 		{http.MethodPut, "/auth/oidc/corp/backchannel-logout", false},
 		{http.MethodPost, "/auth/oidc//backchannel-logout", false},
 		{http.MethodPost, "/auth/oidc/corp/backchannel-logout/", false},
+		{http.MethodPost, "/auth/saml/corp/acs", true},
+		{http.MethodPost, "/auth/saml/corp/slo", true},
+		{http.MethodGet, "/auth/saml/corp/slo", false},
+		{http.MethodGet, "/auth/saml/corp/acs", false},
+		{http.MethodPost, "/auth/saml/corp/metadata", false},
+		{http.MethodPost, "/auth/saml/corp/link", false},
+		{http.MethodPost, "/auth/saml//acs", false},
+		{http.MethodPost, "/auth/saml/corp/acs/x", false},
 		{http.MethodPost, "/auth/oidc/corp/backchannel-logout/x", false},
 		{http.MethodPost, "/auth/oidc/a/b/backchannel-logout", false},
 		{http.MethodPost, "//auth/oidc/corp/backchannel-logout", false},

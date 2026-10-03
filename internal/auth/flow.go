@@ -57,7 +57,21 @@ type Flow struct {
 	// invite link (WU-604). Possession of it may permit sign-up (SPEC §7.3
 	// step 4); resolution re-validates it.
 	InviteToken string `json:"iv,omitempty"`
-	Exp         int64  `json:"exp"`
+	// SAMLRequestID is the ID of the AuthnRequest a SAML flow sent (WU-610).
+	// The ACS accepts only a response InResponseTo it, and a flow carrying it
+	// is sealed into a SameSite=None cookie, because the ACS is a cross-site
+	// POST from the identity provider (SPEC §7.2).
+	SAMLRequestID string `json:"sr,omitempty"`
+	Exp           int64  `json:"exp"`
+}
+
+// sameSite is the flow cookie's SameSite mode: Lax for OIDC/GitHub, whose
+// callbacks are top-level GETs, and None only for SAML flows.
+func (f *Flow) sameSite() http.SameSite {
+	if f.SAMLRequestID != "" {
+		return http.SameSiteNoneMode
+	}
+	return http.SameSiteLaxMode
 }
 
 // Flow errors. Callers map all of them to a generic failure response.
@@ -172,7 +186,9 @@ func (s *FlowSealer) Open(v string) (*Flow, error) {
 }
 
 // SetCookie seals f into the __Host-bc_flow cookie. SameSite=Lax suits
-// OIDC/GitHub, whose callbacks are top-level GETs.
+// OIDC/GitHub, whose callbacks are top-level GETs; a SAML flow's cookie is
+// SameSite=None so the identity provider's cross-site POST to the ACS
+// carries it (Secure is always set, which None requires).
 func (s *FlowSealer) SetCookie(w http.ResponseWriter, f *Flow) error {
 	v, err := s.Seal(f)
 	if err != nil {
@@ -185,13 +201,19 @@ func (s *FlowSealer) SetCookie(w http.ResponseWriter, f *Flow) error {
 		MaxAge:   int(FlowTTL / time.Second),
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: f.sameSite(),
 	})
 	return nil
 }
 
 // ClearFlowCookie expires the flow cookie. Called on every callback outcome.
 func ClearFlowCookie(w http.ResponseWriter) {
+	clearFlowCookie(w, http.SameSiteLaxMode)
+}
+
+// clearFlowCookie expires the flow cookie with the given SameSite mode (the
+// SAML ACS answers a cross-site POST, so it clears with None).
+func clearFlowCookie(w http.ResponseWriter, mode http.SameSite) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     FlowCookieName,
 		Value:    "",
@@ -199,7 +221,7 @@ func ClearFlowCookie(w http.ResponseWriter) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: mode,
 	})
 }
 

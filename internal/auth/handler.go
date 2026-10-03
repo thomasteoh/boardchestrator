@@ -71,7 +71,8 @@ type Handler struct {
 	Sessions  *SessionStore
 	Resolver  *Resolver
 	BaseURL   string
-	// Replay remembers back-channel logout token ids (jti).
+	// Replay remembers back-channel logout token ids (jti) and SAML
+	// LogoutRequest ids.
 	Replay *ReplayCache
 	// RequestID returns the request id for log correlation (server wires
 	// server.RequestID); nil logs without one.
@@ -134,6 +135,12 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/auth/logout", h.Logout)
 	r.Post(BackChannelLogoutPattern, h.BackChannelLogout)
 	r.Post(SignInMethodsURL+"/link/{providerID}", h.BeginLink)
+	r.Post(SAMLACSPattern, h.SAMLACS)
+	r.Get(SAMLSLOPattern, h.SAMLSLO)
+	r.Post(SAMLSLOPattern, h.SAMLSLO)
+	r.Get(SAMLMetadataPattern, h.SAMLMetadata)
+	r.Get(SAMLCertificatePattern, h.SAMLCertificate)
+	r.Get(SAMLLinkPattern, h.SAMLLinkFinish)
 	r.Get("/auth/{providerID}", h.Begin)
 	r.Get("/auth/{providerID}/callback", h.Callback)
 }
@@ -240,6 +247,11 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if _, saml := c.(SAMLConnector); saml {
+		// SAML responses arrive only at the ACS (POST binding).
+		http.NotFound(w, r)
+		return
+	}
 	flow, err := h.Flows.FromRequest(r)
 	if err != nil {
 		h.fail(w, r, http.StatusBadRequest, id, "flow_cookie", err)
@@ -255,7 +267,13 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.ProviderID = id
+	h.completeLogin(w, r, c, id, flow, a)
+}
 
+// completeLogin resolves a verified assertion (SPEC §7.3) and finishes the
+// flow: a new session and a redirect for a login, or the Sign-in methods
+// page for a link. Shared by the OIDC/GitHub callback and the SAML ACS.
+func (h *Handler) completeLogin(w http.ResponseWriter, r *http.Request, c Connector, id string, flow *Flow, a *Assertion) {
 	presented := ""
 	if ck, err := r.Cookie(CookieName); err == nil {
 		presented = ck.Value
