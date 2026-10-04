@@ -66,7 +66,10 @@ var (
 	samlGivenAttrs   = []string{"http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname", "givenName"}
 	samlSurnameAttrs = []string{"http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname", "sn", "surname"}
 	samlGroupsAttrs  = []string{
-		"http://schemas.microsoft.com/ws/2008/06/identity/claims/groups", "groups", "memberOf",
+		"http://schemas.microsoft.com/ws/2008/06/identity/claims/groups",
+		// authentik and ADFS (WU-614, found against a real authentik).
+		"http://schemas.xmlsoap.org/claims/Group",
+		"groups", "memberOf",
 	}
 )
 

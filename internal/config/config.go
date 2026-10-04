@@ -15,13 +15,13 @@ type Config struct {
 	DataDir            string
 	BaseURL            string
 	Bind               string
-	LogLevel           slog.Level
-	LogLevelStr        string
+	LogLevel           slog.Level `env:"-"`
+	LogLevelStr        string     `env:"BC_LOG_LEVEL"`
 	SecretKey          string
 	SessionSecret      string
 	BootstrapToken     string
-	AdminEmails        []string
-	AdminEmailsStr     string
+	AdminEmails        []string `env:"-"`
+	AdminEmailsStr     string   `env:"BC_ADMIN_EMAILS"`
 	GoogleClientID     string
 	GoogleClientSecret string
 	GitHubClientID     string `env:"BC_GITHUB_CLIENT_ID"`
