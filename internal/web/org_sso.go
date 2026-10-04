@@ -276,8 +276,10 @@ func handleSSODiscover(w http.ResponseWriter, r *http.Request) {
 		if inv := q.Get("invite"); inv != "" && len(inv) <= 128 {
 			hq.Set("invite", inv)
 		}
-		w.Header().Set("Cache-Control", "no-store")
-		http.Redirect(w, r, "/auth/"+url.PathEscape(id)+"?"+hq.Encode(), http.StatusSeeOther)
+		// The SSO box is a GET form: a 303 here would lead on to the IdP
+		// within the form's navigation, which CSP form-action 'self'
+		// blocks. The continue page starts a fresh navigation to /auth/{id}.
+		auth.ContinueTo(w, "/auth/"+url.PathEscape(id)+"?"+hq.Encode())
 		return
 	}
 	if len(email) > maxEmailLen {

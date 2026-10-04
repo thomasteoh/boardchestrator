@@ -79,12 +79,15 @@ func TestRPInitiatedLogout(t *testing.T) {
 	}
 
 	resp := h.logout(b)
-	loc, _ := url.Parse(resp.Header.Get("Location"))
-	if resp.StatusCode != http.StatusSeeOther || loc == nil || !strings.HasPrefix(loc.String(), h.corp.Issuer()+"/end_session?") {
-		t.Fatalf("logout: %d %q", resp.StatusCode, resp.Header.Get("Location"))
-	}
 	if resp.Header.Get("Cache-Control") != "no-store" {
 		t.Error("logout response is cacheable")
+	}
+	// The sign-out form cannot 303 to the IdP under CSP form-action
+	// 'self'; it answers with a continue page (auth.ContinueTo).
+	next := oidctest.NextURL(resp)
+	loc, _ := url.Parse(next)
+	if resp.StatusCode != http.StatusOK || loc == nil || !strings.HasPrefix(loc.String(), h.corp.Issuer()+"/end_session?") {
+		t.Fatalf("logout: %d %q", resp.StatusCode, next)
 	}
 	q := loc.Query()
 	if q.Get("id_token_hint") != idToken || q.Get("client_id") != h.corp.ClientID ||

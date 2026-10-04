@@ -460,11 +460,13 @@ func TestHomeRealmDiscovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = resp.Body.Close()
-	loc, _ := url.Parse(resp.Header.Get("Location"))
-	if resp.StatusCode != http.StatusSeeOther || loc == nil || loc.Path != "/auth/acme-sso" ||
+	// The SSO box is a GET form, so a hit answers with a continue page
+	// (auth.ContinueTo) rather than a 303 (CSP form-action 'self').
+	next := oidctest.NextURL(resp)
+	loc, _ := url.Parse(next)
+	if resp.StatusCode != http.StatusOK || loc == nil || loc.Path != "/auth/acme-sso" ||
 		loc.Query().Get("login_hint") != email || loc.Query().Get("return_to") != "/app/x" {
-		t.Fatalf("discover: %d %q", resp.StatusCode, resp.Header.Get("Location"))
+		t.Fatalf("discover: %d %q", resp.StatusCode, next)
 	}
 	// Followed through, the IdP's authorize endpoint receives the hint.
 	steps, err := b.Follow(h.app.URL+loc.String(), 8, func(next *url.URL) bool {
@@ -479,15 +481,14 @@ func TestHomeRealmDiscovery(t *testing.T) {
 	}
 	// IDN email domains are matched by their punycode form.
 	resp, _ = b.Get(h.app.URL + "/auth/sso/discover?email=" + url.QueryEscape("ann@bücher.example"))
-	_ = resp.Body.Close()
-	if !strings.HasPrefix(resp.Header.Get("Location"), "/auth/acme-sso?") {
-		t.Errorf("IDN discover: %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	if next := oidctest.NextURL(resp); !strings.HasPrefix(next, "/auth/acme-sso?") {
+		t.Errorf("IDN discover: %d %q", resp.StatusCode, next)
 	}
 	// A dangerous return_to is dropped, not carried.
 	resp, _ = b.Get(h.app.URL + "/auth/sso/discover?email=carol%40corp.example&return_to=" + url.QueryEscape("//evil.example"))
-	_ = resp.Body.Close()
-	if l, _ := url.Parse(resp.Header.Get("Location")); l == nil || l.Query().Has("return_to") {
-		t.Errorf("open redirect carried: %q", resp.Header.Get("Location"))
+	next = oidctest.NextURL(resp)
+	if l, _ := url.Parse(next); l == nil || l.Path != "/auth/acme-sso" || l.Query().Has("return_to") {
+		t.Errorf("open redirect carried: %q", next)
 	}
 
 	// Misses all look the same: unknown, pending, verified without a
@@ -550,8 +551,7 @@ func (h *smHarness) postForm(b *oidctest.Browser, path, csrf string, form url.Va
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	_ = resp.Body.Close()
-	return resp
+	return bufferBody(resp)
 }
 
 // refused reports a dispatch refusal: scope or permission.

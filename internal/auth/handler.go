@@ -211,12 +211,20 @@ func (h *Handler) BeginLink(w http.ResponseWriter, r *http.Request) {
 	}
 	flow.LinkSessionHash = sess.TokenHash
 	flow.ReturnTo = SignInMethodsURL
-	h.redirectToProvider(w, r, c, id, flow)
+	h.toProvider(w, r, c, id, flow, true)
 }
 
 // redirectToProvider seals flow into the flow cookie and sends the browser
 // to the provider.
 func (h *Handler) redirectToProvider(w http.ResponseWriter, r *http.Request, c Connector, id string, flow *Flow) {
+	h.toProvider(w, r, c, id, flow, false)
+}
+
+// toProvider seals flow into the flow cookie and sends the browser to the
+// provider: by 303, or, for a form submission (fromForm), through the
+// continue page, because CSP form-action 'self' blocks a form's redirect to
+// another origin (ContinueTo).
+func (h *Handler) toProvider(w http.ResponseWriter, r *http.Request, c Connector, id string, flow *Flow, fromForm bool) {
 	dest, err := c.Begin(r.Context(), flow)
 	if err != nil {
 		h.fail(w, r, http.StatusBadGateway, id, "begin", err)
@@ -224,6 +232,10 @@ func (h *Handler) redirectToProvider(w http.ResponseWriter, r *http.Request, c C
 	}
 	if err := h.Flows.SetCookie(w, flow); err != nil {
 		h.fail(w, r, http.StatusInternalServerError, id, "flow_seal", err)
+		return
+	}
+	if fromForm {
+		ContinueTo(w, dest)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

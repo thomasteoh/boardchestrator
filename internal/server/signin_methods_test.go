@@ -1,10 +1,12 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -135,8 +137,7 @@ func (h *smHarness) post(b *oidctest.Browser, path, csrf string) *http.Response 
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	_ = resp.Body.Close()
-	return resp
+	return bufferBody(resp)
 }
 
 func (h *smHarness) follow(b *oidctest.Browser, u string) oidctest.Step {
@@ -164,10 +165,13 @@ func (h *smHarness) n(q string, args ...any) int {
 func (h *smHarness) startLink(b *oidctest.Browser, provider, csrf string) string {
 	h.t.Helper()
 	resp := h.post(b, "/settings/sign-in-methods/link/"+provider, csrf)
-	if resp.StatusCode != http.StatusSeeOther {
-		h.t.Fatalf("link begin status %d", resp.StatusCode)
+	// A form POST cannot 303 to the IdP under CSP form-action 'self', so
+	// the link button answers with a continue page (auth.ContinueTo).
+	next := oidctest.NextURL(resp)
+	if resp.StatusCode != http.StatusOK || next == "" {
+		h.t.Fatalf("link begin status %d, continue %q", resp.StatusCode, next)
 	}
-	return resp.Header.Get("Location")
+	return next
 }
 
 // invite inserts an invite for email and returns its raw token.
@@ -568,4 +572,13 @@ func extractHref(t *testing.T, body, prefix string) string {
 	rest := body[i+len(`href="`):]
 	v := rest[:strings.IndexByte(rest, '"')]
 	return strings.ReplaceAll(v, "&amp;", "&")
+}
+
+// bufferBody reads and closes resp's body and replaces it with an in-memory
+// copy, so callers can still read it (oidctest.NextURL on continue pages).
+func bufferBody(resp *http.Response) *http.Response {
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	return resp
 }

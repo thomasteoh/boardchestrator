@@ -2,9 +2,12 @@ package oidctest
 
 import (
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -127,12 +130,21 @@ func (b *Browser) Follow(rawURL string, max int, stop func(next *url.URL) bool) 
 		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		steps = append(steps, Step{URL: cur, Status: resp.StatusCode, Body: string(body)})
-		if resp.StatusCode < 300 || resp.StatusCode >= 400 {
-			return steps, nil
-		}
-		loc, err := resp.Location()
-		if err != nil {
-			return steps, fmt.Errorf("browser: redirect without Location from %s", cur)
+		var loc *url.URL
+		if next := ContinueURL(string(body)); resp.StatusCode == http.StatusOK && next != "" {
+			// A continue page (auth.ContinueTo): follow its meta refresh
+			// as a browser would.
+			base, _ := url.Parse(cur)
+			if loc, err = base.Parse(next); err != nil {
+				return steps, fmt.Errorf("browser: continue page %s: %w", cur, err)
+			}
+		} else {
+			if resp.StatusCode < 300 || resp.StatusCode >= 400 {
+				return steps, nil
+			}
+			if loc, err = resp.Location(); err != nil {
+				return steps, fmt.Errorf("browser: redirect without Location from %s", cur)
+			}
 		}
 		if stop != nil && stop(loc) {
 			steps = append(steps, Step{URL: loc.String()})
@@ -141,4 +153,31 @@ func (b *Browser) Follow(rawURL string, max int, stop func(next *url.URL) bool) 
 		cur = loc.String()
 	}
 	return steps, fmt.Errorf("browser: more than %d redirects from %s", max, rawURL)
+}
+
+var continueRe = regexp.MustCompile(`<meta http-equiv="refresh" content="0;url=([^"]*)">`)
+
+// ContinueURL returns the destination of an auth.ContinueTo page (the meta
+// refresh target, HTML-unescaped), or "" when body is not one. Tests use it
+// where a form submission leads to another origin.
+func ContinueURL(body string) string {
+	m := continueRe.FindStringSubmatch(body)
+	if m == nil || !strings.Contains(body, "data-bc-continue") {
+		return ""
+	}
+	return html.UnescapeString(m[1])
+}
+
+// NextURL is where resp sends the browser: its Location for a redirect, or
+// the target of a continue page (which consumes the body). "" otherwise.
+func NextURL(resp *http.Response) string {
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return resp.Header.Get("Location")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	return ContinueURL(string(body))
 }

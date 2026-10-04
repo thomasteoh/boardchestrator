@@ -402,8 +402,8 @@ func TestSAMLSPInitiatedLogout(t *testing.T) {
 		t.Fatalf("login: %d", end.Status)
 	}
 	resp := h.post(b, "/auth/logout", h.csrfOf(b))
-	loc := resp.Header.Get("Location")
-	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, ip.SLOURL()+"?") {
+	loc := oidctest.NextURL(resp) // continue page (auth.ContinueTo)
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(loc, ip.SLOURL()+"?") {
 		t.Fatalf("logout redirect: %d %s", resp.StatusCode, loc)
 	}
 	lr, relay, err := samltest.ParseLogoutRequest(loc, cert)
@@ -626,8 +626,8 @@ func TestSAMLOrgProvider(t *testing.T) {
 	}
 	// Home-realm discovery reaches the SAML provider.
 	resp, _ := oidctest.NewBrowser(t).Get(h.app.URL + "/auth/sso/discover?email=carol@corp.example")
-	if !strings.HasPrefix(resp.Header.Get("Location"), "/auth/acme-saml?") {
-		t.Fatalf("discovery: %s", resp.Header.Get("Location"))
+	if next := oidctest.NextURL(resp); !strings.HasPrefix(next, "/auth/acme-saml?") {
+		t.Fatalf("discovery: %s", next)
 	}
 }
 

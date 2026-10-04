@@ -119,11 +119,16 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	clearSessionCookie(w)
+	if dest != SignedOutURL {
+		// The end-session endpoint (or SAML SLO URL) comes from the
+		// provider's own discovery document or metadata; nothing in the
+		// request chooses the host. A form POST cannot 303 there under CSP
+		// form-action 'self', hence the continue page.
+		ContinueTo(w, dest)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	// gosec G710: dest is either the fixed signed-out path or the end-session
-	// endpoint from the provider's own discovery document (operator or org
-	// owner configured); nothing in the request chooses the host.
-	http.Redirect(w, r, dest, http.StatusSeeOther) //nolint:gosec // G710: host from provider config, see above
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
 // endSessionURL is the provider's end-session URL for a session, or "" to
