@@ -346,7 +346,7 @@ templ idpFormFields(f IdPForm) {
 			if f.Editing {
 				<input class="bc-input" type="text" value={ f.ID } readonly/>
 			} else {
-				<input class="bc-input" type="text" name="id" value={ f.ID } required pattern="[a-z0-9][a-z0-9-]{0,62}" maxlength="63" autocomplete="off"/>
+				<input class="bc-input" type="text" name="id" value={ f.ID } required pattern="[a-z0-9][a-z0-9\-]{0,62}" maxlength="63" autocomplete="off"/>
 				if f.IDPrefix != "" {
 					<span class="bc-hint">Must start with <code>{ f.IDPrefix }</code>, for example <code>{ f.IDPrefix }sso</code>. Lower-case letters, digits and hyphens. It appears in the callback URL and can't be changed later.</span>
 				} else {

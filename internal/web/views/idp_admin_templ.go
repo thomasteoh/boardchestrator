@@ -1240,7 +1240,7 @@ func idpFormFields(f IdPForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "\" required pattern=\"[a-z0-9][a-z0-9-]{0,62}\" maxlength=\"63\" autocomplete=\"off\"> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "\" required pattern=\"[a-z0-9][a-z0-9\\-]{0,62}\" maxlength=\"63\" autocomplete=\"off\"> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
