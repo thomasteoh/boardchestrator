@@ -8,4 +8,5 @@ Boardchestrator is a self-hosted agent workspace. One Go binary, one SQLite file
 
 - [Getting started](/docs/getting-started/) — install, configure, and run it.
 - [Deployment](/docs/deployment/) — Docker, environment reference, and operations.
+- [Sign-in and identity](/docs/sign-in/) — identity providers, organisation SSO, SCIM and passkeys.
 - [Concepts](/docs/concepts/) — boards, agents, wiki, and how they fit together.

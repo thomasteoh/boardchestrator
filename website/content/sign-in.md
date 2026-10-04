@@ -1,115 +1,14 @@
-# Deploy
+---
+title: Sign-in and identity
+desc: Identity providers, organisation single sign-on, SCIM, passkeys and the URLs to register.
+order: 4
+---
 
-This document covers deploying boardchestrator in a container (docker
-compose), the runtime environment reference, and sign-in setup
-(identity providers, organisation SSO, SCIM and passkeys).
-
-## Compose example
-
-`compose.yaml` (docker compose v2):
-
-```yaml
-services:
-  bc:
-    image: boardchestrator:latest
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      BC_DB_PATH: /data/bc.db
-      BC_DATA_DIR: /data
-      BC_BASE_URL: https://bc.example.com
-      BC_BIND: 0.0.0.0:8080
-      BC_SECRET_KEY: ${BC_SECRET_KEY}
-      BC_SESSION_SECRET: ${BC_SESSION_SECRET}
-      BC_GOOGLE_CLIENT_ID: ${BC_GOOGLE_CLIENT_ID}
-      BC_GOOGLE_CLIENT_SECRET: ${BC_GOOGLE_CLIENT_SECRET}
-      BC_AGENT_WORKERS: "4"
-      BC_SCHED_POLL_INTERVAL: "60"
-    volumes:
-      - bc-data:/data
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/readyz"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
-
-volumes:
-  bc-data:
-```
-
-## Volume layout
-
-The single volume `bc-data` mounts `<BC_DATA_DIR>`. Inside it:
-
-```
-/data
-├── bc.db              # SQLite database (BC_DB_PATH)
-├── backups/           # bc backup snapshots (pruned to newest 5)
-│   └── boardchestrator-<timestamp>.db
-├── attachments/       # local attachment store (org/<task>/<id>_<name>)
-└── wiki/              # wiki checkout cache
-```
-
-Mount `bc-data` onto durable storage. In production put `backups/` on a
-separate persistent volume if you need snapshot history beyond the container.
-
-## Environment reference
-
-Generated from the `internal/config.Config` struct (`config.EnvReference`).
-Every variable is `BC_`-prefixed.
-
-| Env | Type | Default | Notes |
-|-----|------|---------|-------|
-| `BC_DB_PATH` | string | `bc.db` | SQLite database path |
-| `BC_DATA_DIR` | string | `./data` | data root (backups, attachments, wiki) |
-| `BC_BASE_URL` | string | `http://localhost:8080` | external base URL (OAuth redirects) |
-| `BC_BIND` | string | `0.0.0.0:8080` | listen address |
-| `BC_LOG_LEVEL` | string | `info` | debug/info/warn/error |
-| `BC_SECRET_KEY` | string | required | encryption key for secrets at rest |
-| `BC_SESSION_SECRET` | string | required | session HMAC secret (≥32 chars) |
-| `BC_BOOTSTRAP_TOKEN` | string | `` (generated) | token that claims an unclaimed instance at `/setup?token=`; see "Claiming a new instance" |
-| `BC_ADMIN_EMAILS` | string | `` | comma-separated admin emails; while the instance is unclaimed their first sign-in (verified email) claims it, and they always hold platform admin |
-| `BC_TRUSTED_PROXIES` | string | `` | comma-separated CIDRs or addresses of reverse proxies whose `X-Forwarded-For` is believed for the client IP (sign-in rate limits, audit rows, sessions). Empty: the TCP peer is the client and `X-Forwarded-For` is ignored. Set it to your proxy's address, otherwise every client behind the proxy shares one rate-limit bucket |
-| `BC_GOOGLE_CLIENT_ID` | string | `` | Google OAuth client id (seeds sign-in provider `google`) |
-| `BC_GOOGLE_CLIENT_SECRET` | string | `` | Google OAuth client secret |
-| `BC_GITHUB_CLIENT_ID` | string | `` | GitHub OAuth client id (seeds sign-in provider `github`) |
-| `BC_GITHUB_CLIENT_SECRET` | string | `` | GitHub OAuth client secret |
-| `BC_OIDC_<NAME>_ISSUER` | string | preset default | OIDC issuer URL for provider `<name>` (lower-cased, `_` becomes `-`) |
-| `BC_OIDC_<NAME>_CLIENT_ID` | string | required per provider | OIDC client id |
-| `BC_OIDC_<NAME>_CLIENT_SECRET` | string | `` | OIDC client secret |
-| `BC_OIDC_<NAME>_PRESET` | string | `generic` | google, microsoft, gitlab, okta, auth0, keycloak, zitadel, authentik, generic |
-| `BC_OIDC_<NAME>_DISPLAY_NAME` | string | preset name | label on the sign-in button |
-| `BC_OIDC_<NAME>_TRUST_EMAIL` | bool | preset default | link to existing users by verified email |
-| `BC_OIDC_<NAME>_ALLOW_SIGNUP` | bool | `BC_ALLOW_SIGNUP` | let new users sign up through this provider |
-| `BC_OIDC_<NAME>_SCOPES` | string | preset default | space- or comma-separated scopes |
-| `BC_OIDC_<NAME>_GROUPS_CLAIM` | string | preset default | claim (or dotted path) holding the user's groups |
-| `BC_ALLOW_SIGNUP` | bool | `true` | open sign-up on the env-configured providers (`google`, `github`, and `BC_OIDC_<NAME>_*` without their own `_ALLOW_SIGNUP`); `false` makes them invite-only. Providers added in the admin UI are invite-only unless the admin ticks "Let anyone who signs in through this provider create an account". Invite links and the bootstrap admin can always sign up |
-| `BC_ORG_IDP_ALLOW_PRIVATE` | bool | `false` | let organisation-owned identity providers (and org owners' "Test discovery") reach private and loopback addresses; off, only public addresses are dialled for them (QUESTIONS Q11) |
-| `BC_AGENT_WORKERS` | int | `4` | worker pool size |
-| `BC_SCHED_POLL_INTERVAL` | int | `60` | scheduler poll seconds |
-
-At least one sign-in provider should be configured; the server starts
-without one but logs a warning, because nobody can sign in. Env-configured
-providers are written to the `auth_providers` table at startup; removing a
-provider's variables disables it on the next start (its users' identities are
-kept).
-
-See "Sign-in and identity" below for what each provider needs, the
-URLs to register, organisation SSO and passkeys.
-
-Secrets (`BC_SECRET_KEY`, `BC_SESSION_SECRET`, OAuth secrets) should come from
-a secret store, never committed. Use `${VAR}` interpolation in compose or a
-`.env` file excluded from git.
-
-## Sign-in and identity
-
-Boardchestrator stores no passwords. People sign in through an identity provider (OpenID Connect, GitHub OAuth or SAML 2.0) or with a passkey. This section covers how sign-in decides who someone is, what to register with each provider, and how organisations bring their own single sign-on.
+Boardchestrator stores no passwords. People sign in through an identity provider (OpenID Connect, GitHub OAuth or SAML 2.0) or with a passkey. This page covers how sign-in decides who someone is, what to register with each provider, and how organisations bring their own single sign-on.
 
 Throughout, `<BASE>` is your `BC_BASE_URL` (for example `https://bc.example.com`) and `<id>` is the provider's ID in Boardchestrator (`google`, `github`, `authentik`, `acme-sso`, ...).
 
-### How sign-in decides who you are
+## How sign-in decides who you are
 
 Every sign-in is resolved in this order:
 
@@ -127,7 +26,7 @@ An unverified email never links and never opens a sign-up on its own. It still w
 
 People link extra sign-in methods themselves from **Settings → Sign-in methods** while signed in, and can remove any method except the last.
 
-### Claiming a new instance
+## Claiming a new instance
 
 Until someone claims it, an instance lets in only `BC_ADMIN_EMAILS` and whoever presents the bootstrap token. At every start while unclaimed the server logs one WARN line with the claim URL, `<BASE>/setup?token=…`:
 
@@ -141,7 +40,7 @@ The token is logged on purpose. Treat logs from an unclaimed instance like any o
 
 `BC_ADMIN_EMAILS` addresses also hold platform admin on every sign-in through a **platform** provider with a verified email. Organisation-owned providers can never grant it.
 
-### URLs to register
+## URLs to register
 
 | What | URL |
 |------|-----|
@@ -158,7 +57,7 @@ The provider forms (Platform admin → Identity providers, and Org settings → 
 
 The redirect URI must match exactly, including scheme and port. Behind a reverse proxy, `BC_BASE_URL` is the public URL, not the internal one.
 
-### Configuring providers
+## Configuring providers
 
 Platform providers can be added in two ways.
 
@@ -181,11 +80,11 @@ Issuers must be `https`, except `localhost` and loopback addresses for local tes
 
 Every OIDC preset uses the authorisation-code flow with PKCE, `state` and `nonce`, and verifies the ID token's signature, `iss`, `aud`, `exp` and `nonce`. Register Boardchestrator as a **confidential web application** with the authorisation-code grant.
 
-### Provider recipes
+## Provider recipes
 
 Where a console's menu names change often, the steps below say what to set rather than where to click.
 
-#### Google
+### Google
 
 1. In Google Cloud, create an OAuth client of type "Web application".
 2. Authorised redirect URI: `<BASE>/auth/google/callback`.
@@ -193,7 +92,7 @@ Where a console's menu names change often, the steps below say what to set rathe
 
 Google asserts verified emails and is trusted for email by default. It publishes no end-session endpoint, so signing out ends only the Boardchestrator session. There are no groups.
 
-#### Microsoft Entra ID (OIDC)
+### Microsoft Entra ID (OIDC)
 
 1. Register an application (Web platform). Redirect URI `<BASE>/auth/<id>/callback`. Also add `<BASE>/login?signed_out=1` as a redirect URI so RP-initiated sign-out can return.
 2. Create a client secret.
@@ -206,7 +105,7 @@ Google asserts verified emails and is trusted for email by default. It publishes
 
 **Logout.** RP-initiated logout works (`end_session_endpoint`). Entra does not send OIDC back-channel logout, so leave that URL unregistered.
 
-#### Microsoft Entra ID (SAML)
+### Microsoft Entra ID (SAML)
 
 1. Create an enterprise application (non-gallery) and choose SAML single sign-on.
 2. Identifier (Entity ID) `<BASE>/auth/saml/<id>/metadata`; Reply URL (ACS) `<BASE>/auth/saml/<id>/acs`; Logout URL `<BASE>/auth/saml/<id>/slo`.
@@ -216,21 +115,21 @@ Google asserts verified emails and is trusted for email by default. It publishes
 
 SAML has no "email verified" flag. With **Trust this provider's verified email addresses** on, every address the provider asserts counts as verified; with it off, addresses are never used to link accounts. Boardchestrator requires signed assertions or a signed response and refuses unsigned IdP-initiated logout requests. Entra sends unsigned front-channel logout requests, so signing out at Entra does not end Boardchestrator sessions; signing out in Boardchestrator does reach Entra.
 
-#### GitHub
+### GitHub
 
 1. Create an OAuth app (not a GitHub App). Authorisation callback URL `<BASE>/auth/github/callback`.
 2. Set `BC_GITHUB_CLIENT_ID` and `BC_GITHUB_CLIENT_SECRET`, or add the GitHub preset with ID `github`.
 
 GitHub is OAuth, not OIDC. Boardchestrator reads `/user` and `/user/emails` and only uses the verified primary address. The token also powers wiki edits. GitHub has no groups, no sign-out endpoint and cannot be an organisation's IdP.
 
-#### GitLab (gitlab.com and self-managed)
+### GitLab (gitlab.com and self-managed)
 
 1. Create an OAuth application (user, group or instance level) with scopes `openid`, `profile`, `email`, confidential, redirect URI `<BASE>/auth/<id>/callback`.
 2. Preset **GitLab**. GitLab URL defaults to `https://gitlab.com`; for self-managed use your instance URL, for example `https://gitlab.example.com` (env: `BC_OIDC_GITLAB_PRESET=gitlab`, `BC_OIDC_GITLAB_ISSUER=https://gitlab.example.com`).
 
 Groups come from `groups_direct` (full group paths). GitLab is trusted for email by default. The preset does not do RP-initiated logout.
 
-#### Okta (OIDC)
+### Okta (OIDC)
 
 1. Create an OIDC web application. Sign-in redirect URI `<BASE>/auth/<id>/callback`; sign-out redirect URI `<BASE>/login?signed_out=1`; grant type authorisation code.
 2. Preset **Okta**, domain `example.okta.com` (the org authorisation server) or `example.okta.com/oauth2/default` for a custom authorisation server.
@@ -238,18 +137,18 @@ Groups come from `groups_direct` (full group paths). GitLab is trusted for email
 
 Okta asserts `email_verified`; trust is off by default. RP-initiated logout works.
 
-#### Okta (SAML)
+### Okta (SAML)
 
 1. Create a SAML 2.0 application. Single sign-on URL `<BASE>/auth/saml/<id>/acs`; Audience URI (SP Entity ID) `<BASE>/auth/saml/<id>/metadata`; Name ID format **Persistent**.
 2. Attribute statements: `email` → `user.email`. Group attribute statement `groups` with a filter for the groups you want sent.
 3. Single logout: enable it, Single Logout URL `<BASE>/auth/saml/<id>/slo`, SP Issuer = the entity ID, and upload the SP certificate from `<BASE>/auth/saml/<id>/certificate`.
 4. In Boardchestrator, preset **Okta (SAML)** with the metadata URL from the application's Sign On tab.
 
-#### Okta SCIM
+### Okta SCIM
 
 Turn on SCIM provisioning for the application. SCIM connector base URL `<BASE>/scim/v2`; unique identifier field `userName`; authentication mode HTTP header (Bearer) with a token from Org settings → Single sign-on → SCIM tokens. Enable push of new users, profile updates, deactivation and groups. Okta updates users with PUT; Boardchestrator accepts that.
 
-#### Auth0
+### Auth0
 
 1. Create a Regular Web Application. Allowed Callback URLs `<BASE>/auth/<id>/callback`; Allowed Logout URLs `<BASE>/login?signed_out=1`.
 2. Preset **Auth0**, domain `example.au.auth0.com` (or your custom domain). The issuer ends in `/`.
@@ -257,14 +156,14 @@ Turn on SCIM provisioning for the application. SCIM connector base URL `<BASE>/s
 
 For RP-initiated logout, turn on the tenant setting that publishes `end_session_endpoint` in discovery; otherwise signing out is local only.
 
-#### Keycloak
+### Keycloak
 
 1. Create an OpenID Connect client with client authentication on and the standard flow enabled.
 2. Valid redirect URI `<BASE>/auth/<id>/callback`; valid post-logout redirect URI `<BASE>/login?signed_out=1`; back-channel logout URL `<BASE>/auth/oidc/<id>/backchannel-logout` with "back-channel logout session required" on.
 3. For groups, add a Group Membership mapper with claim name `groups` and full group path off. For realm roles instead, set the provider's **Groups claim** to `realm_access.roles`.
 4. Preset **Keycloak**, Keycloak URL `https://sso.example.com`, realm `staff` (issuer `https://sso.example.com/realms/staff`).
 
-#### Zitadel
+### Zitadel
 
 1. In a project, create a Web application with the authorisation-code flow (client secret). Redirect URI `<BASE>/auth/<id>/callback`; post-logout URI `<BASE>/login?signed_out=1`.
 2. To receive roles, turn on the project's "assert roles on authentication" setting. The preset requests `urn:zitadel:iam:org:project:roles`.
@@ -272,7 +171,7 @@ For RP-initiated logout, turn on the tenant setting that publishes `end_session_
 
 The roles claim is an object keyed by role name, `{"admin": {"<org id>": "<org domain>"}, "dev": {...}}`. Boardchestrator uses the keys (`admin`, `dev`) as group values, so map role keys. If your Zitadel version offers OIDC back-channel logout, register `<BASE>/auth/oidc/<id>/backchannel-logout`.
 
-#### authentik (OIDC)
+### authentik (OIDC)
 
 Verified end to end against authentik 2026.8.3.
 
@@ -287,21 +186,21 @@ Things the live test turned up:
 - The default provider invalidation flow ends the application session but not the authentik session, so after signing out the next sign-in goes straight through without a password. Use an invalidation flow with a user logout stage if you want signing out to end the authentik session too.
 - Back-channel logout works: ending the user's authentik session (or the user signing out there) revokes the matching Boardchestrator sessions.
 
-#### authentik (SAML)
+### authentik (SAML)
 
 1. Create a SAML provider: ACS URL `<BASE>/auth/saml/<id>/acs`, service provider binding Post, audience `<BASE>/auth/saml/<id>/metadata`, SLS URL `<BASE>/auth/saml/<id>/slo` with binding Redirect, a signing certificate, sign assertions and responses on, sign logout requests on, and default NameID policy **Persistent**. Attach it to an application.
 2. In Boardchestrator, preset **SAML 2.0**, metadata URL `https://auth.example.com/api/v3/providers/saml/<provider number>/metadata/?download`. The `/application/saml/<slug>/metadata/` URL answers with a redirect, and Boardchestrator does not follow redirects when fetching metadata, so use the download URL or paste the XML.
 3. authentik sends groups as `http://schemas.xmlsoap.org/claims/Group`, which Boardchestrator reads by default.
 
-#### authentik SCIM
+### authentik SCIM
 
 Create a SCIM provider with URL `<BASE>/scim/v2`, authentication mode token and a token from Org settings → Single sign-on → SCIM tokens, then add it to the application as a backchannel provider. Set a **group filter**: without one authentik pushes every user, including `akadmin`, and Boardchestrator creates accounts for all of them in the organisation (addresses already used by an account outside the org's verified domains get 409). Groups are pushed as they change; existing groups can be pushed from the provider's sync page.
 
-#### Generic OpenID Connect
+### Generic OpenID Connect
 
 Preset **OpenID Connect** with the issuer URL; the provider must publish `/.well-known/openid-configuration`. Defaults: scopes `openid email profile`, claims `email`, `email_verified`, `name`, `picture`, `groups`. Override any claim name on the form; nested claims use dots (`realm_access.roles`). Trust is off by default.
 
-#### Generic SAML 2.0
+### Generic SAML 2.0
 
 Preset **SAML 2.0** with the IdP's metadata URL (https, cached for an hour) or pasted metadata XML. The IdP must:
 
@@ -311,7 +210,7 @@ Preset **SAML 2.0** with the IdP's metadata URL (https, cached for an hour) or p
 
 Default attributes: email from `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress`, `mail` or `email`; name from `displayName` or the claims `name` URI; groups from the Entra groups URI, `http://schemas.xmlsoap.org/claims/Group`, `groups` or `memberOf`. Single logout uses HTTP-Redirect; logout requests from the IdP must be signed (SHA-1 is refused).
 
-### Organisation single sign-on
+## Organisation single sign-on
 
 An org owner (anyone with the `org.sso` permission) sets this up under **Org settings → Single sign-on** (`/app/org/<org id>/settings/sso`).
 
@@ -325,7 +224,7 @@ An org owner (anyone with the `org.sso` permission) sets this up under **Org set
 
 Platform owners are exempt from organisation SSO everywhere. If an organisation's IdP breaks, a platform owner signs in with a platform provider and turns the requirement off.
 
-### Passkeys
+## Passkeys
 
 Passkeys (WebAuthn) are on by default and can be turned off under Platform admin → Identity providers. Signed-in users add them under **Settings → Sign-in methods → Add a passkey**, then sign in from `/login` with "Sign in with a passkey" without typing a username. An invitee can create an account with a passkey from the invite link, and the bootstrap claim page offers "Claim with a passkey".
 
@@ -336,7 +235,7 @@ Passkeys (WebAuthn) are on by default and can be turned off under Platform admin
 
 Tested with Chromium's virtual authenticator: registration from Sign-in methods, usernameless sign-in, and invite sign-up with a passkey.
 
-### Sessions, sign-out and API keys
+## Sessions, sign-out and API keys
 
 - Sessions live in the `__Host-bc_session` cookie (always `Secure`), rotate at every sign-in, slide for 14 days and end after 90 days at most. Settings lists your sessions with their sign-in method; you can sign out one session, everywhere else, or everywhere. Removing a sign-in method signs out the sessions it created.
 - **Sign out** ends the local session. With "Sign out of the identity provider too" on and a provider that publishes an end-session endpoint (OIDC) or a Redirect SLO service (SAML), the browser then goes to the IdP, which returns to `<BASE>/login?signed_out=1`.
@@ -345,7 +244,7 @@ Tested with Chromium's virtual authenticator: registration from Sign-in methods,
 - Sign-in routes (`/login`, `/setup`, `/auth/*`) are limited to 20 requests a minute per client IP with bursts of 10, and SCIM to 600 a minute per token. Set `BC_TRUSTED_PROXIES` to your reverse proxy's address so the limit and the audit log see real client addresses.
 - Sign-ins, sign-outs, failures (with a reason code and reference, never tokens), claims, links and unlinks go to the audit log. Platform-wide rows are under Platform admin → Audit log; org-provider events are in the organisation's log.
 
-### Known limits
+## Known limits
 
 - Entra emails are unverified unless you map `xms_edov`; without it, Entra users join only by invite or org JIT (QUESTIONS Q8).
 - Entra groups overage, and an absent group claim, skip group sync instead of removing access. Users removed from their last group keep synced memberships if the IdP then omits the claim; use SCIM for removals.
@@ -359,16 +258,3 @@ Tested with Chromium's virtual authenticator: registration from Sign-in methods,
 - SCIM creates an account for any address it pushes that no account uses, even outside the organisation's verified domains. Scope the IdP's SCIM assignment to the people who should have access.
 - SCIM does not support `or`, `ne`, `co` or `sw` filters, sorting, ETags or bulk requests.
 - Rate limits are in memory per process (single node).
-
-## Readiness
-
-`GET /readyz` reports `200 {"status":"ok"}` when the server is up **and** the
-DB is reachable **and** the queue is healthy (depth + oldest queued age).
-Any degraded component returns `503` with the failing check named. Wire this
-to your orchestrator's healthcheck (see compose above).
-
-## Commands
-
-- `bc serve` — run the server.
-- `bc backup` — `VACUUM INTO` snapshot to `backups/`, prunes to newest 5.
-- `bc storage migrate <org-id>` — migrate an org's attachments local→S3.

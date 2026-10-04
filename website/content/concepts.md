@@ -1,7 +1,7 @@
 ---
 title: Concepts
 desc: Boards, agents, wiki, and MCP — how the pieces fit together.
-order: 4
+order: 5
 ---
 
 ## The model

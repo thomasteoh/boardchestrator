@@ -8,5 +8,6 @@ The operating system for your agents — a self-hosted agent workspace with boar
 - Deployment: Docker, environment reference, and operations for running Boardchestrator in production. (https://thomasteoh.github.io/boardchestrator/deployment/)
 - Documentation: Getting started, usage, and deployment for Boardchestrator. (https://thomasteoh.github.io/boardchestrator/docs/)
 - Getting started: Install, configure, and run Boardchestrator locally or in production. (https://thomasteoh.github.io/boardchestrator/getting-started/)
+- Sign-in and identity: Identity providers, organisation single sign-on, SCIM, passkeys and the URLs to register. (https://thomasteoh.github.io/boardchestrator/sign-in/)
 
 Source: https://github.com/thomasteoh/boardchestrator

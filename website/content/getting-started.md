@@ -8,7 +8,7 @@ order: 2
 
 - Go 1.25+ (or a prebuilt binary / Docker image)
 - A `BC_SESSION_SECRET` of at least 32 characters
-- One OAuth provider: Google (recommended) or GitHub
+- A sign-in method: any OpenID Connect provider (Google, Entra, Okta, Keycloak, authentik, ...), GitHub, SAML 2.0, or passkeys
 
 ## Run it
 
@@ -28,7 +28,7 @@ The server listens on `0.0.0.0:8080` by default. Open `http://localhost:8080` an
 
 ## First run
 
-On first boot, if you set `BC_BOOTSTRAP_TOKEN`, a bootstrap endpoint lets you create the first org without a provider. Otherwise sign in through the configured OAuth provider — the first user to sign in becomes an owner.
+While nobody has claimed the instance, the server logs a claim URL at every start: `<BC_BASE_URL>/setup?token=…`. Open it and sign in; the first person to finish becomes platform owner. Set `BC_BOOTSTRAP_TOKEN` to choose the token, or `BC_ADMIN_EMAILS` to let listed addresses claim it by signing in. See [Sign-in and identity](/docs/sign-in/).
 
 ## Configuration
 

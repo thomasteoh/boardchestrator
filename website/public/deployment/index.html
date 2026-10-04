@@ -96,13 +96,13 @@ volumes:
 <td><code>BC_DATA_DIR</code></td>
 <td>string</td>
 <td><code>./data</code></td>
-<td>data root</td>
+<td>data root (backups, attachments, wiki)</td>
 </tr>
 <tr>
 <td><code>BC_BASE_URL</code></td>
 <td>string</td>
 <td><code>http://localhost:8080</code></td>
-<td>external URL (OAuth redirects)</td>
+<td>external base URL (OAuth redirects)</td>
 </tr>
 <tr>
 <td><code>BC_BIND</code></td>
@@ -120,7 +120,7 @@ volumes:
 <td><code>BC_SECRET_KEY</code></td>
 <td>string</td>
 <td>required</td>
-<td>encryption key for secrets</td>
+<td>encryption key for secrets at rest</td>
 </tr>
 <tr>
 <td><code>BC_SESSION_SECRET</code></td>
@@ -131,38 +131,110 @@ volumes:
 <tr>
 <td><code>BC_BOOTSTRAP_TOKEN</code></td>
 <td>string</td>
-<td>``</td>
-<td>first-run bootstrap token</td>
+<td>`` (generated)</td>
+<td>token that claims an unclaimed instance at <code>/setup?token=</code>; see &quot;Claiming a new instance&quot;</td>
 </tr>
 <tr>
 <td><code>BC_ADMIN_EMAILS</code></td>
 <td>string</td>
 <td>``</td>
-<td>comma-separated admin emails</td>
+<td>comma-separated admin emails; while the instance is unclaimed their first sign-in (verified email) claims it, and they always hold platform admin</td>
+</tr>
+<tr>
+<td><code>BC_TRUSTED_PROXIES</code></td>
+<td>string</td>
+<td>``</td>
+<td>comma-separated CIDRs or addresses of reverse proxies whose <code>X-Forwarded-For</code> is believed for the client IP (sign-in rate limits, audit rows, sessions). Empty: the TCP peer is the client and <code>X-Forwarded-For</code> is ignored. Set it to your proxy's address, otherwise every client behind the proxy shares one rate-limit bucket</td>
 </tr>
 <tr>
 <td><code>BC_GOOGLE_CLIENT_ID</code></td>
 <td>string</td>
-<td>required</td>
-<td>Google OAuth client id</td>
+<td>``</td>
+<td>Google OAuth client id (seeds sign-in provider <code>google</code>)</td>
 </tr>
 <tr>
 <td><code>BC_GOOGLE_CLIENT_SECRET</code></td>
 <td>string</td>
-<td>required</td>
+<td>``</td>
 <td>Google OAuth client secret</td>
 </tr>
 <tr>
 <td><code>BC_GITHUB_CLIENT_ID</code></td>
 <td>string</td>
 <td>``</td>
-<td>GitHub OAuth client id</td>
+<td>GitHub OAuth client id (seeds sign-in provider <code>github</code>)</td>
 </tr>
 <tr>
 <td><code>BC_GITHUB_CLIENT_SECRET</code></td>
 <td>string</td>
 <td>``</td>
 <td>GitHub OAuth client secret</td>
+</tr>
+<tr>
+<td><code>BC_OIDC_&lt;NAME&gt;_ISSUER</code></td>
+<td>string</td>
+<td>preset default</td>
+<td>OIDC issuer URL for provider <code>&lt;name&gt;</code> (lower-cased, <code>_</code> becomes <code>-</code>)</td>
+</tr>
+<tr>
+<td><code>BC_OIDC_&lt;NAME&gt;_CLIENT_ID</code></td>
+<td>string</td>
+<td>required per provider</td>
+<td>OIDC client id</td>
+</tr>
+<tr>
+<td><code>BC_OIDC_&lt;NAME&gt;_CLIENT_SECRET</code></td>
+<td>string</td>
+<td>``</td>
+<td>OIDC client secret</td>
+</tr>
+<tr>
+<td><code>BC_OIDC_&lt;NAME&gt;_PRESET</code></td>
+<td>string</td>
+<td><code>generic</code></td>
+<td>google, microsoft, gitlab, okta, auth0, keycloak, zitadel, authentik, generic</td>
+</tr>
+<tr>
+<td><code>BC_OIDC_&lt;NAME&gt;_DISPLAY_NAME</code></td>
+<td>string</td>
+<td>preset name</td>
+<td>label on the sign-in button</td>
+</tr>
+<tr>
+<td><code>BC_OIDC_&lt;NAME&gt;_TRUST_EMAIL</code></td>
+<td>bool</td>
+<td>preset default</td>
+<td>link to existing users by verified email</td>
+</tr>
+<tr>
+<td><code>BC_OIDC_&lt;NAME&gt;_ALLOW_SIGNUP</code></td>
+<td>bool</td>
+<td><code>BC_ALLOW_SIGNUP</code></td>
+<td>let new users sign up through this provider</td>
+</tr>
+<tr>
+<td><code>BC_OIDC_&lt;NAME&gt;_SCOPES</code></td>
+<td>string</td>
+<td>preset default</td>
+<td>space- or comma-separated scopes</td>
+</tr>
+<tr>
+<td><code>BC_OIDC_&lt;NAME&gt;_GROUPS_CLAIM</code></td>
+<td>string</td>
+<td>preset default</td>
+<td>claim (or dotted path) holding the user's groups</td>
+</tr>
+<tr>
+<td><code>BC_ALLOW_SIGNUP</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>open sign-up on the env-configured providers (<code>google</code>, <code>github</code>, and <code>BC_OIDC_&lt;NAME&gt;_*</code> without their own <code>_ALLOW_SIGNUP</code>); <code>false</code> makes them invite-only. Providers added in the admin UI are invite-only unless the admin ticks &quot;Let anyone who signs in through this provider create an account&quot;. Invite links and the bootstrap admin can always sign up</td>
+</tr>
+<tr>
+<td><code>BC_ORG_IDP_ALLOW_PRIVATE</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>let organisation-owned identity providers (and org owners' &quot;Test discovery&quot;) reach private and loopback addresses; off, only public addresses are dialled for them (QUESTIONS Q11)</td>
 </tr>
 <tr>
 <td><code>BC_AGENT_WORKERS</code></td>
@@ -178,6 +250,7 @@ volumes:
 </tr>
 </tbody>
 </table>
+<p><code>BC_OIDC_&lt;NAME&gt;_*</code> configures one OpenID Connect provider per <code>&lt;NAME&gt;</code>: the provider ID is <code>&lt;NAME&gt;</code> lower-cased with <code>_</code> becoming <code>-</code>, so <code>BC_OIDC_CORP_SSO_CLIENT_ID</code> sets up provider <code>corp-sso</code> with callback <code>&lt;BC_BASE_URL&gt;/auth/corp-sso/callback</code>. See <a href="/docs/sign-in/">Sign-in and identity</a> for every provider, the URLs to register, organisation SSO and passkeys.</p>
 <h2>Operations</h2>
 <ul>
 <li><code>bc serve</code> — run the server.</li>
