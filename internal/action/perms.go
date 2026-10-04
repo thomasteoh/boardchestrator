@@ -86,6 +86,7 @@ func handleRoleCreate(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("role.create: %w", err)
 	}
+	input.OrgID = scopedOrg(ac, input.OrgID)
 	grants := input.Grants
 	if len(grants) == 0 && input.GrantsStr != "" {
 		grants = splitGrants(input.GrantsStr)
@@ -119,6 +120,7 @@ func handleRoleUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("role.update: %w", err)
 	}
+	input.OrgID = scopedOrg(ac, input.OrgID)
 	grants := input.Grants
 	if len(grants) == 0 && input.GrantsStr != "" {
 		grants = splitGrants(input.GrantsStr)
@@ -147,6 +149,12 @@ func handleRoleUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 		}
 		return map[string]string{"id": id}, nil
 	}
+	// Editing grants in place must not take "*" away from the org's last
+	// owner (WU-613).
+	guard, err := NewOwnerGuard(ctx, ac.Tx.Queries, input.OrgID)
+	if err != nil {
+		return nil, fmt.Errorf("role.update: %w", err)
+	}
 	_, err = ac.Tx.UpdateRoleGrants(ctx, sqlc.UpdateRoleGrantsParams{
 		GrantsJson: string(grantsJSON),
 		ID:         input.ID,
@@ -154,6 +162,9 @@ func handleRoleUpdate(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 	})
 	if err != nil {
 		return nil, fmt.Errorf("role.update: %w", err)
+	}
+	if err := guard.Check(ctx); err != nil {
+		return nil, err
 	}
 	return map[string]string{"id": input.ID}, nil
 }
@@ -184,6 +195,7 @@ func handleMembershipCreate(ctx context.Context, ac ActionCtx, in json.RawMessag
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("membership.create: %w", err)
 	}
+	input.OrgID = scopedOrg(ac, input.OrgID)
 	id := newID()
 	_, err := ac.Tx.CreateMembership(ctx, sqlc.CreateMembershipParams{
 		ID:           id,
@@ -193,6 +205,7 @@ func handleMembershipCreate(ctx context.Context, ac ActionCtx, in json.RawMessag
 		ResourceType: input.ResourceType,
 		ResourceID:   input.ResourceID,
 		RoleID:       sql.NullString{String: input.RoleID, Valid: input.RoleID != ""},
+		Source:       MembershipSourceManual,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("membership.create: %w", err)
@@ -205,11 +218,28 @@ func handleMembershipDelete(ctx context.Context, ac ActionCtx, in json.RawMessag
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("membership.delete: %w", err)
 	}
+	org := scopedOrg(ac, input.OrgID)
+	guard, err := NewOwnerGuard(ctx, ac.Tx.Queries, org)
+	if err != nil {
+		return nil, fmt.Errorf("membership.delete: %w", err)
+	}
 	if err := ac.Tx.DeleteMembershipByID(ctx, sqlc.DeleteMembershipByIDParams{
 		ID:    input.ID,
-		OrgID: input.OrgID,
+		OrgID: org,
 	}); err != nil {
 		return nil, fmt.Errorf("membership.delete: %w", err)
 	}
+	if err := guard.Check(ctx); err != nil {
+		return nil, err
+	}
 	return nil, nil
+}
+
+// scopedOrg is the org a ScopeOrg handler acts on: the resolved scope, or the
+// input's org_id for dispatchers built without a scope resolver.
+func scopedOrg(ac ActionCtx, inputOrg string) string {
+	if ac.Org != "" {
+		return ac.Org
+	}
+	return inputOrg
 }

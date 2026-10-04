@@ -188,6 +188,7 @@ func handleOrgCreate(ctx context.Context, ac ActionCtx, in json.RawMessage) (any
 		ResourceType: "org",
 		ResourceID:   id,
 		RoleID:       sql.NullString{String: ownerRole.ID, Valid: true},
+		Source:       MembershipSourceManual,
 	}); err != nil {
 		return nil, fmt.Errorf("org.create: seed owner membership: %w", err)
 	}
@@ -328,7 +329,27 @@ func NewDBScopeResolver(d *sql.DB) *DBScopeResolver {
 func (r *DBScopeResolver) Resolve(ctx context.Context, ac ActionCtx, def Definition) error {
 	switch def.Scope {
 	case ScopePlatform:
-		return nil // no scope to check
+		// Dispatch already refuses this (checkScopeShape); repeated here so the
+		// resolver is safe on its own (Q10).
+		if ac.Org != "" || ac.Team != "" || ac.Proj != "" {
+			return fmt.Errorf("platform action %s takes no org, team or project id", def.Name)
+		}
+		return nil
+	case ScopeSelf:
+		if ac.Org != "" || ac.Team != "" || ac.Proj != "" {
+			return fmt.Errorf("self action %s takes no org, team or project id", def.Name)
+		}
+		if ac.Actor.Type != ActorUser {
+			return fmt.Errorf("self action %s needs a user actor", def.Name)
+		}
+		user, err := r.q.GetUser(ctx, ac.Actor.ID)
+		if err != nil {
+			return fmt.Errorf("user %s not found: %w", ac.Actor.ID, err)
+		}
+		if user.DeletedAt.Valid {
+			return fmt.Errorf("user %s is deleted", ac.Actor.ID)
+		}
+		return nil
 	case ScopeOrg:
 		if ac.Org == "" {
 			return fmt.Errorf("missing org_id for org-scoped action")
@@ -338,7 +359,7 @@ func (r *DBScopeResolver) Resolve(ctx context.Context, ac ActionCtx, def Definit
 		if err != nil {
 			return fmt.Errorf("org %s not found: %w", ac.Org, err)
 		}
-		return nil
+		return r.checkSSO(ctx, ac)
 	case ScopeTeam:
 		if ac.Org == "" || ac.Team == "" {
 			return fmt.Errorf("missing org_id or team_id for team-scoped action")
@@ -351,7 +372,7 @@ func (r *DBScopeResolver) Resolve(ctx context.Context, ac ActionCtx, def Definit
 		if team.OrgID != ac.Org {
 			return fmt.Errorf("team %s does not belong to org %s", ac.Team, ac.Org)
 		}
-		return nil
+		return r.checkSSO(ctx, ac)
 	case ScopeProject:
 		if ac.Org == "" || ac.Proj == "" {
 			return fmt.Errorf("missing org_id or project_id for project-scoped action")
@@ -363,7 +384,7 @@ func (r *DBScopeResolver) Resolve(ctx context.Context, ac ActionCtx, def Definit
 		if proj.OrgID != ac.Org {
 			return fmt.Errorf("project %s does not belong to org %s", ac.Proj, ac.Org)
 		}
-		return nil
+		return r.checkSSO(ctx, ac)
 	default:
 		return fmt.Errorf("unknown scope kind %d", def.Scope)
 	}

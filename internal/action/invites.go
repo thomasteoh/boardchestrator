@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -68,7 +69,7 @@ func init() {
 		Name:       "invite.accept",
 		Impact:     ImpactLow,
 		Permission: "",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleInviteAccept,
 	})
@@ -119,11 +120,21 @@ func handleMemberInvite(ctx context.Context, ac ActionCtx, in json.RawMessage) (
 	if err != nil {
 		return nil, fmt.Errorf("member.invite: %w", err)
 	}
-	return map[string]any{
-		"id":     id,
-		"token":  token,
-		"expiry": expiresAt,
-	}, nil
+	return InviteCreated{ID: id, Token: token, Expiry: expiresAt}, nil
+}
+
+// InviteCreated is member.invite's result. Token is the invite secret,
+// returned to the inviter once; Redacted drops it for every stored copy
+// (WU-613, the WU-522 sweep).
+type InviteCreated struct {
+	ID     string `json:"id"`
+	Token  string `json:"token"`
+	Expiry string `json:"expiry"`
+}
+
+// Redacted implements SecretResult.
+func (c InviteCreated) Redacted() any {
+	return map[string]string{"id": c.ID, "expiry": c.Expiry}
 }
 
 func handleMemberRemove(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
@@ -131,14 +142,22 @@ func handleMemberRemove(ctx context.Context, ac ActionCtx, in json.RawMessage) (
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("member.remove: %w", err)
 	}
+	org := scopedOrg(ac, input.OrgID)
+	guard, err := NewOwnerGuard(ctx, ac.Tx.Queries, org)
+	if err != nil {
+		return nil, fmt.Errorf("member.remove: %w", err)
+	}
 	if err := ac.Tx.DeleteMembership(ctx, sqlc.DeleteMembershipParams{
-		OrgID:        input.OrgID,
+		OrgID:        org,
 		ActorID:      input.ActorID,
 		ActorType:    input.ActorType,
 		ResourceType: input.ResourceType,
 		ResourceID:   input.ResourceID,
 	}); err != nil {
 		return nil, fmt.Errorf("member.remove: %w", err)
+	}
+	if err := guard.Check(ctx); err != nil {
+		return nil, err
 	}
 	return nil, nil
 }
@@ -148,50 +167,85 @@ func handleInviteAccept(ctx context.Context, ac ActionCtx, in json.RawMessage) (
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("invite.accept: %w", err)
 	}
-	hash := tokenHash(input.Token)
-
-	invite, err := ac.Tx.FindInviteByTokenHash(ctx, hash)
-	if err != nil {
-		return nil, fmt.Errorf("invite.accept: invalid or expired token: %w", err)
-	}
-	if invite.AcceptedAt.Valid {
-		return nil, fmt.Errorf("invite.accept: already accepted")
-	}
-	expiry, err := time.Parse(timeFormat, invite.ExpiresAt)
-	if err != nil {
-		return nil, fmt.Errorf("invite.accept: parse expiry: %w", err)
-	}
-	if time.Now().UTC().After(expiry) {
-		return nil, fmt.Errorf("invite.accept: token expired")
-	}
-
-	now := time.Now().UTC().Format(timeFormat)
-	_, err = ac.Tx.AcceptInvite(ctx, sqlc.AcceptInviteParams{
-		ID:         invite.ID,
-		AcceptedAt: sql.NullString{String: now, Valid: true},
-	})
+	res, err := AcceptInvite(ctx, ac.Tx.Queries, input.Token, ac.Actor.ID, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("invite.accept: %w", err)
 	}
+	return map[string]any{
+		"membership_id": res.MembershipID,
+		"org_id":        res.OrgID,
+	}, nil
+}
 
-	// Auto-create membership for the accepted invite.
+// ErrInviteInvalid is returned for an invite token that names no invite, or
+// one that is already accepted or expired. Callers must not tell these apart
+// to the person holding the token.
+var ErrInviteInvalid = errors.New("invalid, expired or already accepted invite")
+
+// PendingInvite returns the pending, unexpired invite token names, or
+// ErrInviteInvalid. It does not consume the invite.
+func PendingInvite(ctx context.Context, q *sqlc.Queries, token string, now time.Time) (sqlc.Invite, error) {
+	if token == "" {
+		return sqlc.Invite{}, ErrInviteInvalid
+	}
+	invite, err := q.FindInviteByTokenHash(ctx, tokenHash(token))
+	if errors.Is(err, sql.ErrNoRows) {
+		return sqlc.Invite{}, ErrInviteInvalid
+	}
+	if err != nil {
+		return sqlc.Invite{}, fmt.Errorf("find invite: %w", err)
+	}
+	if invite.AcceptedAt.Valid {
+		return sqlc.Invite{}, ErrInviteInvalid
+	}
+	expiry, err := time.Parse(timeFormat, invite.ExpiresAt)
+	if err != nil {
+		return sqlc.Invite{}, fmt.Errorf("parse invite expiry: %w", err)
+	}
+	if !now.UTC().Before(expiry) {
+		return sqlc.Invite{}, ErrInviteInvalid
+	}
+	return invite, nil
+}
+
+// InviteAcceptance is the outcome of AcceptInvite.
+type InviteAcceptance struct {
+	InviteID     string
+	OrgID        string
+	MembershipID string
+}
+
+// AcceptInvite consumes the invite token names and creates userID's
+// membership, through q (the caller's transaction). It is the one
+// implementation behind invite.accept and sign-up by invite (WU-604), so
+// the token, expiry and single-use checks live in one place.
+func AcceptInvite(ctx context.Context, q *sqlc.Queries, token, userID string, now time.Time) (InviteAcceptance, error) {
+	invite, err := PendingInvite(ctx, q, token, now)
+	if err != nil {
+		return InviteAcceptance{}, err
+	}
+	if _, err := q.AcceptInvite(ctx, sqlc.AcceptInviteParams{
+		ID:         invite.ID,
+		AcceptedAt: sql.NullString{String: now.UTC().Format(timeFormat), Valid: true},
+	}); errors.Is(err, sql.ErrNoRows) {
+		return InviteAcceptance{}, ErrInviteInvalid // accepted concurrently
+	} else if err != nil {
+		return InviteAcceptance{}, fmt.Errorf("accept invite: %w", err)
+	}
 	memID := newID()
-	_, err = ac.Tx.CreateMembership(ctx, sqlc.CreateMembershipParams{
+	if _, err := q.CreateMembership(ctx, sqlc.CreateMembershipParams{
 		ID:           memID,
 		OrgID:        invite.OrgID,
-		ActorID:      ac.Actor.ID,
+		ActorID:      userID,
 		ActorType:    "user",
 		ResourceType: invite.ResourceType,
 		ResourceID:   invite.ResourceID,
 		RoleID:       invite.RoleID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("invite.accept: create membership: %w", err)
+		Source:       MembershipSourceInvite,
+	}); err != nil {
+		return InviteAcceptance{}, fmt.Errorf("create membership: %w", err)
 	}
-	return map[string]any{
-		"membership_id": memID,
-		"org_id":        invite.OrgID,
-	}, nil
+	return InviteAcceptance{InviteID: invite.ID, OrgID: invite.OrgID, MembershipID: memID}, nil
 }
 
 func handleInviteList(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {

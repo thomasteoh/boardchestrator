@@ -7,11 +7,13 @@ package sqlc
 
 import (
 	"context"
+	"strings"
 )
 
 const createSession = `-- name: CreateSession :exec
-INSERT INTO sessions (token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO sessions (token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at,
+                      provider_id, auth_method, idp_sid, idp_subject, id_token_enc)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateSessionParams struct {
@@ -22,6 +24,11 @@ type CreateSessionParams struct {
 	CreatedAt  string
 	LastSeenAt string
 	ExpiresAt  string
+	ProviderID string
+	AuthMethod string
+	IdpSid     string
+	IdpSubject string
+	IDTokenEnc string
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
@@ -33,6 +40,11 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 		arg.CreatedAt,
 		arg.LastSeenAt,
 		arg.ExpiresAt,
+		arg.ProviderID,
+		arg.AuthMethod,
+		arg.IdpSid,
+		arg.IdpSubject,
+		arg.IDTokenEnc,
 	)
 	return err
 }
@@ -57,15 +69,143 @@ func (q *Queries) DeleteSession(ctx context.Context, tokenHash string) error {
 	return err
 }
 
-const getSession = `-- name: GetSession :one
-SELECT token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at
-FROM sessions
-WHERE token_hash = ?
+const deleteSessionsByIdPSID = `-- name: DeleteSessionsByIdPSID :execrows
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_sid = ?
 `
 
-func (q *Queries) GetSession(ctx context.Context, tokenHash string) (Session, error) {
+type DeleteSessionsByIdPSIDParams struct {
+	ProviderID string
+	IdpSid     string
+}
+
+// Back-channel logout by IdP session id (SPEC s7.6). Callers never pass an
+// empty sid.
+func (q *Queries) DeleteSessionsByIdPSID(ctx context.Context, arg DeleteSessionsByIdPSIDParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSessionsByIdPSID, arg.ProviderID, arg.IdpSid)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteSessionsByIdPSIDSubject = `-- name: DeleteSessionsByIdPSIDSubject :execrows
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_sid = ? AND idp_subject = ?
+`
+
+type DeleteSessionsByIdPSIDSubjectParams struct {
+	ProviderID string
+	IdpSid     string
+	IdpSubject string
+}
+
+// Back-channel logout naming both sid and sub: the sessions must match both.
+func (q *Queries) DeleteSessionsByIdPSIDSubject(ctx context.Context, arg DeleteSessionsByIdPSIDSubjectParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSessionsByIdPSIDSubject, arg.ProviderID, arg.IdpSid, arg.IdpSubject)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteSessionsByIdPSubject = `-- name: DeleteSessionsByIdPSubject :execrows
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_subject = ?
+`
+
+type DeleteSessionsByIdPSubjectParams struct {
+	ProviderID string
+	IdpSubject string
+}
+
+// Back-channel logout by subject: every session of that IdP user. Callers
+// never pass an empty subject.
+func (q *Queries) DeleteSessionsByIdPSubject(ctx context.Context, arg DeleteSessionsByIdPSubjectParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSessionsByIdPSubject, arg.ProviderID, arg.IdpSubject)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteSessionsBySubjectSIDs = `-- name: DeleteSessionsBySubjectSIDs :execrows
+DELETE FROM sessions
+WHERE provider_id = ? AND idp_subject = ? AND idp_sid IN (/*SLICE:sids*/?)
+`
+
+type DeleteSessionsBySubjectSIDsParams struct {
+	ProviderID string
+	IdpSubject string
+	Sids       []string
+}
+
+// SAML IdP-initiated logout naming a NameID and one or more SessionIndex
+// values (sqlc.slice): sessions must match the subject and one of them.
+func (q *Queries) DeleteSessionsBySubjectSIDs(ctx context.Context, arg DeleteSessionsBySubjectSIDsParams) (int64, error) {
+	query := deleteSessionsBySubjectSIDs
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.ProviderID)
+	queryParams = append(queryParams, arg.IdpSubject)
+	if len(arg.Sids) > 0 {
+		for _, v := range arg.Sids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:sids*/?", strings.Repeat(",?", len(arg.Sids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:sids*/?", "NULL", 1)
+	}
+	result, err := q.db.ExecContext(ctx, query, queryParams...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteUserSession = `-- name: DeleteUserSession :execrows
+DELETE FROM sessions
+WHERE token_hash = ? AND user_id = ?
+`
+
+type DeleteUserSessionParams struct {
+	TokenHash string
+	UserID    string
+}
+
+// session.revoke: a user can only revoke their own sessions.
+func (q *Queries) DeleteUserSession(ctx context.Context, arg DeleteUserSessionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUserSession, arg.TokenHash, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const getSession = `-- name: GetSession :one
+SELECT s.token_hash, s.user_id, s.ip, s.ua, s.created_at, s.last_seen_at, s.expires_at,
+       s.provider_id, s.auth_method
+FROM sessions s
+JOIN users u ON u.id = s.user_id
+WHERE s.token_hash = ?
+  AND u.deleted_at IS NULL
+`
+
+type GetSessionRow struct {
+	TokenHash  string
+	UserID     string
+	Ip         string
+	Ua         string
+	CreatedAt  string
+	LastSeenAt string
+	ExpiresAt  string
+	ProviderID string
+	AuthMethod string
+}
+
+// SPEC s7.10: a session whose user is deleted does not resolve.
+func (q *Queries) GetSession(ctx context.Context, tokenHash string) (GetSessionRow, error) {
 	row := q.db.QueryRowContext(ctx, getSession, tokenHash)
-	var i Session
+	var i GetSessionRow
 	err := row.Scan(
 		&i.TokenHash,
 		&i.UserID,
@@ -74,26 +214,69 @@ func (q *Queries) GetSession(ctx context.Context, tokenHash string) (Session, er
 		&i.CreatedAt,
 		&i.LastSeenAt,
 		&i.ExpiresAt,
+		&i.ProviderID,
+		&i.AuthMethod,
 	)
 	return i, err
 }
 
-const listSessionsByUser = `-- name: ListSessionsByUser :many
-SELECT token_hash, user_id, ip, ua, created_at, last_seen_at, expires_at
+const getSessionLogoutInfo = `-- name: GetSessionLogoutInfo :one
+SELECT provider_id, id_token_enc
 FROM sessions
-WHERE user_id = ?
-ORDER BY created_at DESC
+WHERE token_hash = ?
 `
 
-func (q *Queries) ListSessionsByUser(ctx context.Context, userID string) ([]Session, error) {
-	rows, err := q.db.QueryContext(ctx, listSessionsByUser, userID)
+type GetSessionLogoutInfoRow struct {
+	ProviderID string
+	IDTokenEnc string
+}
+
+// RP-initiated logout (SPEC s7.6): the provider a session signed in through
+// and its sealed ID token (the id_token_hint).
+func (q *Queries) GetSessionLogoutInfo(ctx context.Context, tokenHash string) (GetSessionLogoutInfoRow, error) {
+	row := q.db.QueryRowContext(ctx, getSessionLogoutInfo, tokenHash)
+	var i GetSessionLogoutInfoRow
+	err := row.Scan(&i.ProviderID, &i.IDTokenEnc)
+	return i, err
+}
+
+const listSessionsByUser = `-- name: ListSessionsByUser :many
+SELECT s.token_hash, s.user_id, s.ip, s.ua, s.created_at, s.last_seen_at, s.expires_at,
+       s.provider_id, s.auth_method, COALESCE(p.display_name, '') AS provider_name
+FROM sessions s
+LEFT JOIN auth_providers p ON p.id = s.provider_id
+WHERE s.user_id = ? AND s.expires_at > ?
+ORDER BY s.last_seen_at DESC, s.created_at DESC
+`
+
+type ListSessionsByUserParams struct {
+	UserID    string
+	ExpiresAt string
+}
+
+type ListSessionsByUserRow struct {
+	TokenHash    string
+	UserID       string
+	Ip           string
+	Ua           string
+	CreatedAt    string
+	LastSeenAt   string
+	ExpiresAt    string
+	ProviderID   string
+	AuthMethod   string
+	ProviderName string
+}
+
+// session.list: the user's live sessions with how each was signed in.
+func (q *Queries) ListSessionsByUser(ctx context.Context, arg ListSessionsByUserParams) ([]ListSessionsByUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionsByUser, arg.UserID, arg.ExpiresAt)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Session
+	var items []ListSessionsByUserRow
 	for rows.Next() {
-		var i Session
+		var i ListSessionsByUserRow
 		if err := rows.Scan(
 			&i.TokenHash,
 			&i.UserID,
@@ -102,6 +285,9 @@ func (q *Queries) ListSessionsByUser(ctx context.Context, userID string) ([]Sess
 			&i.CreatedAt,
 			&i.LastSeenAt,
 			&i.ExpiresAt,
+			&i.ProviderID,
+			&i.AuthMethod,
+			&i.ProviderName,
 		); err != nil {
 			return nil, err
 		}
@@ -114,6 +300,58 @@ func (q *Queries) ListSessionsByUser(ctx context.Context, userID string) ([]Sess
 		return nil, err
 	}
 	return items, nil
+}
+
+const revokeUserProviderSessions = `-- name: RevokeUserProviderSessions :execrows
+DELETE FROM sessions
+WHERE user_id = ? AND provider_id = ?
+`
+
+type RevokeUserProviderSessionsParams struct {
+	UserID     string
+	ProviderID string
+}
+
+// identity.unlink: the user's sessions signed in through that provider.
+func (q *Queries) RevokeUserProviderSessions(ctx context.Context, arg RevokeUserProviderSessionsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeUserProviderSessions, arg.UserID, arg.ProviderID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const revokeUserSessions = `-- name: RevokeUserSessions :execrows
+DELETE FROM sessions
+WHERE user_id = ?
+`
+
+// session.revoke_all (everywhere) and user.sessions.revoke.
+func (q *Queries) RevokeUserSessions(ctx context.Context, userID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeUserSessions, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const revokeUserSessionsExcept = `-- name: RevokeUserSessionsExcept :execrows
+DELETE FROM sessions
+WHERE user_id = ? AND token_hash <> ?
+`
+
+type RevokeUserSessionsExceptParams struct {
+	UserID    string
+	TokenHash string
+}
+
+// session.revoke_all keeping the current session ("everywhere else").
+func (q *Queries) RevokeUserSessionsExcept(ctx context.Context, arg RevokeUserSessionsExceptParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeUserSessionsExcept, arg.UserID, arg.TokenHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const touchSession = `-- name: TouchSession :exec

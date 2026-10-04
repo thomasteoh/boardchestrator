@@ -40,7 +40,7 @@
 <ul>
 <li>Go 1.25+ (or a prebuilt binary / Docker image)</li>
 <li>A <code>BC_SESSION_SECRET</code> of at least 32 characters</li>
-<li>One OAuth provider: Google (recommended) or GitHub</li>
+<li>A sign-in method: any OpenID Connect provider (Google, Entra, Okta, Keycloak, authentik, ...), GitHub, SAML 2.0, or passkeys</li>
 </ul>
 <h2>Run it</h2>
 <pre><code class="language-sh"># build the server
@@ -55,7 +55,7 @@ BC_SECRET_KEY=&quot;$(openssl rand -hex 32)&quot; \
 </code></pre>
 <p>The server listens on <code>0.0.0.0:8080</code> by default. Open <code>http://localhost:8080</code> and sign in with Google.</p>
 <h2>First run</h2>
-<p>On first boot, if you set <code>BC_BOOTSTRAP_TOKEN</code>, a bootstrap endpoint lets you create the first org without a provider. Otherwise sign in through the configured OAuth provider — the first user to sign in becomes an owner.</p>
+<p>While nobody has claimed the instance, the server logs a claim URL at every start: <code>&lt;BC_BASE_URL&gt;/setup?token=…</code>. Open it and sign in; the first person to finish becomes platform owner. Set <code>BC_BOOTSTRAP_TOKEN</code> to choose the token, or <code>BC_ADMIN_EMAILS</code> to let listed addresses claim it by signing in. See <a href="/docs/sign-in/">Sign-in and identity</a>.</p>
 <h2>Configuration</h2>
 <p>Every setting is an environment variable prefixed with <code>BC_</code>. See the <a href="/docs/deployment/">deployment reference</a> for the full table. The two non-negotiable secrets:</p>
 <ul>

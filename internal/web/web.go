@@ -9,8 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -75,6 +75,7 @@ func shellData(r *http.Request, title, active string) views.Shell {
 			Alpine:   AssetURL("vendor/alpine-csp.min.js"),
 			AppJS:    AssetURL("app.js"),
 			Sortable: AssetURL("vendor/sortable.min.js"),
+			Passkey:  AssetURL("passkey.js"),
 			// Served at the stable root path (not content-hashed) so the
 			// worker's scope is the whole origin, not just /static/. A
 			// hashed URL would also orphan the previous worker each build.
@@ -134,10 +135,7 @@ func handleOrgSettings(w http.ResponseWriter, r *http.Request) {
 	// session actor to read the current S3 config (secret masked) or local.
 	storageBackend, storageJSON := "local", ""
 	if disp != nil {
-		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
-		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
-			actor.ID = sess.UserID
-		}
+		actor := requestActor(r)
 		if res, err := disp.Dispatch(r.Context(), actor, "org.storage.status",
 			json.RawMessage(`{}`), action.Opts{Org: orgID}); err == nil {
 			if m, ok := res.(map[string]any); ok {
@@ -251,10 +249,7 @@ func handleOrgRoles(w http.ResponseWriter, r *http.Request) {
 
 	var rows []views.RoleGrantRow
 	if disp != nil {
-		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
-		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
-			actor.ID = sess.UserID
-		}
+		actor := requestActor(r)
 		if res, err := disp.Dispatch(r.Context(), actor, "role.list",
 			json.RawMessage(`{}`), action.Opts{Org: orgID}); err == nil {
 			if roles, ok := res.([]sqlc.Role); ok {
@@ -337,10 +332,7 @@ func handleOrgRoleEdit(w http.ResponseWriter, r *http.Request) {
 
 	name, grantsStr := "", ""
 	if disp != nil {
-		actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
-		if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
-			actor.ID = sess.UserID
-		}
+		actor := requestActor(r)
 		if res, err := disp.Dispatch(r.Context(), actor, "role.list",
 			json.RawMessage(`{}`), action.Opts{Org: orgID}); err == nil {
 			if roles, ok := res.([]sqlc.Role); ok {
@@ -392,10 +384,7 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	actor := action.Actor{Type: action.ActorUser, ID: "placeholder", IP: r.RemoteAddr}
-	if sess, ok := auth.SessionFrom(r.Context()); ok && sess.UserID != "" {
-		actor.ID = sess.UserID
-	}
+	actor := requestActor(r)
 	// X-Dry-Run: chat propose→approve (WU-308) runs the inner action in dry-run
 	// mode to render a preview without mutating anything. X-Org-Id/X-Project-Id/
 	// X-Team-Id carry the chat session's scope so the inner action re-dispatches
@@ -438,6 +427,11 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := disp.Dispatch(r.Context(), actor, name, input, opts)
 	if err != nil {
+		var sso action.ErrSSORequired
+		if errors.As(err, &sso) {
+			writeSSORequiredPlain(w, r, sso)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -447,6 +441,12 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 
 func handleInviteAccept(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
+	if !auth.IsAuthenticated(r.Context()) {
+		// An anonymous invitee signs in (or signs up) first; the invite
+		// rides the login flow (WU-604, SPEC §7.3 step 4).
+		http.Redirect(w, r, auth.LoginURL+"?invite="+url.QueryEscape(token), http.StatusSeeOther)
+		return
+	}
 	s := shellData(r, "Accept Invite", "")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := views.InviteAcceptPage(s, token).Render(r.Context(), w); err != nil {
@@ -766,6 +766,15 @@ func handleAttachmentDownload(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
+		var sso action.ErrSSORequired
+		if err := orgSSOError(r.Context(), sess, att.OrgID); errors.As(err, &sso) {
+			RenderSSORequired(w, r, sso)
+			return
+		} else if err != nil {
+			slog.Error("attachment download sso", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 	} else if keyActor, ok := auth.APIKeyActorFrom(r.Context()); ok {
 		// API-key principal: the key must belong to att.OrgID.
 		key, err := q.FindAPIKeyByID(r.Context(), keyActor.ID)
@@ -834,6 +843,7 @@ func handleSearchPage(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "search error", http.StatusInternalServerError)
 			return
 		}
+		rs = ssoFilter(r.Context(), sess, rs, func(x search.QueryResult) string { return x.OrgID })
 		for _, res := range rs {
 			results = append(results, views.SearchResultRow{
 				Type:      res.Type,
@@ -870,6 +880,7 @@ func handleSearchAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "search error", http.StatusInternalServerError)
 		return
 	}
+	results = ssoFilter(r.Context(), sess, results, func(x search.QueryResult) string { return x.OrgID })
 
 	// Return JSON for API consumers
 	w.Header().Set("Content-Type", "application/json")
@@ -923,6 +934,12 @@ func handleChatSessionsPartial(w http.ResponseWriter, r *http.Request) {
 	orgID := r.URL.Query().Get("org_id")
 	projectID := r.URL.Query().Get("project_id")
 	kind := r.URL.Query().Get("kind")
+	// Only the caller's own orgs, and not one requiring single sign-on the
+	// session was not signed in for (WU-613).
+	if !chatOrgAllowed(r, q, sess, orgID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	var sessions []sqlc.ChatSession
 	var err error
 	switch kind {
@@ -1003,9 +1020,7 @@ func handleNotifications(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleNotifMarkRead marks one notification read for the session user.
-// Direct sqlc handler (user-scoped from session) — the notif.mark_read action
-// is ungrantable to regular users (ScopePlatform + notif.* perm only on
-// platform admin), so the UI uses the direct path like unread-count.
+// It dispatches notif.mark_read (ScopeSelf: no grant, scoped to the caller).
 func handleNotifMarkRead(w http.ResponseWriter, r *http.Request) {
 	if disp == nil {
 		http.Error(w, "dispatcher not configured", http.StatusInternalServerError)
@@ -1039,12 +1054,9 @@ func handleNotifMarkRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing id", http.StatusBadRequest)
 		return
 	}
-	q := sqlc.New(disp.DB())
-	if err := q.MarkNotificationRead(r.Context(), sqlc.MarkNotificationReadParams{
-		ReadAt: timestampNow(),
-		ID:     id,
-		UserID: sess.UserID,
-	}); err != nil {
+	raw, _ := json.Marshal(map[string]string{"id": id})
+	actor := sessionActor(r, sess)
+	if _, err := disp.Dispatch(r.Context(), actor, "notif.mark_read", raw, action.Opts{}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1063,20 +1075,13 @@ func handleNotifMarkAllRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	q := sqlc.New(disp.DB())
-	if err := q.MarkAllNotificationsRead(r.Context(), sqlc.MarkAllNotificationsReadParams{
-		ReadAt: timestampNow(),
-		UserID: sess.UserID,
-	}); err != nil {
+	actor := sessionActor(r, sess)
+	if _, err := disp.Dispatch(r.Context(), actor, "notif.mark_all_read", json.RawMessage(`{}`), action.Opts{}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"ok": "true"})
-}
-
-func timestampNow() string {
-	return time.Now().UTC().Format(time.RFC3339)
 }
 
 // handleSprintList renders the sprints list page for a project.
@@ -1292,6 +1297,12 @@ func Routes(r chi.Router) {
 	r.Get("/invite/accept", handleInviteAccept)
 	// User settings
 	r.Get("/app/settings", handleUserSettings)
+	// Settings -> Sign-in methods (WU-604). The link POST is the auth
+	// handler's (it owns the flow cookie).
+	r.Get(auth.SignInMethodsURL, handleSignInMethods)
+	r.Post(auth.SignInMethodsURL+"/unlink/{id}", handleSignInMethodUnlink)
+	r.Post(views.PasskeysSettingsBase+"/{id}/rename", handlePasskeyRename)
+	r.Post(views.PasskeysSettingsBase+"/{id}/delete", handlePasskeyDelete)
 	r.Get("/api/sessions", handleSessionsList)
 
 	// Tenancy UI pages
@@ -1328,6 +1339,13 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/webhook.list", handleAction)
 	// API key routes (WU-109)
 	r.Get("/app/org/{orgID}/apikeys", handleAPIKeys)
+	r.Post("/app/org/{orgID}/apikeys", handleAPIKeyCreate)
+	r.Post("/app/org/{orgID}/apikeys/{id}/revoke", handleAPIKeyRevoke)
+	r.Get("/app/org/{orgID}/settings/api-keys", handleOrgAPIKeys)
+	r.Post("/app/org/{orgID}/settings/api-keys/{id}/revoke", handleOrgAPIKeyRevoke)
+	r.Post("/api/action/apikey.list", handleAction)
+	r.Post("/api/action/apikey.org_list", handleAction)
+	r.Post("/api/action/apikey.org_revoke", handleAction)
 	r.Get("/app/org/{orgID}/usage", handleUsage)
 	r.Get("/app/org/{orgID}/usage.csv/{kind}", handleUsageCSV)
 	r.Post("/api/action/apikey.create", handleAction)
@@ -1352,9 +1370,12 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/user.theme.update", handleAction)
 	r.Post("/api/action/user.timezone.update", handleAction)
 	r.Post("/api/action/session.revoke", handleSessionRevoke)
+	r.Post("/api/action/session.revoke_all", handleSessionRevokeAll)
+	r.Post("/api/action/user.sessions.revoke", handleAction)
 	// Audit log routes (WU-110)
 	r.Get("/app/org/{orgID}/audit", handleAuditLog)
 	r.Get("/app/org/{orgID}/audit/export", handleAuditExport)
+	r.Get(views.PlatformAuditURL, handlePlatformAudit)
 	r.Post("/api/action/audit.log.list", handleAction)
 	r.Post("/api/action/audit.log.export", handleAction)
 	// Task detail routes
@@ -1455,6 +1476,41 @@ func Routes(r chi.Router) {
 	r.Post("/api/action/attachment.upload", handleAction)
 	r.Post("/api/action/attachment.delete", handleAction)
 	r.Get("/files/{attachmentID}", handleAttachmentDownload)
+
+	// Sign-in page and Platform Admin → Identity providers (WU-603)
+	r.Get("/login", handleLogin)
+	r.Get(SSODiscoverURL, handleSSODiscover)
+	// Org settings -> Single sign-on (WU-606)
+	r.Get("/app/org/{orgID}/settings/sso", handleOrgSSO)
+	r.Post("/app/org/{orgID}/settings/sso/domains", handleOrgDomainPost("org.domain.add", "added"))
+	r.Post("/app/org/{orgID}/settings/sso/domains/{id}/verify", handleOrgDomainPost("org.domain.verify", "verified"))
+	r.Post("/app/org/{orgID}/settings/sso/domains/{id}/remove", handleOrgDomainPost("org.domain.remove", "removed"))
+	// Org settings -> Single sign-on: providers and enforcement (WU-607)
+	r.Get("/app/org/{orgID}/settings/sso/providers/new", handleOrgIdPNew)
+	r.Post("/app/org/{orgID}/settings/sso/providers", handleOrgIdPCreate)
+	r.Post("/app/org/{orgID}/settings/sso/providers/discover", handleOrgIdPDiscover)
+	r.Get("/app/org/{orgID}/settings/sso/providers/{id}/edit", handleOrgIdPEdit)
+	r.Post("/app/org/{orgID}/settings/sso/providers/{id}/update", handleOrgIdPUpdate)
+	r.Post("/app/org/{orgID}/settings/sso/providers/{id}/enable", handleOrgIdPVerb("enable"))
+	r.Post("/app/org/{orgID}/settings/sso/providers/{id}/disable", handleOrgIdPVerb("disable"))
+	r.Post("/app/org/{orgID}/settings/sso/providers/{id}/delete", handleOrgIdPVerb("delete"))
+	r.Post("/app/org/{orgID}/settings/sso/enforcement", handleOrgSSOEnforce)
+	// Org SSO: JIT provisioning and group mappings (WU-608).
+	r.Post("/app/org/{orgID}/settings/sso/provisioning", handleOrgProvisioning)
+	r.Post("/app/org/{orgID}/settings/sso/mappings", handleOrgMappingCreate)
+	r.Post("/app/org/{orgID}/settings/sso/mappings/{id}/delete", handleOrgMappingDelete)
+	r.Post("/app/org/{orgID}/settings/sso/scim-tokens", handleOrgSCIMCreate)
+	r.Post("/app/org/{orgID}/settings/sso/scim-tokens/{id}/revoke", handleOrgSCIMRevoke)
+	r.Get(views.IdPAdminBase, handleIdPList)
+	r.Post(views.IdPAdminBase, handleIdPCreate)
+	r.Get(views.IdPAdminBase+"/new", handleIdPNew)
+	r.Post(views.IdPAdminBase+"/discover", handleIdPDiscover)
+	r.Get(views.IdPAdminBase+"/{id}/edit", handleIdPEdit)
+	r.Post(views.IdPAdminBase+"/{id}/update", handleIdPUpdate)
+	r.Post(views.IdPAdminBase+"/{id}/enable", handleIdPVerb("enable"))
+	r.Post(views.IdPAdminBase+"/{id}/disable", handleIdPVerb("disable"))
+	r.Post(views.IdPAdminBase+"/{id}/delete", handleIdPVerb("delete"))
+	r.Post(views.IdPAdminBase+"/passkeys", handlePasskeysToggle)
 
 	// Provider routes (WU-302)
 	r.Get("/admin/providers", handleProviders)

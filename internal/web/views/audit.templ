@@ -8,43 +8,70 @@ type AuditRow struct {
 	Subject   string
 	IP        string
 	CreatedAt string
+	// Detail is shown only where the page sets AuditPageData.ShowDetail.
+	Detail string
 }
+
+// PlatformAuditURL is Platform Admin -> Audit log (WU-605).
+const PlatformAuditURL = "/admin/audit"
 
 templ AuditPage(s Shell, orgID string, rows []AuditRow) {
 	@Base(s) {
 		<div class="settings-page">
 			<h2>Audit Log</h2>
 			<p class="text-dimmed">All consequential actions and agent operations are recorded here.</p>
-
 			<div class="audit-controls">
-				<a href={"/app/org/"+orgID+"/audit/export"} class="btn">Export CSV</a>
+				<a href={ "/app/org/" + orgID + "/audit/export" } class="btn">Export CSV</a>
 			</div>
-
-			<table class="audit-table">
-				<thead>
-					<tr>
-						<th>Time</th>
-						<th>Action</th>
-						<th>Actor</th>
-						<th>Subject</th>
-						<th>IP</th>
-					</tr>
-				</thead>
-				<tbody>
-					if len(rows) == 0 {
-						<tr><td colspan="5" class="empty">No audit entries yet.</td></tr>
-					}
-					for _, r := range rows {
-						<tr>
-							<td class="cell-time">{r.CreatedAt}</td>
-							<td class="cell-action">{r.Action}</td>
-							<td class="cell-actor">{r.ActorType}:{r.ActorID}</td>
-							<td class="cell-subject">{r.Subject}</td>
-							<td class="cell-ip">{r.IP}</td>
-						</tr>
-					}
-				</tbody>
-			</table>
+			@auditTable(rows, false)
 		</div>
 	}
+}
+
+// PlatformAuditPage lists the platform audit rows (no org): sign-ins,
+// sign-outs, failed sign-ins, the bootstrap claim and platform admin
+// changes.
+templ PlatformAuditPage(s Shell, rows []AuditRow) {
+	@Base(s) {
+		<div class="bc-settings-page">
+			@adminNav("audit")
+			<h1>Platform audit log</h1>
+			<p class="bc-muted">Sign-ins, sign-outs, failed sign-ins and platform administration. Each organisation's own activity is in that organisation's audit log.</p>
+			@auditTable(rows, true)
+		</div>
+	}
+}
+
+templ auditTable(rows []AuditRow, showDetail bool) {
+	<table class="audit-table">
+		<thead>
+			<tr>
+				<th>Time</th>
+				<th>Action</th>
+				<th>Actor</th>
+				<th>Subject</th>
+				<th>IP</th>
+				if showDetail {
+					<th>Detail</th>
+				}
+			</tr>
+		</thead>
+		<tbody>
+			if len(rows) == 0 {
+				<tr><td colspan="6" class="empty">No audit entries yet.</td></tr>
+			}
+			for _, r := range rows {
+				<tr>
+					<td class="cell-time">{ r.CreatedAt }</td>
+					<td class="cell-action">{ r.Action }</td>
+					<td class="cell-actor">{ r.ActorType }:{ r.ActorID }</td>
+					<td class="cell-subject">{ r.Subject }</td>
+					<td class="cell-ip">{ r.IP }</td>
+					if showDetail {
+						<td class="cell-detail"><code>{ r.Detail }</code></td>
+					}
+				</tr>
+			}
+		</tbody>
+	</table>
 }

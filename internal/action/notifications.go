@@ -22,7 +22,7 @@ func init() {
 		Name:       "notif.mark_read",
 		Impact:     ImpactLow,
 		Permission: "notif.mark_read",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleMarkRead,
 	})
@@ -30,7 +30,7 @@ func init() {
 		Name:       "notif.mark_all_read",
 		Impact:     ImpactLow,
 		Permission: "notif.mark_all_read",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleMarkAllRead,
 	})
@@ -38,7 +38,7 @@ func init() {
 		Name:       "notif.list",
 		Impact:     ImpactRead,
 		Permission: "notif.list",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleNotifList,
 	})
@@ -46,7 +46,7 @@ func init() {
 		Name:       "notif.unread_count",
 		Impact:     ImpactRead,
 		Permission: "notif.unread_count",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleNotifUnreadCount,
 	})
@@ -57,10 +57,14 @@ func handleMarkRead(ctx context.Context, ac ActionCtx, in json.RawMessage) (any,
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("notif.mark_read: %w", err)
 	}
+	userID, err := SelfUserID(ac, input.UserID)
+	if err != nil {
+		return nil, err
+	}
 	if err := ac.Tx.MarkNotificationRead(ctx, sqlc.MarkNotificationReadParams{
 		ReadAt: timestamp(),
 		ID:     input.ID,
-		UserID: input.UserID,
+		UserID: userID,
 	}); err != nil {
 		return nil, fmt.Errorf("notif.mark_read: %w", err)
 	}
@@ -72,9 +76,13 @@ func handleMarkAllRead(ctx context.Context, ac ActionCtx, in json.RawMessage) (a
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("notif.mark_all_read: %w", err)
 	}
+	userID, err := SelfUserID(ac, input.UserID)
+	if err != nil {
+		return nil, err
+	}
 	if err := ac.Tx.MarkAllNotificationsRead(ctx, sqlc.MarkAllNotificationsReadParams{
 		ReadAt: timestamp(),
-		UserID: input.UserID,
+		UserID: userID,
 	}); err != nil {
 		return nil, fmt.Errorf("notif.mark_all_read: %w", err)
 	}
@@ -91,12 +99,16 @@ func handleNotifList(ctx context.Context, ac ActionCtx, in json.RawMessage) (any
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("notif.list: %w", err)
 	}
+	userID, err := SelfUserID(ac, input.UserID)
+	if err != nil {
+		return nil, err
+	}
 	if input.Limit == 0 {
 		input.Limit = 50
 	}
 	if input.UnreadOnly {
 		rows, err := ac.Tx.ListUnreadNotifications(ctx, sqlc.ListUnreadNotificationsParams{
-			UserID: input.UserID,
+			UserID: userID,
 			Limit:  input.Limit,
 		})
 		if err != nil {
@@ -105,7 +117,7 @@ func handleNotifList(ctx context.Context, ac ActionCtx, in json.RawMessage) (any
 		return rows, nil
 	}
 	rows, err := ac.Tx.ListNotifications(ctx, sqlc.ListNotificationsParams{
-		UserID: input.UserID,
+		UserID: userID,
 		Limit:  input.Limit,
 		Offset: input.Offset,
 	})
@@ -122,7 +134,11 @@ func handleNotifUnreadCount(ctx context.Context, ac ActionCtx, in json.RawMessag
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("notif.unread_count: %w", err)
 	}
-	count, err := ac.Tx.UnreadNotificationCount(ctx, input.UserID)
+	userID, err := SelfUserID(ac, input.UserID)
+	if err != nil {
+		return nil, err
+	}
+	count, err := ac.Tx.UnreadNotificationCount(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("notif.unread_count: %w", err)
 	}

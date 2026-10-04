@@ -54,6 +54,8 @@ type ShellAssets struct {
 	AppJS    string
 	Sortable string
 	SW       string
+	// Passkey is static/passkey.js (WU-612); "" leaves it out.
+	Passkey string
 }
 
 // navItem is one primary-navigation destination.

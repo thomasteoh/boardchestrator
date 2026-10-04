@@ -68,7 +68,7 @@ func newAttachmentRouter(t *testing.T, db *sql.DB) (http.Handler, *auth.SessionS
 	t.Cleanup(func() { disp = nil; fileStore = nil })
 
 	sessions := auth.NewSessionStore(db)
-	sc := auth.SessionConfig{Store: sessions, Secret: "01234567890123456789012345678901", Insecure: true}
+	sc := auth.SessionConfig{Store: sessions, Secret: "01234567890123456789012345678901"}
 	r := chi.NewRouter()
 	r.Use(auth.CSP())
 	r.Use(sc.Session())

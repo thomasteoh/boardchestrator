@@ -26,9 +26,9 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 }
 
 const createMembershipFromOrgQuery = `-- name: CreateMembershipFromOrgQuery :one
-INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id, role_id)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+INSERT INTO memberships (id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at, source
 `
 
 type CreateMembershipFromOrgQueryParams struct {
@@ -39,6 +39,7 @@ type CreateMembershipFromOrgQueryParams struct {
 	ResourceType string
 	ResourceID   string
 	RoleID       sql.NullString
+	Source       string
 }
 
 func (q *Queries) CreateMembershipFromOrgQuery(ctx context.Context, arg CreateMembershipFromOrgQueryParams) (Membership, error) {
@@ -50,6 +51,7 @@ func (q *Queries) CreateMembershipFromOrgQuery(ctx context.Context, arg CreateMe
 		arg.ResourceType,
 		arg.ResourceID,
 		arg.RoleID,
+		arg.Source,
 	)
 	var i Membership
 	err := row.Scan(
@@ -61,6 +63,7 @@ func (q *Queries) CreateMembershipFromOrgQuery(ctx context.Context, arg CreateMe
 		&i.ResourceID,
 		&i.RoleID,
 		&i.CreatedAt,
+		&i.Source,
 	)
 	return i, err
 }
@@ -234,7 +237,7 @@ func (q *Queries) DeleteMembershipByID(ctx context.Context, arg DeleteMembership
 }
 
 const findMemberships = `-- name: FindMemberships :many
-SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at, source
 FROM memberships
 WHERE org_id = ? AND actor_type = ? AND actor_id = ?
   AND resource_type = ? AND resource_id = ?
@@ -272,6 +275,7 @@ func (q *Queries) FindMemberships(ctx context.Context, arg FindMembershipsParams
 			&i.ResourceID,
 			&i.RoleID,
 			&i.CreatedAt,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -287,7 +291,7 @@ func (q *Queries) FindMemberships(ctx context.Context, arg FindMembershipsParams
 }
 
 const findMembershipsForActor = `-- name: FindMembershipsForActor :many
-SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at, source
 FROM memberships
 WHERE org_id = ? AND actor_type = ? AND actor_id = ?
 `
@@ -316,6 +320,7 @@ func (q *Queries) FindMembershipsForActor(ctx context.Context, arg FindMembershi
 			&i.ResourceID,
 			&i.RoleID,
 			&i.CreatedAt,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}

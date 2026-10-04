@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"net/http"
@@ -30,7 +29,9 @@ func APIKeyAuthMiddleware(d *sql.DB) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			// SCIM requests carry a SCIM token, which the SCIM handler
+			// authenticates itself (SPEC §7.8).
+			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") || isSCIMPath(r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -45,9 +46,10 @@ func APIKeyAuthMiddleware(d *sql.DB) func(http.Handler) http.Handler {
 			secretHex := token[8:]
 
 			q := sqlc.New(d)
+			// Revoked and expired keys are not found (SPEC §7.10).
 			key, err := q.FindAPIKeyByPrefix(r.Context(), prefix)
 			if err != nil {
-				http.Error(w, "invalid or revoked API key", http.StatusUnauthorized)
+				http.Error(w, "invalid, expired or revoked API key", http.StatusUnauthorized)
 				return
 			}
 
@@ -57,8 +59,7 @@ func APIKeyAuthMiddleware(d *sql.DB) func(http.Handler) http.Handler {
 				http.Error(w, "invalid API key format", http.StatusUnauthorized)
 				return
 			}
-			hash := sha256.Sum256(secret)
-			if hex.EncodeToString(hash[:]) != key.Hash {
+			if !action.APIKeyHashMatches(action.APIKeyHash(secret), key.Hash) {
 				http.Error(w, "invalid API key", http.StatusUnauthorized)
 				return
 			}
@@ -68,7 +69,7 @@ func APIKeyAuthMiddleware(d *sql.DB) func(http.Handler) http.Handler {
 				Type:        action.ActorAPIKey,
 				ID:          key.ID,
 				OwnerUserID: key.UserID,
-				IP:          extractIP(r),
+				IP:          ClientIP(r),
 			}
 
 			r = r.WithContext(context.WithValue(r.Context(), ctxKeyAPIKey{}, actor))
@@ -81,13 +82,8 @@ func APIKeyAuthMiddleware(d *sql.DB) func(http.Handler) http.Handler {
 	}
 }
 
-// extractIP extracts the client IP from the request.
-func extractIP(r *http.Request) string {
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		if idx := strings.Index(fwd, ","); idx > 0 {
-			return strings.TrimSpace(fwd[:idx])
-		}
-		return strings.TrimSpace(fwd)
-	}
-	return r.RemoteAddr
+// isSCIMPath reports whether path is under /scim/v2 (internal/auth/scim
+// serves it).
+func isSCIMPath(path string) bool {
+	return path == "/scim/v2" || strings.HasPrefix(path, "/scim/v2/")
 }

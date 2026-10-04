@@ -10,7 +10,9 @@ CREATE TABLE users (
     theme      TEXT NOT NULL DEFAULT 'system',
     timezone   TEXT NOT NULL DEFAULT 'UTC',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    deleted_at TEXT
+    deleted_at TEXT,
+    webauthn_handle BLOB, -- 0040
+    email_verified INTEGER NOT NULL DEFAULT 1 -- 0040
 );
 
 CREATE TABLE identities (
@@ -20,6 +22,8 @@ CREATE TABLE identities (
     subject   TEXT NOT NULL,
     email     TEXT NOT NULL DEFAULT '',
     token_enc BLOB,
+    last_login_at TEXT, -- 0033
+    created_at TEXT, -- 0035
     UNIQUE (provider, subject)
 );
 
@@ -32,11 +36,19 @@ CREATE TABLE sessions (
     ua           TEXT NOT NULL DEFAULT '',
     created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     last_seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    expires_at   TEXT NOT NULL
+    expires_at   TEXT NOT NULL,
+    -- 0033: session provenance (SPEC §7.3 step 6)
+    provider_id  TEXT NOT NULL DEFAULT '',
+    auth_method  TEXT NOT NULL DEFAULT '',
+    idp_sid      TEXT NOT NULL DEFAULT '',
+    idp_subject  TEXT NOT NULL DEFAULT '',
+    id_token_enc TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_sessions_user_id ON sessions (user_id);
 CREATE INDEX idx_sessions_expires_at ON sessions (expires_at);
+CREATE INDEX idx_sessions_provider_sid ON sessions (provider_id, idp_sid);
+CREATE INDEX idx_sessions_provider_subject ON sessions (provider_id, idp_subject);
 
 CREATE TABLE platform_settings (
     id             INTEGER PRIMARY KEY CHECK (id = 1),
@@ -157,6 +169,8 @@ CREATE TABLE memberships (
     resource_id TEXT NOT NULL DEFAULT '',
     role_id TEXT REFERENCES roles(id),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
+    source TEXT NOT NULL DEFAULT 'manual'
+        CHECK (source IN ('manual', 'invite', 'jit', 'idp', 'scim')), -- 0037
     UNIQUE(org_id, actor_id, actor_type, resource_type, resource_id)
 );
 -- Seed system roles (SPEC §6, copy-on-edit).
@@ -456,6 +470,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
     last_used_at TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
     revoked_at TEXT,
+    expires_at TEXT, -- 0041
     UNIQUE(org_id, name)
 );
 -- 0018: providers + provider_orgs (SPEC §10 — LLM provider management)
@@ -734,3 +749,148 @@ CREATE TABLE IF NOT EXISTS wiki_configs (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S.000Z', 'now'))
 );
+
+-- 0034: sign-in provider registry (WU-602)
+CREATE TABLE auth_providers (
+    id                   TEXT PRIMARY KEY,
+    org_id               TEXT REFERENCES orgs (id) ON DELETE CASCADE,
+    kind                 TEXT NOT NULL CHECK (kind IN ('oidc', 'github', 'saml')),
+    preset               TEXT NOT NULL DEFAULT 'generic',
+    display_name         TEXT NOT NULL DEFAULT '',
+    enabled              INTEGER NOT NULL DEFAULT 1,
+    managed_by           TEXT NOT NULL DEFAULT 'ui' CHECK (managed_by IN ('ui', 'env')),
+    issuer               TEXT NOT NULL DEFAULT '',
+    client_id            TEXT NOT NULL DEFAULT '',
+    client_secret_enc    TEXT NOT NULL DEFAULT '',
+    scopes               TEXT NOT NULL DEFAULT '',
+    claim_map_json       TEXT NOT NULL DEFAULT '{}',
+    trust_email          INTEGER NOT NULL DEFAULT 0,
+    allow_signup         INTEGER NOT NULL DEFAULT 0,
+    allowed_tenants_json TEXT NOT NULL DEFAULT '[]',
+    saml_metadata_url    TEXT NOT NULL DEFAULT '',
+    saml_metadata_xml    TEXT NOT NULL DEFAULT '',
+    sp_key_enc           TEXT NOT NULL DEFAULT '',
+    sp_cert              TEXT NOT NULL DEFAULT '',
+    position             INTEGER NOT NULL DEFAULT 0,
+    created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    idp_logout           INTEGER NOT NULL DEFAULT 1 -- 0038
+);
+
+CREATE INDEX idx_auth_providers_org ON auth_providers (org_id);
+
+-- 0036: organisation email domains and SSO settings (WU-606)
+CREATE TABLE org_domains (
+    id           TEXT PRIMARY KEY,
+    org_id       TEXT NOT NULL REFERENCES orgs (id) ON DELETE CASCADE,
+    domain       TEXT NOT NULL,
+    verify_token TEXT NOT NULL,
+    verified_at  TEXT,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (org_id, domain)
+);
+
+CREATE UNIQUE INDEX idx_org_domains_verified ON org_domains (domain) WHERE verified_at IS NOT NULL;
+
+CREATE TABLE org_sso_settings (
+    org_id              TEXT PRIMARY KEY REFERENCES orgs (id) ON DELETE CASCADE,
+    enforce_sso         INTEGER NOT NULL DEFAULT 0,
+    jit_enabled         INTEGER NOT NULL DEFAULT 0,
+    jit_default_role_id TEXT REFERENCES roles (id) ON DELETE SET NULL,
+    group_claim         TEXT NOT NULL DEFAULT '',
+    group_sync          INTEGER NOT NULL DEFAULT 0,
+    updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- 0037: IdP group -> role mappings (WU-608); memberships.source is above.
+CREATE TABLE idp_group_mappings (
+    id            TEXT PRIMARY KEY,
+    org_id        TEXT NOT NULL REFERENCES orgs (id) ON DELETE CASCADE,
+    provider_id   TEXT REFERENCES auth_providers (id) ON DELETE CASCADE,
+    group_value   TEXT NOT NULL,
+    role_id       TEXT NOT NULL REFERENCES roles (id) ON DELETE CASCADE,
+    resource_type TEXT NOT NULL CHECK (resource_type IN ('org', 'team', 'project')),
+    resource_id   TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE UNIQUE INDEX idx_idp_group_mappings_key
+    ON idp_group_mappings (org_id, COALESCE(provider_id, ''), group_value, resource_type, resource_id);
+
+-- 0039: SCIM 2.0 provisioning (WU-611)
+CREATE TABLE scim_tokens (
+    id           TEXT PRIMARY KEY,
+    org_id       TEXT NOT NULL REFERENCES orgs (id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    prefix       TEXT NOT NULL UNIQUE,
+    token_hash   TEXT NOT NULL,
+    created_by   TEXT NOT NULL DEFAULT '',
+    expires_at   TEXT,
+    last_used_at TEXT,
+    revoked_at   TEXT,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX idx_scim_tokens_org ON scim_tokens (org_id);
+
+CREATE TABLE scim_users (
+    id           TEXT PRIMARY KEY,
+    org_id       TEXT NOT NULL REFERENCES orgs (id) ON DELETE CASCADE,
+    user_id      TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    external_id  TEXT NOT NULL DEFAULT '',
+    user_name    TEXT NOT NULL,
+    email        TEXT NOT NULL DEFAULT '',
+    given_name   TEXT NOT NULL DEFAULT '',
+    family_name  TEXT NOT NULL DEFAULT '',
+    display_name TEXT NOT NULL DEFAULT '',
+    active       INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE UNIQUE INDEX idx_scim_users_user_name ON scim_users (org_id, lower(user_name));
+CREATE UNIQUE INDEX idx_scim_users_user ON scim_users (org_id, user_id);
+
+CREATE TABLE scim_groups (
+    id           TEXT PRIMARY KEY,
+    org_id       TEXT NOT NULL REFERENCES orgs (id) ON DELETE CASCADE,
+    external_id  TEXT NOT NULL DEFAULT '',
+    display_name TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX idx_scim_groups_org ON scim_groups (org_id);
+
+CREATE TABLE scim_group_members (
+    group_id TEXT NOT NULL REFERENCES scim_groups (id) ON DELETE CASCADE,
+    user_id  TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    org_id   TEXT NOT NULL REFERENCES orgs (id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, user_id)
+);
+
+CREATE INDEX idx_scim_group_members_user ON scim_group_members (org_id, user_id);
+
+-- 0040: passkeys (WU-612)
+CREATE UNIQUE INDEX idx_users_webauthn_handle ON users (webauthn_handle)
+    WHERE webauthn_handle IS NOT NULL;
+
+CREATE TABLE webauthn_credentials (
+    id                 TEXT PRIMARY KEY,
+    user_id            TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    credential_id      BLOB NOT NULL UNIQUE,
+    public_key         BLOB NOT NULL,
+    sign_count         INTEGER NOT NULL DEFAULT 0,
+    aaguid             BLOB NOT NULL DEFAULT x'',
+    transports_json    TEXT NOT NULL DEFAULT '[]',
+    attestation_type   TEXT NOT NULL DEFAULT '',
+    attestation_format TEXT NOT NULL DEFAULT '',
+    user_verified      INTEGER NOT NULL DEFAULT 0,
+    backup_eligible    INTEGER NOT NULL DEFAULT 0,
+    backup_state       INTEGER NOT NULL DEFAULT 0,
+    name               TEXT NOT NULL,
+    created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    last_used_at       TEXT
+);
+
+CREATE INDEX idx_webauthn_credentials_user ON webauthn_credentials (user_id);

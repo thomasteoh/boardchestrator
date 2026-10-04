@@ -167,7 +167,8 @@ func keyAllows(scope []string, def action.Definition) bool {
 func (s *Server) handleToolsList(scope []string, req jsonrpcRequest) jsonrpcResult {
 	tools := []map[string]any{}
 	for _, def := range action.All() {
-		if !keyAllows(scope, def) {
+		// Self-scope actions need a signed-in user; an API key cannot run them.
+		if def.Scope == action.ScopeSelf || !keyAllows(scope, def) {
 			continue
 		}
 		tools = append(tools, map[string]any{
@@ -193,7 +194,7 @@ func (s *Server) handleToolCall(ctx context.Context, actor action.Actor, scope [
 	if !ok {
 		return jsonrpcResult{JSONRPC: "2.0", ID: req.ID, Error: &jsonrpcError{Code: -32602, Message: "unknown tool"}}
 	}
-	if !keyAllows(scope, def) {
+	if def.Scope == action.ScopeSelf || !keyAllows(scope, def) {
 		return jsonrpcResult{JSONRPC: "2.0", ID: req.ID, Error: &jsonrpcError{Code: -32602, Message: "tool not authorized"}}
 	}
 	// Approval gate for API-key actors (SPEC §12): high-impact → pending.

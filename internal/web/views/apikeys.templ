@@ -1,70 +1,174 @@
 package views
 
+// APIKeysURL is the caller's own API keys page for orgID (escaped).
+func APIKeysURL(orgID string) string {
+	return "/app/org/" + orgID + "/apikeys"
+}
+
+// OrgAPIKeysURL is the org owner's "API keys in this organisation" page.
+func OrgAPIKeysURL(orgID string) string {
+	return "/app/org/" + orgID + "/settings/api-keys"
+}
+
+// APIKeyRow is one key (never the secret or its hash).
 type APIKeyRow struct {
 	ID        string
 	Name      string
 	Prefix    string
 	Scope     string
+	Owner     string
+	Status    string // active or expired
 	CreatedAt string
 	LastUsed  string
+	Expires   string
 }
 
-templ APIKeysPage(s Shell, orgID string, keys []APIKeyRow) {
+// APIKeysData is the caller's API keys page.
+type APIKeysData struct {
+	OrgID  string // escaped for URLs
+	Notice string
+	Error  string
+	Keys   []APIKeyRow
+	// NewKey is a key just created, shown this once ("" = none).
+	NewKey     string
+	NewKeyName string
+	// CanManageOrg links to the org-wide list (org.permissions).
+	CanManageOrg bool
+}
+
+templ apiKeyStatus(status string) {
+	if status == "expired" {
+		<span class="bc-badge bc-badge-muted">Expired</span>
+	} else {
+		<span class="bc-badge">Active</span>
+	}
+}
+
+templ apiKeyExpires(expires string) {
+	if expires == "" {
+		Never
+	} else {
+		{ expires }
+	}
+}
+
+templ apiKeyNotices(notice, errMsg string) {
+	if notice != "" {
+		<p class="bc-alert bc-alert-info" role="status">{ notice }</p>
+	}
+	if errMsg != "" {
+		<p class="bc-alert bc-alert-error" role="alert">{ errMsg }</p>
+	}
+}
+
+// APIKeysPage lists the caller's keys for an org, creates keys (showing the
+// secret once) and revokes them (WU-613).
+templ APIKeysPage(s Shell, d APIKeysData) {
 	@Base(s) {
 		<div class="bc-settings-page">
-			<h2>API Keys</h2>
-			<p class="bc-muted">Keys let you authenticate API requests with a Bearer token. The secret is shown once on creation.</p>
-
-			<button class="bc-btn bc-btn-primary" onclick="showApiKeyForm()">Create API Key</button>
-
-			<div id="apikey-form" class="bc-hidden" style="margin-top: 1rem;">
-				<form hx-post="/api/action/apikey.create" hx-headers={ hxHeaders(s.CSRF) } hx-target="#apikey-result" hx-swap="innerHTML">
-					<input type="hidden" name="org_id" value={orgID} />
-					<div class="bc-field-group">
-						<label>Name</label>
-						<input type="text" name="name" required placeholder="e.g. CI deploy key" class="bc-input" />
-					</div>
-					<div class="bc-field-group">
-						<label>Scope (optional)</label>
-						<input type="text" name="scope" placeholder="task.*, project.read" class="bc-input" />
-					</div>
-					<button type="submit" class="bc-btn bc-btn-primary">Create</button>
-					<button type="button" class="bc-btn" onclick="hideApiKeyForm()">Cancel</button>
-				</form>
-			</div>
-
-			<div id="apikey-result" class="bc-hint" style="margin-top: 1rem;"></div>
-
-			<h3 style="margin-top: 2rem;">Active Keys</h3>
-			<table class="bc-table">
+			<h2>API keys</h2>
+			<p class="bc-muted">Keys let you authenticate API and MCP requests with a Bearer token. A key acts with your access in this organisation. The secret is shown once, when you create it.</p>
+			@apiKeyNotices(d.Notice, d.Error)
+			if d.NewKey != "" {
+				<div class="bc-callout" role="status">
+					<p><strong>Copy the key for { d.NewKeyName } now.</strong> It won't be shown again.</p>
+					<p><code class="bc-copyable" id="apikey-new">{ d.NewKey }</code></p>
+					<button type="button" class="bc-btn bc-btn-sm" data-bc-copy="apikey-new">Copy key</button>
+				</div>
+			}
+			<h3>Create a key</h3>
+			<form method="post" action={ templ.SafeURL(APIKeysURL(d.OrgID)) } class="bc-form">
+				<input type="hidden" name="csrf_token" value={ s.CSRF }/>
+				<label>Name
+					<input type="text" name="name" required maxlength="100" placeholder="e.g. CI deploy key" class="bc-input"/>
+				</label>
+				<label>Scope (optional)
+					<input type="text" name="scope" placeholder="task.*, project.read" class="bc-input"/>
+				</label>
+				<label>Expires
+					<select name="expires_in_days" class="bc-input">
+						<option value="30">In 30 days</option>
+						<option value="90" selected>In 90 days</option>
+						<option value="365">In 1 year</option>
+						<option value="0">Never</option>
+					</select>
+				</label>
+				<button type="submit" class="bc-btn bc-btn-primary">Create key</button>
+			</form>
+			<h3>Your keys</h3>
+			<table class="bc-table" aria-label="Your API keys">
 				<thead>
-					<tr>
-						<th>Name</th>
-						<th>Prefix</th>
-						<th>Scope</th>
-						<th>Created</th>
-						<th>Last Used</th>
-						<th></th>
-					</tr>
+					<tr><th scope="col">Name</th><th scope="col">Key</th><th scope="col">Scope</th><th scope="col">Status</th><th scope="col">Created</th><th scope="col">Last used</th><th scope="col">Expires</th><th scope="col"><span class="bc-sr-only">Actions</span></th></tr>
 				</thead>
 				<tbody>
-					if len(keys) == 0 {
-						<tr><td colspan="6" class="bc-empty-state">No API keys yet.</td></tr>
+					if len(d.Keys) == 0 {
+						<tr><td colspan="8" class="bc-empty-state">No API keys yet.</td></tr>
 					}
-					for _, k := range keys {
+					for _, k := range d.Keys {
 						<tr>
-							<td>{k.Name}</td>
-							<td><code>{k.Prefix}...</code></td>
-							<td>{k.Scope}</td>
-							<td>{k.CreatedAt}</td>
-							<td>{k.LastUsed}</td>
+							<td>{ k.Name }</td>
+							<td><code>{ k.Prefix }…</code></td>
+							<td>{ k.Scope }</td>
+							<td>@apiKeyStatus(k.Status)</td>
+							<td>{ k.CreatedAt }</td>
+							<td>{ k.LastUsed }</td>
+							<td>@apiKeyExpires(k.Expires)</td>
 							<td>
-								<button class="bc-btn bc-btn-sm bc-btn-danger"
-									hx-post="/api/action/apikey.revoke"
-									hx-headers={ hxHeaders(s.CSRF) }
-									hx-vals={ `{"id":"` + k.ID + `","org_id":"` + orgID + `"}` }
-									hx-confirm="Revoke this key?"
-									>Revoke</button>
+								<form method="post" action={ templ.SafeURL(APIKeysURL(d.OrgID) + "/" + k.ID + "/revoke") }>
+									<input type="hidden" name="csrf_token" value={ s.CSRF }/>
+									<button type="submit" class="bc-btn bc-btn-sm bc-btn-danger">Revoke</button>
+								</form>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+			if d.CanManageOrg {
+				<p><a class="bc-link" href={ templ.SafeURL(OrgAPIKeysURL(d.OrgID)) }>All API keys in this organisation</a></p>
+			}
+		</div>
+	}
+}
+
+// OrgAPIKeysData is the org-wide API keys page.
+type OrgAPIKeysData struct {
+	OrgID  string // escaped for URLs
+	Notice string
+	Error  string
+	Keys   []APIKeyRow
+}
+
+// OrgAPIKeysPage lists every key bound to the org, with its owner, and lets
+// an org owner revoke any of them (WU-613).
+templ OrgAPIKeysPage(s Shell, d OrgAPIKeysData, breadcrumbs []Breadcrumb) {
+	@Base(s) {
+		@Breadcrumbs(breadcrumbs)
+		<div class="bc-settings-page">
+			<h2>API keys in this organisation</h2>
+			<p class="bc-muted">Every active key bound to this organisation. Revoke a key when someone leaves or a key may have leaked; it stops working at once. Secrets are never shown here.</p>
+			@apiKeyNotices(d.Notice, d.Error)
+			<table class="bc-table" aria-label="API keys in this organisation">
+				<thead>
+					<tr><th scope="col">Owner</th><th scope="col">Name</th><th scope="col">Key</th><th scope="col">Status</th><th scope="col">Created</th><th scope="col">Last used</th><th scope="col">Expires</th><th scope="col"><span class="bc-sr-only">Actions</span></th></tr>
+				</thead>
+				<tbody>
+					if len(d.Keys) == 0 {
+						<tr><td colspan="8" class="bc-empty-state">No API keys in this organisation.</td></tr>
+					}
+					for _, k := range d.Keys {
+						<tr>
+							<td>{ k.Owner }</td>
+							<td>{ k.Name }</td>
+							<td><code>{ k.Prefix }…</code></td>
+							<td>@apiKeyStatus(k.Status)</td>
+							<td>{ k.CreatedAt }</td>
+							<td>{ k.LastUsed }</td>
+							<td>@apiKeyExpires(k.Expires)</td>
+							<td>
+								<form method="post" action={ templ.SafeURL(OrgAPIKeysURL(d.OrgID) + "/" + k.ID + "/revoke") }>
+									<input type="hidden" name="csrf_token" value={ s.CSRF }/>
+									<button type="submit" class="bc-btn bc-btn-sm bc-btn-danger">Revoke</button>
+								</form>
 							</td>
 						</tr>
 					}

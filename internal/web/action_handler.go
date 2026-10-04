@@ -54,11 +54,5 @@ func (h *ActionHandler) HandleAction(w http.ResponseWriter, r *http.Request) {
 
 // actorFromRequest extracts the actor from the authenticated session.
 func actorFromRequest(r *http.Request) (action.Actor, error) {
-	// TODO: resolve from session middleware — for now, return a placeholder.
-	// This will be wired properly in a follow-up.
-	return action.Actor{
-		Type: action.ActorUser,
-		ID:   "placeholder",
-		IP:   r.RemoteAddr,
-	}, nil
+	return requestActor(r), nil
 }

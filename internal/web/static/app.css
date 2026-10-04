@@ -1471,3 +1471,104 @@ a {
 .bc-thread-run.bc-thread-finished { border-left: 3px solid var(--bc-success); }
 .bc-thread-run.bc-thread-failed { border-left: 3px solid var(--bc-danger); }
 .bc-thread-run.bc-thread-awaiting_approval { border-left: 3px solid var(--bc-warning); }
+
+/* ===== Sign-in page and identity-provider admin (WU-603) ===== */
+.bc-sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.bc-login {
+  display: flex; flex-direction: column; gap: var(--bc-space-4);
+  width: 100%; max-width: 24rem; margin: var(--bc-space-6) auto;
+}
+.bc-login-title { margin: 0; font-size: var(--bc-text-lg); font-weight: 600; text-align: center; }
+.bc-login-providers, .bc-preset-grid {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: var(--bc-space-2);
+}
+.bc-login-btn {
+  width: 100%; justify-content: flex-start; gap: var(--bc-space-3);
+  padding: var(--bc-space-3) var(--bc-space-4); font-size: var(--bc-text-base);
+  min-height: 2.75rem;
+}
+.bc-login-section { border-top: 1px solid var(--bc-border); padding-top: var(--bc-space-4); }
+.bc-idp-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.75rem; height: 1.75rem; padding: 0 var(--bc-space-1);
+  border-radius: var(--bc-radius-sm); font-size: 0.75rem; font-weight: 700;
+  background: var(--bc-accent-soft); color: var(--bc-accent);
+}
+.bc-idp-mark-google { background: #e8f0fe; color: #1a73e8; }
+.bc-idp-mark-microsoft { background: #e6f2fb; color: #0067b8; }
+.bc-idp-mark-github { background: #24292f; color: #ffffff; }
+.bc-idp-mark-gitlab { background: #fdeee7; color: #c6421a; }
+.bc-idp-mark-okta { background: #e8edf9; color: #00297a; }
+.bc-idp-mark-auth0 { background: #fbe9e5; color: #b8340f; }
+.bc-idp-mark-keycloak { background: #e5f2f7; color: #00658c; }
+.bc-idp-mark-zitadel { background: #efeafc; color: #5b3fc4; }
+.bc-idp-mark-authentik { background: #fdeae8; color: #b0282a; }
+.bc-idp-mark-passkey { background: #e7f5ee; color: #17663d; }
+/* Passkey controls (WU-612) stay hidden until passkey.js finds WebAuthn. */
+.bc-passkey { display: flex; flex-direction: column; gap: var(--bc-space-3); }
+.bc-passkey[hidden], .bc-passkey [hidden] { display: none; }
+.bc-passkey-signup { margin-top: var(--bc-space-2); }
+[data-theme="dark"] .bc-idp-mark:not(.bc-idp-mark-github) { background: var(--bc-accent-soft); color: var(--bc-text); }
+.bc-alert {
+  margin: 0; padding: var(--bc-space-3) var(--bc-space-4);
+  border: 1px solid var(--bc-border); border-left-width: 4px;
+  border-radius: var(--bc-radius-sm); background: var(--bc-surface);
+  font-size: var(--bc-text-sm);
+}
+.bc-alert p { margin: 0; }
+.bc-alert p + p { margin-top: var(--bc-space-1); }
+.bc-alert-info { border-left-color: var(--bc-accent); }
+.bc-alert-error { border-left-color: var(--bc-danger); }
+.bc-alert-warning { border-left-color: var(--bc-warning); }
+.bc-admin-nav { display: flex; flex-wrap: wrap; gap: var(--bc-space-2); }
+.bc-admin-nav-link {
+  padding: var(--bc-space-1) var(--bc-space-3); border-radius: 999px;
+  color: var(--bc-text-muted); text-decoration: none; font-size: var(--bc-text-sm);
+}
+.bc-admin-nav-link[aria-current="page"] { background: var(--bc-accent-soft); color: var(--bc-accent); }
+.bc-table-wrap { overflow-x: auto; }
+.bc-badge-muted { background: var(--bc-surface-hover); color: var(--bc-text-muted); }
+.bc-row-actions { display: flex; flex-wrap: wrap; gap: var(--bc-space-1); }
+.bc-inline-form { display: inline; }
+.bc-callout {
+  padding: var(--bc-space-3) var(--bc-space-4); border-radius: var(--bc-radius-sm);
+  background: var(--bc-accent-soft);
+}
+.bc-callout p { margin: 0 0 var(--bc-space-1); }
+.bc-copyable { user-select: all; word-break: break-all; font-family: var(--bc-font-mono); }
+.bc-form-wide { max-width: 40rem; }
+.bc-fieldset {
+  display: flex; flex-direction: column; gap: var(--bc-space-3);
+  border: 1px solid var(--bc-border); border-radius: var(--bc-radius-sm);
+  padding: var(--bc-space-3) var(--bc-space-4); margin: 0;
+}
+.bc-fieldset legend { font-weight: 600; padding: 0 var(--bc-space-1); }
+.bc-form label.bc-check { flex-direction: row; align-items: center; gap: var(--bc-space-2); font-weight: 400; }
+.bc-form-actions { display: flex; gap: var(--bc-space-2); }
+.bc-dl { display: grid; grid-template-columns: 1fr; gap: var(--bc-space-1); margin: var(--bc-space-2) 0 0; }
+.bc-dl dt { font-weight: 600; }
+.bc-dl dd { margin: 0 0 var(--bc-space-2); word-break: break-all; }
+@media (min-width: 640px) {
+  .bc-preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bc-dl { grid-template-columns: max-content 1fr; column-gap: var(--bc-space-4); }
+  .bc-dl dd { margin: 0; }
+}
+
+/* Settings -> Sign-in methods (WU-604) */
+.bc-signin-methods { list-style: none; margin: 0 0 var(--bc-space-4); padding: 0; }
+.bc-signin-method {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--bc-space-2);
+  padding: var(--bc-space-2) 0; border-bottom: 1px solid var(--bc-border);
+}
+.bc-signin-method-name { font-weight: 600; }
+.bc-signin-method .bc-inline-form { margin-left: auto; }
+
+/* Org settings -> Single sign-on, /login SSO box (WU-606) */
+.bc-login-subtitle { margin: 0 0 var(--bc-space-2); font-size: var(--bc-text-base); font-weight: 600; }
+.bc-sso-domain { display: flex; flex-direction: column; gap: var(--bc-space-2); padding-bottom: var(--bc-space-2); }
+.bc-sso-domain .bc-signin-method { border-bottom: 0; }
+.bc-sso-domain-actions { margin-left: auto; }

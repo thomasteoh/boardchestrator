@@ -27,6 +27,8 @@ import (
 	"github.com/thomasteoh/boardchestrator/internal/action"
 	"github.com/thomasteoh/boardchestrator/internal/agentrt"
 	"github.com/thomasteoh/boardchestrator/internal/auth"
+	"github.com/thomasteoh/boardchestrator/internal/auth/idp"
+	"github.com/thomasteoh/boardchestrator/internal/auth/scim"
 	"github.com/thomasteoh/boardchestrator/internal/config"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
 	"github.com/thomasteoh/boardchestrator/internal/event"
@@ -119,6 +121,10 @@ type Server struct {
 	// comments, and columns from the DB (source of truth for mention/column
 	// detection). Set in Start once the DB is wired.
 	trigq *sqlc.Queries
+	// idp is the sign-in provider registry (WU-602); idpUnwatch stops its
+	// idp.* invalidation subscriber.
+	idp        *idp.Registry
+	idpUnwatch func()
 }
 
 // New creates a configured server with routes and middleware, with no
@@ -142,7 +148,8 @@ func NewWithDB(cfg *config.Config, d *sql.DB) *Server {
 		// user's org memberships from the DB so an event is delivered only to
 		// members of its org.
 		s.hub = sse.New(s.bus, sse.SessionUserResolver,
-			sse.WithMembershipResolver(s.membershipResolver()))
+			sse.WithMembershipResolver(s.membershipResolver()),
+			sse.WithOrgFilter(s.sseSSOFilter()))
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -163,6 +170,10 @@ func (s *Server) setupMiddleware() {
 	// Security headers + per-request CSP nonce run for every request, even
 	// before a DB is wired, so the app shell always renders under a strict CSP.
 	s.mux.Use(auth.CSP())
+	// Client IP (BC_TRUSTED_PROXIES) for rate limits and audit rows, then the
+	// per-IP sign-in rate limit (SPEC §7.11), ahead of any DB work.
+	s.mux.Use(auth.ClientIPMiddleware(auth.TrustedProxies(s.cfg.TrustedProxies)))
+	s.mux.Use(s.signInRateLimit())
 	// API key auth middleware — resolves Bearer tokens into API key actors
 	// before session middleware. When a valid API key is present, it takes
 	// priority over session auth for API routes.
@@ -175,6 +186,9 @@ func (s *Server) setupMiddleware() {
 		sc := auth.SessionConfig{Store: s.sessions, Secret: s.cfg.SessionSecret}
 		s.mux.Use(sc.Session())
 		s.mux.Use(sc.CSRF())
+		// Org SSO enforcement for org-scoped pages that read data directly
+		// (SPEC §7.4; dispatch enforces it for actions).
+		s.mux.Use(web.OrgSSOGate)
 	}
 }
 
@@ -183,6 +197,9 @@ func (s *Server) setupRoutes() {
 	auth.ForbiddenHandler = func(w http.ResponseWriter, r *http.Request, title, message string) {
 		web.RenderErrorPage(w, r, 403, title, message)
 	}
+	auth.LoginFailedHandler = web.RenderLoginFailedPage
+	auth.SetupPageHandler = web.RenderSetupPage
+	auth.NotFoundHandler = s.handleNotFound
 	// Custom error pages for 404, 405, 500.
 	s.mux.NotFound(s.handleNotFound)
 	s.mux.MethodNotAllowed(s.handleMethodNotAllowed)
@@ -194,27 +211,89 @@ func (s *Server) setupRoutes() {
 	}
 	web.Routes(s.mux)
 	if s.db != nil {
-		ah := auth.NewOAuthHandler(auth.OIDCConfig{
-			ClientID:     s.cfg.GoogleClientID,
-			ClientSecret: s.cfg.GoogleClientSecret,
-			BaseURL:      s.cfg.BaseURL,
-		}, auth.GitHubConfig{
-			ClientID:     s.cfg.GitHubClientID,
-			ClientSecret: s.cfg.GitHubClientSecret,
-			BaseURL:      s.cfg.BaseURL,
-		}, s.sessions, s.db, auth.SessionConfig{
-			Store:    s.sessions,
-			Secret:   s.cfg.SessionSecret,
-			Insecure: true,
-		})
-		ah.SecretKey = tenant.PadKey(s.cfg.SecretKey)
-		ah.SetBootstrapConfig(s.cfg.AdminEmails, s.cfg.BootstrapToken)
-		s.mux.Get("/auth/google", ah.HandleGoogleLogin)
-		s.mux.Get("/auth/google/callback", ah.HandleGoogleCallback)
-		s.mux.Get("/auth/github", ah.HandleGitHubLogin)
-		s.mux.Get("/auth/github/callback", ah.HandleGitHubCallback)
+		s.setupAuthRoutes()
+		// SCIM 2.0 provisioning (SPEC §7.8): bearer SCIM tokens, no session,
+		// CSRF-exempt (auth.SCIMPattern), its own per-token rate limit.
+		scim.New(scim.Options{
+			DB: s.db, BaseURL: s.cfg.BaseURL, Events: s.EventSink(),
+			PerMinute: s.cfg.SCIMRateLimit.PerMinute, Burst: s.cfg.SCIMRateLimit.Burst,
+		}).Mount(s.mux)
 	}
 }
+
+// setupAuthRoutes seeds the env-configured sign-in providers into
+// auth_providers and mounts the login routes (SPEC §7.2) over the provider
+// registry. Session cookies set here use the same always-Secure attributes as
+// the session middleware.
+func (s *Server) setupAuthRoutes() {
+	ctx := context.Background()
+	encKey := tenant.PadKey(s.cfg.SecretKey)
+	if err := idp.SeedFromConfig(ctx, s.db, encKey, s.cfg); err != nil {
+		// Individual bad providers are reported and skipped; the rest work.
+		slog.Error("auth: seeding sign-in providers from the environment", "err", err)
+	}
+	reg := idp.New(idp.Options{
+		DB:            s.db,
+		EncKey:        encKey,
+		BaseURL:       s.cfg.BaseURL,
+		GitHubAPIBase: s.cfg.GitHubAPIBase,
+		// Org-owned providers dial public addresses only unless
+		// BC_ORG_IDP_ALLOW_PRIVATE (Q11).
+		OrgAllowPrivate: s.cfg.OrgIdPAllowPrivate,
+	})
+	idp.SetOrgAllowPrivate(s.cfg.OrgIdPAllowPrivate)
+	s.idpUnwatch = reg.Watch(s.bus)
+	s.idp = reg
+	web.SetIdentity(s.cfg.BaseURL, reg)
+	if ps, err := reg.Providers(ctx); err != nil {
+		slog.Error("auth: listing sign-in providers", "err", err)
+	} else if len(ps) == 0 {
+		slog.Warn("auth: no sign-in provider is configured, so nobody can sign in; " +
+			"set BC_GOOGLE_CLIENT_ID/SECRET, BC_GITHUB_CLIENT_ID/SECRET or BC_OIDC_<NAME>_*")
+	}
+	ah, err := auth.NewHandler(auth.HandlerConfig{
+		DB:             s.db,
+		Sessions:       s.sessions,
+		SecretKey:      s.cfg.SecretKey,
+		EncKey:         encKey,
+		BaseURL:        s.cfg.BaseURL,
+		AdminEmails:    s.cfg.AdminEmails,
+		BootstrapToken: s.cfg.BootstrapToken,
+		Providers:      reg,
+		RequestID:      RequestID,
+		Events:         s.EventSink(),
+	})
+	if err != nil {
+		// Only an empty BC_SECRET_KEY fails here, which config.Load rejects;
+		// without a sealer no login can be safe, so mount no login routes.
+		slog.Error("auth: login routes disabled", "err", err)
+		return
+	}
+	ah.Routes(s.mux)
+	web.SetPasskeys(ah.PasskeysAvailable(), ah.PasskeysOn)
+	s.announceBootstrap(ctx, ah.Resolver.Bootstrap)
+}
+
+// announceBootstrap logs how to claim an unclaimed platform (SPEC §7.3 step
+// 5). The claim URL carries the bootstrap token: the log is where the
+// operator gets it (PRD §4), and it is useless once the platform is claimed.
+func (s *Server) announceBootstrap(ctx context.Context, b *auth.Bootstrap) {
+	claimURL, err := b.Prepare(ctx, s.cfg.BaseURL)
+	switch {
+	case err != nil:
+		slog.Error("auth: preparing the bootstrap token", "err", err)
+	case claimURL != "":
+		slog.Warn("auth: this instance is unclaimed; open the claim URL and sign in to become its platform owner",
+			"claim_url", claimURL)
+	default:
+		if ps, err := sqlc.New(s.db).GetPlatformSettings(ctx); err == nil && ps.BootstrapDone == 0 {
+			slog.Warn("auth: this instance is unclaimed; the first sign-in by an address in BC_ADMIN_EMAILS claims it")
+		}
+	}
+}
+
+// IdP returns the sign-in provider registry (nil without a database).
+func (s *Server) IdP() *idp.Registry { return s.idp }
 
 // Bus returns the server's event bus. The action Dispatcher wires its
 // EventSink to it via event.NewSink(srv.Bus()); other subscribers (SSE hub —
@@ -617,6 +696,12 @@ func (s *Server) Start(ctx context.Context) error {
 		action.SetWikiStore(wstore)
 		web.SetWikiStore(wstore)
 
+		// Expired sessions are refused at lookup; the sweep deletes the rows
+		// (SPEC §7.10, WU-613).
+		if s.sessions != nil {
+			go s.sessionSweepLoop(ctx, sessionSweepInterval)
+		}
+
 		// Start the search indexer — subscribes to the event bus.
 		ix := search.NewIndexer(s.db)
 		sub, _ := s.bus.Subscribe(event.Filter{
@@ -705,6 +790,10 @@ func (s *Server) Shutdown() {
 	// Stop the outbound webhook subscriber (WU-404).
 	if s.webhookUnsub != nil {
 		s.webhookUnsub()
+	}
+	// Stop the provider registry's invalidation subscriber (WU-602).
+	if s.idpUnwatch != nil {
+		s.idpUnwatch()
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -959,6 +1048,51 @@ func (s *Server) membershipResolver() sse.MembershipResolver {
 			return nil
 		}
 		return orgs
+	}
+}
+
+// sessionSweepInterval is how often expired sessions are purged.
+const sessionSweepInterval = time.Hour
+
+// sessionSweepLoop purges expired sessions now and then every interval
+// until ctx ends.
+func (s *Server) sessionSweepLoop(ctx context.Context, interval time.Duration) {
+	sweep := func() {
+		if err := s.sessions.PurgeExpired(ctx); err != nil && ctx.Err() == nil {
+			slog.Warn("session sweep", "error", err)
+		}
+	}
+	sweep()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
+}
+
+// sseSSOFilter drops, from a session's event stream, every organisation
+// that requires single sign-on the session was not signed in for (WU-613,
+// SPEC §7.4): the same check (action.CheckOrgSSO) that gates the org's
+// pages. A lookup error drops the org too.
+func (s *Server) sseSSOFilter() sse.OrgFilter {
+	return func(r *http.Request, orgIDs []string) []string {
+		sess, ok := auth.SessionFrom(r.Context())
+		if !ok || s.db == nil {
+			return nil
+		}
+		q := sqlc.New(s.db)
+		out := make([]string, 0, len(orgIDs))
+		for _, org := range orgIDs {
+			if action.CheckOrgSSO(r.Context(), q, org, sess.UserID, sess.ProviderID) == nil {
+				out = append(out, org)
+			}
+		}
+		return out
 	}
 }
 

@@ -25,7 +25,7 @@ BC_SECRET_KEY="$(openssl rand -hex 32)" \
 ./bc serve
 ```
 
-Open `http://localhost:8080` and sign in with Google. See [Getting started](/website/content/getting-started.md) and [Deployment](/website/content/deployment.md) for the full guide.
+Open the claim URL the server logs at startup (`http://localhost:8080/setup?token=…`) and sign in with Google to become the platform owner. See [Getting started](/website/content/getting-started.md) and [Deployment](/website/content/deployment.md) for the full guide.
 
 ## Documentation
 
@@ -33,6 +33,7 @@ Full docs live in the [public website](/website/content/):
 
 - [Getting started](/website/content/getting-started.md)
 - [Deployment](/website/content/deployment.md) — Docker, environment reference, operations
+- [Sign-in and identity](/website/content/sign-in.md) — identity providers, organisation SSO, SCIM, passkeys
 - [Concepts](/website/content/concepts.md) — boards, agents, wiki, MCP
 
 Project-internal docs: [PRD.md](PRD.md), [SPEC.md](SPEC.md), [DEPLOY.md](DEPLOY.md), [BACKLOG.md](BACKLOG.md), [PROCESS-WORKFLOW.md](PROCESS-WORKFLOW.md), [PROCESS-RETRO.md](PROCESS-RETRO.md).

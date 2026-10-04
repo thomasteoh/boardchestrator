@@ -26,12 +26,12 @@ func NewChecker(d *sql.DB) *Checker {
 // roles with org_id NULL act as platform defaults). Platform-scope actions
 // (org.create, pricing, providers, ...) are granted via memberships in this
 // org; the membership walk falls back to it when orgID == "".
-const PlatformOrg = "00000000000000000000000000000000"
+const PlatformOrg = action.PlatformOrgID
 
 // PlatformOwnerRole is the sentinel Org Owner role seeded on the platform org
 // (migrations/0005_roles.up.sql, grants ["*"]). Platform admins hold this role
 // via their sentinel-org membership.
-const PlatformOwnerRole = "00000000000000000000000000000000"
+const PlatformOwnerRole = action.PlatformOwnerRoleID
 
 // Allow resolves whether actor has the required permission.
 func (c *Checker) Allow(ctx context.Context, actorID string, orgID, teamID, projectID string, requiredPermission string) (bool, error) {
@@ -258,6 +258,20 @@ func (a *CheckerAdapter) Allow(ctx context.Context, ac action.ActionCtx, def act
 	// bypass grant checks — they run configured transitions only.
 	if ac.Actor.Type == action.ActorService {
 		return true, nil
+	}
+	switch def.Scope {
+	case action.ScopeSelf:
+		// No grant needed: the action only touches the caller's own rows, and
+		// Dispatch has already required a user actor with no tenant id.
+		return ac.Actor.Type == action.ActorUser, nil
+	case action.ScopePlatform:
+		// Always evaluated against the platform org, never a caller-supplied
+		// org/team/project (Q10). Agents are org principals and never hold
+		// platform grants.
+		if ac.Actor.Type == action.ActorAgent {
+			return false, nil
+		}
+		return a.inner.Allow(ctx, ac.Actor.ID, "", "", "", def.Permission)
 	}
 	// Agent actors resolve via role-grants ∩ attached-skills intersection
 	// (SPEC §6); user/apikey actors via the standard membership walk.

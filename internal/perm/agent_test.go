@@ -33,7 +33,7 @@ func TestAllowAgentIntersection(t *testing.T) {
 	// Agent membership in the org, carrying the role.
 	if _, err := q.CreateMembership(ctx, sqlc.CreateMembershipParams{
 		ID: "m-1", OrgID: orgID, ActorID: "agent-1", ActorType: "agent",
-		ResourceType: "org", ResourceID: orgID, RoleID: sql.NullString{String: roleID, Valid: true},
+		ResourceType: "org", ResourceID: orgID, RoleID: sql.NullString{String: roleID, Valid: true}, Source: "manual",
 	}); err != nil {
 		t.Fatalf("membership: %v", err)
 	}

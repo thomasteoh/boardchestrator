@@ -75,7 +75,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID string) error {
 }
 
 const listOrgMemberships = `-- name: ListOrgMemberships :many
-SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at
+SELECT id, org_id, actor_id, actor_type, resource_type, resource_id, role_id, created_at, source
 FROM memberships
 WHERE org_id = ?
 `
@@ -98,6 +98,7 @@ func (q *Queries) ListOrgMemberships(ctx context.Context, orgID string) ([]Membe
 			&i.ResourceID,
 			&i.RoleID,
 			&i.CreatedAt,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -537,15 +538,25 @@ FROM sessions
 WHERE user_id = ?
 `
 
-func (q *Queries) ListUserSessions(ctx context.Context, userID string) ([]Session, error) {
+type ListUserSessionsRow struct {
+	TokenHash  string
+	UserID     string
+	Ip         string
+	Ua         string
+	CreatedAt  string
+	LastSeenAt string
+	ExpiresAt  string
+}
+
+func (q *Queries) ListUserSessions(ctx context.Context, userID string) ([]ListUserSessionsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listUserSessions, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Session
+	var items []ListUserSessionsRow
 	for rows.Next() {
-		var i Session
+		var i ListUserSessionsRow
 		if err := rows.Scan(
 			&i.TokenHash,
 			&i.UserID,

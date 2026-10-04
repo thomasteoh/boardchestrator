@@ -36,6 +36,20 @@ linters:
         linters:
           - gosec
         text: "(G124|G703|G122):"
+      # Fake identity providers in tests must redirect to the RP's
+      # redirect_uri taken from the request (that is the protocol) — G710.
+      - path: _test\.go
+        linters:
+          - gosec
+        text: "G710:"
+      # internal/auth/oidctest is a test-only package (never imported by
+      # non-test code): an in-process fake IdP whose /authorize and
+      # /end_session redirect to request-supplied URIs (G710), and a test
+      # browser replaying cookies onto requests (G124).
+      - path: internal/auth/oidctest/
+        linters:
+          - gosec
+        text: "(G124|G710):"
       # Preallocation is noise in table-test setup.
       - path: _test\.go
         linters:

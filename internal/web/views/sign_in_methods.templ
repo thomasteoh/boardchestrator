@@ -1,0 +1,107 @@
+package views
+
+// SignInMethodsURL is Settings → Sign-in methods (mirrors auth.SignInMethodsURL).
+const SignInMethodsURL = "/settings/sign-in-methods"
+
+// SignInMethod is one linked identity on the Sign-in methods page.
+type SignInMethod struct {
+	ID       string
+	Provider string
+	Name     string
+	Preset   string
+	Email    string
+	// LastUsed and Linked are display dates ("" = unknown).
+	LastUsed string
+	Linked   string
+}
+
+// LinkableProvider is an enabled platform provider the user has not linked.
+type LinkableProvider struct {
+	ID     string
+	Name   string
+	Preset string
+}
+
+// SignInMethodsData is everything the Sign-in methods page shows.
+type SignInMethodsData struct {
+	Methods   []SignInMethod
+	Available []LinkableProvider
+	// CanUnlink is false when only one sign-in method is left.
+	CanUnlink bool
+	Notice    string
+	Error     string
+	// Passkeys is the passkey list and "Add a passkey" control (WU-612).
+	// nil renders nothing.
+	Passkeys templ.Component
+}
+
+// SignInMethodsPage is GET /settings/sign-in-methods (WU-604).
+templ SignInMethodsPage(s Shell, d SignInMethodsData) {
+	@Base(s) {
+		<div class="bc-settings-page">
+			<p><a class="bc-link" href="/app/settings">User settings</a></p>
+			<h1>Sign-in methods</h1>
+			<p class="bc-muted">These are the ways you can sign in to this account. Link another so you can still get in if one stops working.</p>
+			if d.Notice != "" {
+				<p class="bc-alert bc-alert-info" role="status">{ d.Notice }</p>
+			}
+			if d.Error != "" {
+				<p class="bc-alert bc-alert-error" role="alert">{ d.Error }</p>
+			}
+			<h2>Linked</h2>
+			if len(d.Methods) == 0 {
+				<p class="bc-muted">No identity providers are linked.</p>
+			} else {
+				<ul class="bc-signin-methods" aria-label="Linked sign-in methods">
+					for _, m := range d.Methods {
+						<li class="bc-signin-method">
+							@providerMark(m.Preset, m.Name)
+							<span class="bc-signin-method-name">{ m.Name }</span>
+							if m.Email != "" {
+								<span class="bc-muted">{ m.Email }</span>
+							}
+							if m.Linked != "" {
+								<span class="bc-hint">Linked { m.Linked }</span>
+							}
+							if m.LastUsed != "" {
+								<span class="bc-hint">Last used { m.LastUsed }</span>
+							}
+							<form method="post" action={ templ.SafeURL(SignInMethodsURL + "/unlink/" + m.ID) } class="bc-inline-form" hx-boost="false">
+								<input type="hidden" name="csrf_token" value={ s.CSRF }/>
+								if d.CanUnlink {
+									<button type="submit" class="bc-btn bc-btn-sm bc-btn-danger">Unlink</button>
+								} else {
+									<button type="submit" class="bc-btn bc-btn-sm bc-btn-danger" disabled title="You can't remove your only sign-in method. Link another first.">Unlink</button>
+								}
+							</form>
+						</li>
+					}
+				</ul>
+				if !d.CanUnlink {
+					<p class="bc-hint">You can't remove your only sign-in method. Link another first.</p>
+				}
+			}
+			// Slot: passkeys (WU-612).
+			if d.Passkeys != nil {
+				<h2>Passkeys</h2>
+				@d.Passkeys
+			}
+			if len(d.Available) > 0 {
+				<h2>Link another</h2>
+				<ul class="bc-login-providers" aria-label="Sign-in methods you can link">
+					for _, p := range d.Available {
+						<li>
+							<form method="post" action={ templ.SafeURL(SignInMethodsURL + "/link/" + p.ID) } hx-boost="false">
+								<input type="hidden" name="csrf_token" value={ s.CSRF }/>
+								<button type="submit" class="bc-btn bc-login-btn">
+									@providerMark(p.Preset, p.Name)
+									<span>Link { p.Name }</span>
+								</button>
+							</form>
+						</li>
+					}
+				</ul>
+			}
+		</div>
+	}
+}

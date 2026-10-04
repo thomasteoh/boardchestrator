@@ -260,6 +260,7 @@ func TestDispatchImpactHighEmitsAudit(t *testing.T) {
 	t.Cleanup(reset)
 	Register(Definition{
 		Name:   "high.x",
+		Scope:  ScopeOrg,
 		Impact: ImpactHigh,
 		Handle: func(context.Context, ActionCtx, json.RawMessage) (any, error) {
 			return resultWithID{ID: "subj-1"}, nil
@@ -267,6 +268,7 @@ func TestDispatchImpactHighEmitsAudit(t *testing.T) {
 	})
 	Register(Definition{
 		Name:   "low.x",
+		Scope:  ScopeOrg,
 		Impact: ImpactLow,
 		Handle: nopHandle,
 	})
@@ -293,7 +295,7 @@ func TestDispatchImpactHighEmitsAudit(t *testing.T) {
 func TestDispatchAgentActionAlwaysAudited(t *testing.T) {
 	reset()
 	t.Cleanup(reset)
-	Register(Definition{Name: "agentlow.x", Impact: ImpactLow, Handle: nopHandle})
+	Register(Definition{Name: "agentlow.x", Scope: ScopeOrg, Impact: ImpactLow, Handle: nopHandle})
 	audit := &recordingAudit{}
 	d := New(dbtest.New(t), WithAuditSink(audit))
 	// Low-impact but by an agent → audited.
@@ -309,7 +311,7 @@ func TestDispatchAgentActionAlwaysAudited(t *testing.T) {
 func TestDefaultAuditSinkWritesRow(t *testing.T) {
 	reset()
 	t.Cleanup(reset)
-	Register(Definition{Name: "dbaudit.x", Impact: ImpactHigh, Handle: nopHandle})
+	Register(Definition{Name: "dbaudit.x", Scope: ScopeOrg, Impact: ImpactHigh, Handle: nopHandle})
 	sqldb := dbtest.New(t)
 	d := New(sqldb)
 	if _, err := d.Dispatch(context.Background(), userActor(), "dbaudit.x", nil, Opts{Org: "org-9"}); err != nil {
@@ -331,6 +333,7 @@ func TestDispatchEmitsEventWithActor(t *testing.T) {
 	t.Cleanup(reset)
 	Register(Definition{
 		Name:   "ev.x",
+		Scope:  ScopeOrg,
 		Impact: ImpactLow,
 		Handle: func(context.Context, ActionCtx, json.RawMessage) (any, error) {
 			return resultWithID{ID: "ev-subj"}, nil
@@ -353,6 +356,34 @@ func TestDispatchEmitsEventWithActor(t *testing.T) {
 	}
 	if !strings.Contains(string(ev.Payload), "ev-subj") {
 		t.Fatalf("event payload = %s", ev.Payload)
+	}
+}
+
+func TestPrivateResultOmittedFromEvent(t *testing.T) {
+	reset()
+	t.Cleanup(reset)
+	Register(Definition{
+		Name:          "evpriv.x",
+		Impact:        ImpactRead,
+		PrivateResult: true,
+		Handle: func(context.Context, ActionCtx, json.RawMessage) (any, error) {
+			return map[string]string{"id": "subj", "detail": "admin-only"}, nil
+		},
+	})
+	sink := &recordingEvents{}
+	d := New(dbtest.New(t), WithEventSink(sink))
+	out, err := d.Dispatch(context.Background(), userActor(), "evpriv.x", nil, Opts{})
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if !strings.Contains(mustJSON(t, out), "admin-only") {
+		t.Fatalf("result lost its detail: %s", mustJSON(t, out))
+	}
+	if len(sink.events) != 1 {
+		t.Fatalf("events = %d, want 1", len(sink.events))
+	}
+	if ev := sink.events[0]; ev.Subject != "subj" || len(ev.Payload) != 0 {
+		t.Fatalf("event = %+v, want subject only", ev)
 	}
 }
 
@@ -511,7 +542,7 @@ func TestHandlerSuccessCommitsTx(t *testing.T) {
 func TestClockInjectable(t *testing.T) {
 	reset()
 	t.Cleanup(reset)
-	Register(Definition{Name: "clock.x", Impact: ImpactHigh, Handle: nopHandle})
+	Register(Definition{Name: "clock.x", Scope: ScopeOrg, Impact: ImpactHigh, Handle: nopHandle})
 	fixed := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	sqldb := dbtest.New(t)
 	d := New(sqldb, WithClock(func() time.Time { return fixed }))

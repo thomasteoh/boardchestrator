@@ -66,9 +66,8 @@ func TestApikeyCreateAndRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apikey.create failed: %v", err)
 	}
-	m := result.(map[string]any)
-	id, _ := m["id"].(string)
-	secret, _ := m["secret"].(string)
+	created := result.(APIKeyCreated)
+	id, secret := created.ID, created.Secret
 	if id == "" || secret == "" {
 		t.Fatal("expected non-empty id and secret")
 	}
@@ -181,8 +180,7 @@ func TestApikeyCreatePrefixFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create failed: %v", err)
 	}
-	m := result.(map[string]any)
-	secret := m["secret"].(string)
+	secret := result.(APIKeyCreated).Secret
 	if len(secret) < 8 {
 		t.Fatal("secret too short")
 	}

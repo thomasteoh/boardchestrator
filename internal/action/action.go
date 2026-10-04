@@ -60,7 +60,9 @@ func (i Impact) String() string {
 type ScopeKind int
 
 const (
-	// ScopePlatform is a platform-level action with no tenant id.
+	// ScopePlatform is a platform-administration action. It takes no tenant
+	// id (Dispatch refuses one) and its permission is always checked against
+	// the platform org's grants, never a caller-supplied org (Q10).
 	ScopePlatform ScopeKind = iota
 	// ScopeOrg requires an org id.
 	ScopeOrg
@@ -68,6 +70,11 @@ const (
 	ScopeTeam
 	// ScopeProject requires org + project ids.
 	ScopeProject
+	// ScopeSelf is a per-user action on the caller's own rows (theme,
+	// notifications, sessions, ...). It needs no grant, takes no tenant id,
+	// and only a user actor may dispatch it; the handler must scope every
+	// read and write to ac.Actor.ID (use SelfUserID for a user_id input).
+	ScopeSelf
 )
 
 // String renders a ScopeKind.
@@ -81,6 +88,8 @@ func (s ScopeKind) String() string {
 		return "team"
 	case ScopeProject:
 		return "project"
+	case ScopeSelf:
+		return "self"
 	default:
 		return fmt.Sprintf("scope(%d)", int(s))
 	}
@@ -121,6 +130,14 @@ type Actor struct {
 	ID          string
 	OwnerUserID string // set when Type == ActorAPIKey; the owning user
 	IP          string // client IP, recorded in audit rows
+	// AuthProviderID is the sign-in provider of the web session a user actor
+	// acts through (sessions.provider_id; "" for none). Org SSO enforcement
+	// (SPEC §7.4) checks it against the org's own providers.
+	AuthProviderID string
+	// SessionID is the opaque id (SessionPublicID) of the web session a
+	// user actor acts through; "" for none. session.list marks it current
+	// and session.revoke_all can keep it (WU-613).
+	SessionID string
 }
 
 // ref returns a stable string identifying the actor for idempotency and audit
@@ -168,6 +185,19 @@ type Definition struct {
 	Output     Schema    // documentation/derivation only; not enforced here
 	Handle     HandlerFunc
 	Preview    HandlerFunc // optional; nil ⇒ dry-run echoes validated input
+	// PrivateResult keeps the result out of the emitted event: the event
+	// carries name, actor and subject only. Platform-scope events (Org "")
+	// reach every signed-in SSE client, so admin-only reads set this.
+	PrivateResult bool
+}
+
+// SecretResult is a handler result that carries a secret shown to the
+// caller exactly once (a freshly minted token). Dispatch returns the full
+// result to the caller but stores, emits and audits only Redacted(): the
+// secret never reaches idempotency_keys, the event bus (SSE, webhooks) or
+// audit_log. An idempotent replay therefore returns the redacted form.
+type SecretResult interface {
+	Redacted() any
 }
 
 var (

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -127,6 +128,9 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownAction, name)
 	}
+	if err := checkScopeShape(def, actor, opts); err != nil {
+		return nil, err
+	}
 
 	ac := ActionCtx{
 		Actor:     actor,
@@ -149,6 +153,10 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 	// 4. Resolve + verify scope (ids exist / actor is member). No-op default;
 	// WU-104 enforces existence and membership.
 	if err := d.scope.Resolve(ctx, ac, def); err != nil {
+		var sso ErrSSORequired
+		if errors.As(err, &sso) {
+			return nil, sso
+		}
 		return nil, fmt.Errorf("%w: %v", ErrScope, err)
 	}
 
@@ -207,8 +215,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 		return nil, err
 	}
 
-	// Serialise output once for idempotent storage and the event payload.
-	payload, err := marshalResult(out)
+	// Serialise output once for idempotent storage, the event payload and
+	// the audit row. A result carrying a one-time secret stores, emits and
+	// audits only its redacted form; the caller alone receives the secret.
+	stored := out
+	if r, ok := out.(SecretResult); ok {
+		stored = r.Redacted()
+	}
+	payload, err := marshalResult(stored)
 	if err != nil {
 		return nil, fmt.Errorf("action: marshal result of %q: %w", name, err)
 	}
@@ -221,12 +235,18 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 	}
 
 	// 10. Emit event carrying the actor (SPEC §4). Subject best-effort.
+	evPayload := payload
+	// Self-scope results are one user's own data, and tenant-less events
+	// reach every signed-in SSE client.
+	if def.PrivateResult || def.Scope == ScopeSelf {
+		evPayload = nil
+	}
 	d.events.Emit(ctx, Event{
 		Name:    name,
 		Org:     ac.Org,
 		Actor:   actor,
-		Subject: subjectOf(out),
-		Payload: payload,
+		Subject: subjectOf(stored),
+		Payload: evPayload,
 	})
 
 	// 11. Audit: every ImpactHigh action (all actors) and every agent action.
@@ -236,7 +256,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, actor Actor, name string, inp
 			ActorType: actor.Type,
 			ActorID:   actor.ID,
 			Action:    name,
-			Subject:   subjectOf(out),
+			Subject:   subjectOf(stored),
 			Detail:    payload,
 			IP:        actor.IP,
 		}); err != nil {

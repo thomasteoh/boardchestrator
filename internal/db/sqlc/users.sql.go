@@ -7,7 +7,19 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 )
+
+const countUserIdentities = `-- name: CountUserIdentities :one
+SELECT COUNT(*) FROM identities WHERE user_id = ?
+`
+
+func (q *Queries) CountUserIdentities(ctx context.Context, userID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUserIdentities, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
 
 const createUser = `-- name: CreateUser :exec
 INSERT INTO users (id, email, name, avatar_url)
@@ -29,6 +41,26 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 		arg.AvatarUrl,
 	)
 	return err
+}
+
+const deleteUserIdentity = `-- name: DeleteUserIdentity :execrows
+DELETE FROM identities
+WHERE id = ?
+  AND user_id = ?
+`
+
+type DeleteUserIdentityParams struct {
+	ID     string
+	UserID string
+}
+
+// identity.unlink: a user can only unlink their own identities.
+func (q *Queries) DeleteUserIdentity(ctx context.Context, arg DeleteUserIdentityParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUserIdentity, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const findIdentityByProviderSubject = `-- name: FindIdentityByProviderSubject :one
@@ -76,9 +108,18 @@ type FindIdentityByUserAndProviderParams struct {
 	Provider string
 }
 
-func (q *Queries) FindIdentityByUserAndProvider(ctx context.Context, arg FindIdentityByUserAndProviderParams) (Identity, error) {
+type FindIdentityByUserAndProviderRow struct {
+	ID       string
+	UserID   string
+	Provider string
+	Subject  string
+	Email    string
+	TokenEnc []byte
+}
+
+func (q *Queries) FindIdentityByUserAndProvider(ctx context.Context, arg FindIdentityByUserAndProviderParams) (FindIdentityByUserAndProviderRow, error) {
 	row := q.db.QueryRowContext(ctx, findIdentityByUserAndProvider, arg.UserID, arg.Provider)
-	var i Identity
+	var i FindIdentityByUserAndProviderRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -90,6 +131,34 @@ func (q *Queries) FindIdentityByUserAndProvider(ctx context.Context, arg FindIde
 	return i, err
 }
 
+const findIdentityForLogin = `-- name: FindIdentityForLogin :one
+SELECT i.id, i.user_id, u.deleted_at
+FROM identities i
+JOIN users u ON u.id = i.user_id
+WHERE i.provider = ?
+  AND i.subject = ?
+`
+
+type FindIdentityForLoginParams struct {
+	Provider string
+	Subject  string
+}
+
+type FindIdentityForLoginRow struct {
+	ID        string
+	UserID    string
+	DeletedAt sql.NullString
+}
+
+// Login resolution (SPEC s7.3 step 1): (provider, subject) first, with the
+// owning user's deletion state so a deleted user is refused.
+func (q *Queries) FindIdentityForLogin(ctx context.Context, arg FindIdentityForLoginParams) (FindIdentityForLoginRow, error) {
+	row := q.db.QueryRowContext(ctx, findIdentityForLogin, arg.Provider, arg.Subject)
+	var i FindIdentityForLoginRow
+	err := row.Scan(&i.ID, &i.UserID, &i.DeletedAt)
+	return i, err
+}
+
 const findUserByEmail = `-- name: FindUserByEmail :one
 SELECT id, email, name, avatar_url, theme, timezone, created_at, deleted_at
 FROM users
@@ -97,9 +166,20 @@ WHERE email = ?
   AND deleted_at IS NULL
 `
 
-func (q *Queries) FindUserByEmail(ctx context.Context, email string) (User, error) {
+type FindUserByEmailRow struct {
+	ID        string
+	Email     string
+	Name      string
+	AvatarUrl string
+	Theme     string
+	Timezone  string
+	CreatedAt string
+	DeletedAt sql.NullString
+}
+
+func (q *Queries) FindUserByEmail(ctx context.Context, email string) (FindUserByEmailRow, error) {
 	row := q.db.QueryRowContext(ctx, findUserByEmail, email)
-	var i User
+	var i FindUserByEmailRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
@@ -110,6 +190,53 @@ func (q *Queries) FindUserByEmail(ctx context.Context, email string) (User, erro
 		&i.CreatedAt,
 		&i.DeletedAt,
 	)
+	return i, err
+}
+
+const findUserByEmailAnyState = `-- name: FindUserByEmailAnyState :one
+SELECT id, deleted_at, email_verified
+FROM users
+WHERE email = ?
+`
+
+type FindUserByEmailAnyStateRow struct {
+	ID            string
+	DeletedAt     sql.NullString
+	EmailVerified int64
+}
+
+// Login resolution (SPEC s7.3 step 3): includes deleted users so a deleted
+// account's email is refused rather than tripping the UNIQUE constraint.
+// email_verified = 0 (a passkey bootstrap claim, WU-612) is never linked to.
+func (q *Queries) FindUserByEmailAnyState(ctx context.Context, email string) (FindUserByEmailAnyStateRow, error) {
+	row := q.db.QueryRowContext(ctx, findUserByEmailAnyState, email)
+	var i FindUserByEmailAnyStateRow
+	err := row.Scan(&i.ID, &i.DeletedAt, &i.EmailVerified)
+	return i, err
+}
+
+const findUserIdentity = `-- name: FindUserIdentity :one
+SELECT id, provider, email
+FROM identities
+WHERE id = ?
+  AND user_id = ?
+`
+
+type FindUserIdentityParams struct {
+	ID     string
+	UserID string
+}
+
+type FindUserIdentityRow struct {
+	ID       string
+	Provider string
+	Email    string
+}
+
+func (q *Queries) FindUserIdentity(ctx context.Context, arg FindUserIdentityParams) (FindUserIdentityRow, error) {
+	row := q.db.QueryRowContext(ctx, findUserIdentity, arg.ID, arg.UserID)
+	var i FindUserIdentityRow
+	err := row.Scan(&i.ID, &i.Provider, &i.Email)
 	return i, err
 }
 
@@ -137,9 +264,20 @@ FROM users
 WHERE id = ?
 `
 
-func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
+type GetUserRow struct {
+	ID        string
+	Email     string
+	Name      string
+	AvatarUrl string
+	Theme     string
+	Timezone  string
+	CreatedAt string
+	DeletedAt sql.NullString
+}
+
+func (q *Queries) GetUser(ctx context.Context, id string) (GetUserRow, error) {
 	row := q.db.QueryRowContext(ctx, getUser, id)
-	var i User
+	var i GetUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Email,
@@ -154,16 +292,18 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 }
 
 const linkIdentity = `-- name: LinkIdentity :exec
-INSERT INTO identities (id, user_id, provider, subject, email)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO identities (id, user_id, provider, subject, email, last_login_at, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type LinkIdentityParams struct {
-	ID       string
-	UserID   string
-	Provider string
-	Subject  string
-	Email    string
+	ID          string
+	UserID      string
+	Provider    string
+	Subject     string
+	Email       string
+	LastLoginAt sql.NullString
+	CreatedAt   sql.NullString
 }
 
 func (q *Queries) LinkIdentity(ctx context.Context, arg LinkIdentityParams) error {
@@ -173,19 +313,89 @@ func (q *Queries) LinkIdentity(ctx context.Context, arg LinkIdentityParams) erro
 		arg.Provider,
 		arg.Subject,
 		arg.Email,
+		arg.LastLoginAt,
+		arg.CreatedAt,
 	)
 	return err
 }
 
+const listSignInIdentities = `-- name: ListSignInIdentities :many
+SELECT i.id, i.provider, COALESCE(p.display_name, '') AS display_name, i.email,
+       i.last_login_at, i.created_at
+FROM identities i
+LEFT JOIN auth_providers p ON p.id = i.provider
+WHERE i.user_id = ?
+ORDER BY COALESCE(i.created_at, ''), i.id
+`
+
+type ListSignInIdentitiesRow struct {
+	ID          string
+	Provider    string
+	DisplayName string
+	Email       string
+	LastLoginAt sql.NullString
+	CreatedAt   sql.NullString
+}
+
+// Settings -> Sign-in methods (WU-604): the caller's identities with the
+// provider's display name. Never selects token_enc.
+func (q *Queries) ListSignInIdentities(ctx context.Context, userID string) ([]ListSignInIdentitiesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSignInIdentities, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSignInIdentitiesRow
+	for rows.Next() {
+		var i ListSignInIdentitiesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Provider,
+			&i.DisplayName,
+			&i.Email,
+			&i.LastLoginAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setBootstrapDone = `-- name: SetBootstrapDone :exec
 UPDATE platform_settings
-SET bootstrap_done = 1
+SET bootstrap_done = 1,
+    settings_json = json_remove(settings_json, '$.bootstrap_token_hash')
 WHERE id = 1
 `
 
+// Claiming the platform also forgets any generated bootstrap token hash.
 func (q *Queries) SetBootstrapDone(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, setBootstrapDone)
 	return err
+}
+
+const setBootstrapTokenHash = `-- name: SetBootstrapTokenHash :execrows
+UPDATE platform_settings
+SET settings_json = json_set(settings_json, '$.bootstrap_token_hash', CAST(?1 AS TEXT))
+WHERE id = 1 AND bootstrap_done = 0
+`
+
+// Stores the SHA-256 of a generated bootstrap token (WU-605) while the
+// platform is unclaimed. The token itself is never stored.
+func (q *Queries) SetBootstrapTokenHash(ctx context.Context, tokenHash string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setBootstrapTokenHash, tokenHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setIdentityToken = `-- name: SetIdentityToken :exec
@@ -203,6 +413,39 @@ type SetIdentityTokenParams struct {
 
 func (q *Queries) SetIdentityToken(ctx context.Context, arg SetIdentityTokenParams) error {
 	_, err := q.db.ExecContext(ctx, setIdentityToken, arg.TokenEnc, arg.UserID, arg.Provider)
+	return err
+}
+
+const setIdentityTokenByID = `-- name: SetIdentityTokenByID :exec
+UPDATE identities
+SET token_enc = ?
+WHERE id = ?
+`
+
+type SetIdentityTokenByIDParams struct {
+	TokenEnc []byte
+	ID       string
+}
+
+func (q *Queries) SetIdentityTokenByID(ctx context.Context, arg SetIdentityTokenByIDParams) error {
+	_, err := q.db.ExecContext(ctx, setIdentityTokenByID, arg.TokenEnc, arg.ID)
+	return err
+}
+
+const touchIdentityLogin = `-- name: TouchIdentityLogin :exec
+UPDATE identities
+SET email = ?, last_login_at = ?
+WHERE id = ?
+`
+
+type TouchIdentityLoginParams struct {
+	Email       string
+	LastLoginAt sql.NullString
+	ID          string
+}
+
+func (q *Queries) TouchIdentityLogin(ctx context.Context, arg TouchIdentityLoginParams) error {
+	_, err := q.db.ExecContext(ctx, touchIdentityLogin, arg.Email, arg.LastLoginAt, arg.ID)
 	return err
 }
 

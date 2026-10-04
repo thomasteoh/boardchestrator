@@ -74,9 +74,10 @@ func actionDescription(def action.Definition) string {
 func toolsForAgent(ctx context.Context, q *sqlc.Queries, agent sqlc.Agent, eff map[string]bool) ([]client.ToolDef, error) {
 	var out []client.ToolDef
 	for _, def := range action.All() {
-		// Skip platform-scope actions (agent.list-templates etc.) unless
-		// explicitly granted — they are not part of an org agent's tool set.
-		if def.Scope == action.ScopePlatform {
+		// Platform-scope (agent.list-templates etc.) and self-scope (a user's
+		// own settings) actions are never part of an org agent's tool set;
+		// agentPermChecker refuses them too.
+		if def.Scope == action.ScopePlatform || def.Scope == action.ScopeSelf {
 			continue
 		}
 		if def.Permission == "" || grantAllows(def.Permission, eff) {

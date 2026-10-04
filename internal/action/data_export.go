@@ -29,7 +29,7 @@ func init() {
 		Name:       "user.export",
 		Impact:     ImpactLow,
 		Permission: "user.export",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleUserExport,
 	})
@@ -67,7 +67,7 @@ type userExportOutput struct {
 	Watchers      []sqlc.TaskWatcher             `json:"task_watchers"`
 	Filters       []sqlc.SavedFilter             `json:"saved_filters"`
 	Notifications []sqlc.Notification            `json:"notifications"`
-	Sessions      []sqlc.Session                 `json:"sessions"`
+	Sessions      []sqlc.ListUserSessionsRow     `json:"sessions"`
 }
 
 type UserProfile struct {
@@ -88,6 +88,11 @@ func handleUserExport(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 	if err := json.Unmarshal(in, &input); err != nil {
 		return nil, fmt.Errorf("user.export: %w", err)
 	}
+	userID, err := SelfUserID(ac, input.UserID)
+	if err != nil {
+		return nil, err
+	}
+	input.UserID = userID
 
 	q := sqlc.New(ac.DB)
 
@@ -135,7 +140,7 @@ func handleUserExport(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 		notifications = []sqlc.Notification{}
 	}
 	if sessions == nil {
-		sessions = []sqlc.Session{}
+		sessions = []sqlc.ListUserSessionsRow{}
 	}
 
 	profile := UserProfile{
@@ -175,6 +180,9 @@ func handleUserDelete(ctx context.Context, ac ActionCtx, in json.RawMessage) (an
 	// Delete all owned data within the dispatch transaction.
 	if err := ac.Tx.DeleteUserIdentities(ctx, input.UserID); err != nil {
 		return nil, fmt.Errorf("user.delete: identities: %w", err)
+	}
+	if err := ac.Tx.DeleteUserWebAuthnCredentials(ctx, input.UserID); err != nil {
+		return nil, fmt.Errorf("user.delete: passkeys: %w", err)
 	}
 	if err := ac.Tx.DeleteUserSessions(ctx, input.UserID); err != nil {
 		return nil, fmt.Errorf("user.delete: sessions: %w", err)

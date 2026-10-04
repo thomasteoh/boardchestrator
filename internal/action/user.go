@@ -18,17 +18,12 @@ type userTimezoneUpdateInput struct {
 	Timezone string `json:"timezone"`
 }
 
-// sessionRevokeInput is the input for session.revoke.
-type sessionRevokeInput struct {
-	TokenHash string `json:"token_hash"`
-}
-
 func init() {
 	Register(Definition{
 		Name:       "user.theme.update",
 		Impact:     ImpactLow,
 		Permission: "user.theme.update",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleUserThemeUpdate,
 	})
@@ -36,17 +31,9 @@ func init() {
 		Name:       "user.timezone.update",
 		Impact:     ImpactLow,
 		Permission: "user.timezone.update",
-		Scope:      ScopePlatform,
+		Scope:      ScopeSelf,
 		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
 		Handle:     handleUserTimezoneUpdate,
-	})
-	Register(Definition{
-		Name:       "session.revoke",
-		Impact:     ImpactLow,
-		Permission: "session.revoke",
-		Scope:      ScopePlatform,
-		Input:      FuncSchema(func(raw json.RawMessage) error { return nil }),
-		Handle:     handleSessionRevoke,
 	})
 }
 
@@ -77,17 +64,6 @@ func handleUserTimezoneUpdate(ctx context.Context, ac ActionCtx, in json.RawMess
 		ID:       ac.Actor.ID,
 	}); err != nil {
 		return nil, fmt.Errorf("user.timezone.update: %w", err)
-	}
-	return map[string]string{"status": "ok"}, nil
-}
-
-func handleSessionRevoke(ctx context.Context, ac ActionCtx, in json.RawMessage) (any, error) {
-	var input sessionRevokeInput
-	if err := json.Unmarshal(in, &input); err != nil {
-		return nil, fmt.Errorf("session.revoke: %w", err)
-	}
-	if err := ac.Tx.DeleteSession(ctx, input.TokenHash); err != nil {
-		return nil, fmt.Errorf("session.revoke: %w", err)
 	}
 	return map[string]string{"status": "ok"}, nil
 }

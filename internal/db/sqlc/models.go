@@ -44,6 +44,7 @@ type ApiKey struct {
 	LastUsedAt sql.NullString
 	CreatedAt  string
 	RevokedAt  sql.NullString
+	ExpiresAt  sql.NullString
 }
 
 type Approval struct {
@@ -80,6 +81,32 @@ type AuditLog struct {
 	DetailJson string
 	Ip         string
 	CreatedAt  string
+}
+
+type AuthProvider struct {
+	ID                 string
+	OrgID              sql.NullString
+	Kind               string
+	Preset             string
+	DisplayName        string
+	Enabled            int64
+	ManagedBy          string
+	Issuer             string
+	ClientID           string
+	ClientSecretEnc    string
+	Scopes             string
+	ClaimMapJson       string
+	TrustEmail         int64
+	AllowSignup        int64
+	AllowedTenantsJson string
+	SamlMetadataUrl    string
+	SamlMetadataXml    string
+	SpKeyEnc           string
+	SpCert             string
+	Position           int64
+	CreatedAt          string
+	UpdatedAt          string
+	IdpLogout          int64
 }
 
 type BoardColumn struct {
@@ -177,12 +204,25 @@ type IdempotencyKey struct {
 }
 
 type Identity struct {
-	ID       string
-	UserID   string
-	Provider string
-	Subject  string
-	Email    string
-	TokenEnc []byte
+	ID          string
+	UserID      string
+	Provider    string
+	Subject     string
+	Email       string
+	TokenEnc    []byte
+	LastLoginAt sql.NullString
+	CreatedAt   sql.NullString
+}
+
+type IdpGroupMapping struct {
+	ID           string
+	OrgID        string
+	ProviderID   sql.NullString
+	GroupValue   string
+	RoleID       string
+	ResourceType string
+	ResourceID   string
+	CreatedAt    string
 }
 
 type Invite struct {
@@ -230,6 +270,7 @@ type Membership struct {
 	ResourceID   string
 	RoleID       sql.NullString
 	CreatedAt    string
+	Source       string
 }
 
 type ModelPricing struct {
@@ -274,12 +315,31 @@ type OrgCapAlert struct {
 	CreatedAt string
 }
 
+type OrgDomain struct {
+	ID          string
+	OrgID       string
+	Domain      string
+	VerifyToken string
+	VerifiedAt  sql.NullString
+	CreatedAt   string
+}
+
 type OrgSecret struct {
 	ID         string
 	OrgID      string
 	Key        string
 	Ciphertext string
 	CreatedAt  string
+}
+
+type OrgSsoSetting struct {
+	OrgID            string
+	EnforceSso       int64
+	JitEnabled       int64
+	JitDefaultRoleID sql.NullString
+	GroupClaim       string
+	GroupSync        int64
+	UpdatedAt        string
 }
 
 type PlatformSetting struct {
@@ -405,6 +465,49 @@ type ScheduledTrigger struct {
 	UpdatedAt string
 }
 
+type ScimGroup struct {
+	ID          string
+	OrgID       string
+	ExternalID  string
+	DisplayName string
+	CreatedAt   string
+	UpdatedAt   string
+}
+
+type ScimGroupMember struct {
+	GroupID string
+	UserID  string
+	OrgID   string
+}
+
+type ScimToken struct {
+	ID         string
+	OrgID      string
+	Name       string
+	Prefix     string
+	TokenHash  string
+	CreatedBy  string
+	ExpiresAt  sql.NullString
+	LastUsedAt sql.NullString
+	RevokedAt  sql.NullString
+	CreatedAt  string
+}
+
+type ScimUser struct {
+	ID          string
+	OrgID       string
+	UserID      string
+	ExternalID  string
+	UserName    string
+	Email       string
+	GivenName   string
+	FamilyName  string
+	DisplayName string
+	Active      int64
+	CreatedAt   string
+	UpdatedAt   string
+}
+
 type Session struct {
 	TokenHash  string
 	UserID     string
@@ -413,6 +516,11 @@ type Session struct {
 	CreatedAt  string
 	LastSeenAt string
 	ExpiresAt  string
+	ProviderID string
+	AuthMethod string
+	IdpSid     string
+	IdpSubject string
+	IDTokenEnc string
 }
 
 type Skill struct {
@@ -550,14 +658,34 @@ type Team struct {
 }
 
 type User struct {
-	ID        string
-	Email     string
-	Name      string
-	AvatarUrl string
-	Theme     string
-	Timezone  string
-	CreatedAt string
-	DeletedAt sql.NullString
+	ID             string
+	Email          string
+	Name           string
+	AvatarUrl      string
+	Theme          string
+	Timezone       string
+	CreatedAt      string
+	DeletedAt      sql.NullString
+	WebauthnHandle []byte
+	EmailVerified  int64
+}
+
+type WebauthnCredential struct {
+	ID                string
+	UserID            string
+	CredentialID      []byte
+	PublicKey         []byte
+	SignCount         int64
+	Aaguid            []byte
+	TransportsJson    string
+	AttestationType   string
+	AttestationFormat string
+	UserVerified      int64
+	BackupEligible    int64
+	BackupState       int64
+	Name              string
+	CreatedAt         string
+	LastUsedAt        sql.NullString
 }
 
 type Webhook struct {

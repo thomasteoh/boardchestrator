@@ -5,339 +5,422 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
+	"net/url"
+	"strings"
 
+	"github.com/go-chi/chi/v5"
+
+	"github.com/thomasteoh/boardchestrator/internal/action"
+	"github.com/thomasteoh/boardchestrator/internal/auth/passkey"
 	"github.com/thomasteoh/boardchestrator/internal/db/sqlc"
-	"github.com/thomasteoh/boardchestrator/internal/perm"
-	"github.com/thomasteoh/boardchestrator/internal/tenant"
 )
 
-// OAuthHandler provides the HTTP handlers for Google OIDC login.
-type OAuthHandler struct {
-	Provider       *OIDCProvider
-	GitHub         *GitHubProvider
-	Store          *SessionStore
-	Identity       IdentityStore
-	Bootstrap      BootstrapChecker
-	BaseURL        string
-	SessionCfg     SessionConfig
-	AdminEmails    []string
+// LoginFailedHandler renders the generic sign-in failure page. The server
+// overrides it with the templ error page; the default is plain text. message
+// is fixed copy chosen by this package and ref is the log reference code;
+// neither ever contains upstream or internal error text.
+var LoginFailedHandler = func(w http.ResponseWriter, _ *http.Request, status int, message, ref string) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = fmt.Fprintf(w, "Sign-in failed. %s Reference: %s\n", message, ref)
+}
+
+// User-facing copy for login failures, by refusal reason. Everything not
+// listed gets msgGeneric.
+const msgGeneric = "Something went wrong signing you in. Please try again."
+
+var refusalCopy = map[string]string{
+	RefuseUserDeleted:     "This account has been deleted.",
+	RefuseNotBootstrap:    "This instance hasn't been set up yet, and your email isn't on its administrator list.",
+	RefuseNoAccount:       "There's no account for this email. Ask an organisation admin for an invite.",
+	RefuseEmailUnverified: "Your identity provider didn't confirm your email address.",
+	"logout":              "Something went wrong signing you out. Please try again.",
+}
+
+// LoginURL is the sign-in page (SPEC §7.2); SignedOutURL is where a local
+// logout lands (SPEC §7.6); SignInMethodsURL is Settings -> Sign-in methods,
+// where an explicit link starts and ends (WU-604).
+const (
+	LoginURL         = "/login"
+	SignedOutURL     = "/login?signed_out=1"
+	SignInMethodsURL = "/settings/sign-in-methods"
+)
+
+// maxInviteTokenLen bounds the invite token a flow will carry.
+const maxInviteTokenLen = 128
+
+// LoginURLFor is the sign-in page URL that returns to returnTo afterwards
+// (validated by SafeReturnTo; the default destination is omitted).
+func LoginURLFor(returnTo string) string {
+	rt := SafeReturnTo(returnTo)
+	if rt == DefaultReturnTo {
+		return LoginURL
+	}
+	return LoginURL + "?return_to=" + url.QueryEscape(rt)
+}
+
+// Handler serves the login routes (SPEC §7.2): GET /auth/{providerID},
+// GET /auth/{providerID}/callback, POST /auth/logout and the OIDC
+// back-channel logout endpoint (logout.go).
+type Handler struct {
+	Providers ConnectorSource
+	Flows     *FlowSealer
+	Sessions  *SessionStore
+	Resolver  *Resolver
+	BaseURL   string
+	// Replay remembers back-channel logout token ids (jti) and SAML
+	// LogoutRequest ids.
+	Replay *ReplayCache
+	// RequestID returns the request id for log correlation (server wires
+	// server.RequestID); nil logs without one.
+	RequestID func(context.Context) string
+	// Passkeys is the WebAuthn relying party (WU-612); nil when BC_BASE_URL's
+	// host cannot be an RP ID, which turns passkeys off.
+	Passkeys *passkey.RP
+}
+
+// HandlerConfig is everything NewHandler needs.
+type HandlerConfig struct {
+	DB          *sql.DB
+	Sessions    *SessionStore
+	SecretKey   string // raw BC_SECRET_KEY (flow cookie key derivation)
+	EncKey      []byte // 32-byte key for _enc columns
+	BaseURL     string
+	AdminEmails []string
+	// BootstrapToken is BC_BOOTSTRAP_TOKEN ("" = generated, see Bootstrap).
 	BootstrapToken string
-	// DB is the database handle used for platform-admin grants.
-	DB *sql.DB
-	// SecretKey is the AES-256 key used to encrypt OAuth tokens at rest
-	// (WU-406: GitHub token reuse for wiki edits). Pad via tenant.PadKey.
-	SecretKey []byte
-
-	// stateMap stores pending OAuth state nonces (keyed by state, value is
-	// the redirect path). A real deployment would use encrypted cookies or
-	// the session store; for v1 an in-memory map with cleanup is sufficient.
-	stateMap map[string]stateEntry
+	// Providers resolves provider ids (production: the idp.Registry). When
+	// nil, Connectors is used as a fixed set.
+	Providers  ConnectorSource
+	Connectors []Connector
+	RequestID  func(context.Context) string
+	// Events receives login-time events (membership.synced, WU-608).
+	Events action.EventSink
 }
 
-type stateEntry struct {
-	nonce     string
-	expiresAt time.Time
-}
-
-// NewOAuthHandler builds the handler set with Google and GitHub providers.
-func NewOAuthHandler(cfg OIDCConfig, ghCfg GitHubConfig, store *SessionStore, d *sql.DB, sc SessionConfig) *OAuthHandler {
-	return &OAuthHandler{
-		Provider:   NewOIDCProvider(cfg),
-		GitHub:     NewGitHubProvider(ghCfg),
-		Store:      store,
-		Identity:   NewDBIdentityStore(d),
-		Bootstrap:  NewDBBootstrapStore(d),
-		BaseURL:    cfg.BaseURL,
-		SessionCfg: sc,
-		DB:         d,
-		stateMap:   make(map[string]stateEntry),
-	}
-}
-
-// SetBootstrapConfig sets the admin email list and bootstrap token after construction.
-func (h *OAuthHandler) SetBootstrapConfig(adminEmails []string, token string) {
-	h.AdminEmails = adminEmails
-	h.BootstrapToken = token
-}
-
-// ensurePlatformAdmin grants a bootstrap/admin user an Org Owner membership in
-// the platform sentinel org, which covers platform-scope actions (org.create,
-// pricing, providers, ...). It is idempotent and a no-op for non-admin emails.
-// SPEC §6: platform default roles live on the sentinel org (org_id NULL).
-func (h *OAuthHandler) ensurePlatformAdmin(ctx context.Context, w http.ResponseWriter, userID, email string) {
-	isAdmin := false
-	for _, ae := range h.AdminEmails {
-		if ae == email {
-			isAdmin = true
-			break
-		}
-	}
-	if !isAdmin {
-		return
-	}
-
-	q := sqlc.New(h.DB)
-	// Already a platform admin? No-op.
-	rows, err := q.FindMemberships(ctx, sqlc.FindMembershipsParams{
-		OrgID:        perm.PlatformOrg,
-		ActorType:    "user",
-		ActorID:      userID,
-		ResourceType: "org",
-		ResourceID:   perm.PlatformOrg,
-	})
+// NewHandler builds the login handler.
+func NewHandler(cfg HandlerConfig) (*Handler, error) {
+	flows, err := NewFlowSealer(cfg.SecretKey)
 	if err != nil {
-		slog.Warn("auth: check platform membership", "err", err)
-		return
+		return nil, err
 	}
-	if len(rows) > 0 {
-		return
+	src := cfg.Providers
+	if src == nil {
+		src = NewStaticConnectors(cfg.Connectors...)
 	}
-
-	if _, err := q.CreateMembership(ctx, sqlc.CreateMembershipParams{
-		ID:           newID(),
-		OrgID:        perm.PlatformOrg,
-		ActorID:      userID,
-		ActorType:    "user",
-		ResourceType: "org",
-		ResourceID:   perm.PlatformOrg,
-		RoleID:       sql.NullString{String: perm.PlatformOwnerRole, Valid: true},
-	}); err != nil {
-		slog.Warn("auth: grant platform admin", "err", err)
+	h := &Handler{
+		Providers: src,
+		Flows:     flows,
+		Sessions:  cfg.Sessions,
+		Resolver: &Resolver{
+			DB:          cfg.DB,
+			Sessions:    cfg.Sessions,
+			AdminEmails: cfg.AdminEmails,
+			SecretKey:   cfg.EncKey,
+			Events:      cfg.Events,
+			Bootstrap: &Bootstrap{
+				DB: cfg.DB, EnvToken: cfg.BootstrapToken, AdminEmails: cfg.AdminEmails,
+			},
+		},
+		BaseURL:   strings.TrimRight(cfg.BaseURL, "/"),
+		Replay:    NewReplayCache(0),
+		RequestID: cfg.RequestID,
 	}
+	if rp, err := passkey.New(cfg.BaseURL); err != nil {
+		slog.Warn("auth: passkeys are unavailable on this instance", "err", err)
+	} else {
+		h.Passkeys = rp
+	}
+	return h, nil
 }
 
-// bootstrapGate checks whether the caller's email is allowed during pre-bootstrap.
-// Returns an error response if gated.
-func (h *OAuthHandler) bootstrapGate(ctx context.Context, w http.ResponseWriter, email string) bool {
-	bootstrapped, err := h.Bootstrap.IsBootstrapped(ctx)
+// Routes mounts the login routes on r.
+func (h *Handler) Routes(r chi.Router) {
+	r.Get(SetupURL, h.Setup)
+	r.Post("/auth/logout", h.Logout)
+	r.Post(BackChannelLogoutPattern, h.BackChannelLogout)
+	r.Post(SignInMethodsURL+"/link/{providerID}", h.BeginLink)
+	r.Post(SAMLACSPattern, h.SAMLACS)
+	r.Get(SAMLSLOPattern, h.SAMLSLO)
+	r.Post(SAMLSLOPattern, h.SAMLSLO)
+	r.Get(SAMLMetadataPattern, h.SAMLMetadata)
+	r.Get(SAMLCertificatePattern, h.SAMLCertificate)
+	r.Get(SAMLLinkPattern, h.SAMLLinkFinish)
+	h.passkeyRoutes(r)
+	r.Get("/auth/{providerID}", h.Begin)
+	r.Get("/auth/{providerID}/callback", h.Callback)
+}
+
+// Begin starts a login: mints a flow, seals it into the flow cookie, and
+// redirects to the provider.
+func (h *Handler) Begin(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "providerID")
+	c, ok := h.connector(w, r, id)
+	if !ok {
+		return
+	}
+	flow, err := h.Flows.NewFlow(id, IntentLogin)
 	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return false
+		h.fail(w, r, http.StatusInternalServerError, id, "flow_create", err)
+		return
 	}
-	if bootstrapped {
-		return true
+	if hint := r.URL.Query().Get("login_hint"); len(hint) <= 254 {
+		flow.LoginHint = hint
 	}
-
-	// Token-based bootstrap is handled by WU-103's dedicated token claim page.
-	// Here we just check admin email membership.
-
-	for _, ae := range h.AdminEmails {
-		if ae == email {
-			if err := h.Bootstrap.MarkBootstrapped(ctx); err != nil {
-				http.Error(w, "internal server error", http.StatusInternalServerError)
-				return false
+	flow.ReturnTo = SafeReturnTo(r.URL.Query().Get("return_to"))
+	// An invite link's token rides the flow; resolution validates it.
+	if inv := r.URL.Query().Get("invite"); len(inv) <= maxInviteTokenLen {
+		flow.InviteToken = inv
+	}
+	// A claim-page button (?bootstrap=1) with a setup cookie whose token
+	// still claims the platform makes this a bootstrap flow. Anything less
+	// is an ordinary login; resolution re-checks the token either way.
+	if r.URL.Query().Get("bootstrap") == "1" {
+		if hash := h.Flows.setupHash(r); hash != "" {
+			if ok, err := h.Resolver.Bootstrap.Valid(r.Context(), hash); err == nil && ok {
+				flow.Intent, flow.Bootstrap, flow.BootstrapHash = IntentBootstrap, true, hash
 			}
-			return true
 		}
 	}
-
-	http.Error(w, "forbidden: platform not bootstrapped, and you are not an admin", http.StatusForbidden)
-	return false
+	h.redirectToProvider(w, r, c, id, flow)
 }
 
-// HandleGoogleLogin redirects the browser to Google's consent page.
-func (h *OAuthHandler) HandleGoogleLogin(w http.ResponseWriter, r *http.Request) {
-	authURL, state, err := h.Provider.AuthURL()
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+// BeginLink is POST /settings/sign-in-methods/link/{providerID} (SPEC §7.3
+// step 2): a signed-in user starts linking another sign-in method. The flow
+// is bound to the current session's hash, which the callback requires the
+// browser to still present. CSRF-protected by the global middleware.
+func (h *Handler) BeginLink(w http.ResponseWriter, r *http.Request) {
+	sess, ok := SessionFrom(r.Context())
+	if !ok || sess.TokenHash == "" {
+		http.Redirect(w, r, LoginURLFor(SignInMethodsURL), http.StatusSeeOther)
 		return
 	}
-	h.stateMap[state] = stateEntry{nonce: state, expiresAt: time.Now().Add(15 * time.Minute)}
-	http.Redirect(w, r, authURL, http.StatusFound)
+	id := chi.URLParam(r, "providerID")
+	c, ok := h.connector(w, r, id)
+	if !ok {
+		return
+	}
+	flow, err := h.Flows.NewFlow(id, IntentLink)
+	if err != nil {
+		h.fail(w, r, http.StatusInternalServerError, id, "flow_create", err)
+		return
+	}
+	flow.LinkSessionHash = sess.TokenHash
+	flow.ReturnTo = SignInMethodsURL
+	h.toProvider(w, r, c, id, flow, true)
 }
 
-// HandleGoogleCallback handles the OAuth callback from Google.
-func (h *OAuthHandler) HandleGoogleCallback(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	state := r.FormValue("state")
-	entry, ok := h.stateMap[state]
-	if !ok || time.Now().After(entry.expiresAt) {
-		http.Error(w, "forbidden: invalid or expired state", http.StatusForbidden)
-		return
-	}
-	delete(h.stateMap, state)
-
-	code := r.FormValue("code")
-	if code == "" {
-		http.Error(w, "bad request: no authorization code", http.StatusBadRequest)
-		return
-	}
-
-	claims, err := h.Provider.Exchange(ctx, code, state, state)
-	if err != nil {
-		http.Error(w, "forbidden: authentication failed: "+err.Error(), http.StatusForbidden)
-		return
-	}
-
-	if !h.bootstrapGate(ctx, w, claims.Email) {
-		return
-	}
-
-	userID, err := LinkOrCreate(ctx, h.Identity, claims)
-	if err != nil {
-		http.Error(w, "internal server error: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Platform admins (bootstrap admins) get an Org Owner membership in the
-	// platform sentinel org, which grants platform-scope actions (org.create,
-	// pricing, providers). Idempotent: no-op if already granted.
-	h.ensurePlatformAdmin(ctx, w, userID, claims.Email)
-
-	raw, _, err := h.Store.Create(ctx, userID, r.RemoteAddr, r.UserAgent())
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	h.SessionCfg.SetCookie(w, raw, time.Now().Add(SlidingTTL))
-	http.Redirect(w, r, h.BaseURL+"/app", http.StatusSeeOther)
+// redirectToProvider seals flow into the flow cookie and sends the browser
+// to the provider.
+func (h *Handler) redirectToProvider(w http.ResponseWriter, r *http.Request, c Connector, id string, flow *Flow) {
+	h.toProvider(w, r, c, id, flow, false)
 }
 
-// HandleGitHubLogin redirects the browser to GitHub's consent page.
-func (h *OAuthHandler) HandleGitHubLogin(w http.ResponseWriter, r *http.Request) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+// toProvider seals flow into the flow cookie and sends the browser to the
+// provider: by 303, or, for a form submission (fromForm), through the
+// continue page, because CSP form-action 'self' blocks a form's redirect to
+// another origin (ContinueTo).
+func (h *Handler) toProvider(w http.ResponseWriter, r *http.Request, c Connector, id string, flow *Flow, fromForm bool) {
+	dest, err := c.Begin(r.Context(), flow)
+	if err != nil {
+		h.fail(w, r, http.StatusBadGateway, id, "begin", err)
 		return
 	}
-	state := hex.EncodeToString(b)
-	h.stateMap[state] = stateEntry{nonce: state, expiresAt: time.Now().Add(15 * time.Minute)}
-	http.Redirect(w, r, h.GitHub.AuthURL(state), http.StatusFound)
+	if err := h.Flows.SetCookie(w, flow); err != nil {
+		h.fail(w, r, http.StatusInternalServerError, id, "flow_seal", err)
+		return
+	}
+	if fromForm {
+		ContinueTo(w, dest)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	// gosec G710 sees login_hint (request input) reach dest. It is only a
+	// URL-encoded query value; the scheme and host come from operator config
+	// or the provider's discovery document, so this is not an open redirect.
+	http.Redirect(w, r, dest, http.StatusSeeOther) //nolint:gosec // G710: host fixed by provider config, see above
 }
 
-// HandleGitHubCallback handles the OAuth callback from GitHub.
-func (h *OAuthHandler) HandleGitHubCallback(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+// connector resolves id, answering 404 for an unknown or disabled provider
+// and the generic failure page for one that is misconfigured.
+func (h *Handler) connector(w http.ResponseWriter, r *http.Request, id string) (Connector, bool) {
+	c, err := h.Providers.Connector(r.Context(), id)
+	switch {
+	case err == nil:
+		return c, true
+	case errors.Is(err, ErrUnknownProvider):
+		http.NotFound(w, r)
+	default:
+		h.fail(w, r, http.StatusBadGateway, id, "provider", err)
+	}
+	return nil, false
+}
 
-	state := r.FormValue("state")
-	entry, ok := h.stateMap[state]
-	if !ok || time.Now().After(entry.expiresAt) {
-		http.Error(w, "forbidden: invalid or expired state", http.StatusForbidden)
+// Callback completes a login. The flow cookie is cleared on every outcome.
+func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
+	ClearFlowCookie(w)
+	w.Header().Set("Cache-Control", "no-store")
+	id := chi.URLParam(r, "providerID")
+	c, ok := h.connector(w, r, id)
+	if !ok {
 		return
 	}
-	delete(h.stateMap, state)
-
-	code := r.FormValue("code")
-	if code == "" {
-		http.Error(w, "bad request: no authorization code", http.StatusBadRequest)
+	if _, saml := c.(SAMLConnector); saml {
+		// SAML responses arrive only at the ACS (POST binding).
+		http.NotFound(w, r)
 		return
 	}
-
-	user, err := h.GitHub.Exchange(ctx, code, state)
+	flow, err := h.Flows.FromRequest(r)
 	if err != nil {
-		http.Error(w, "forbidden: authentication failed: "+err.Error(), http.StatusForbidden)
+		h.fail(w, r, http.StatusBadRequest, id, "flow_cookie", err)
 		return
 	}
-
-	if !h.bootstrapGate(ctx, w, user.Email) {
+	if err := flow.Matches(id, r.URL.Query().Get("state")); err != nil {
+		h.fail(w, r, http.StatusBadRequest, id, "state", err)
 		return
 	}
+	a, err := c.Complete(r.Context(), r, flow)
+	if err != nil {
+		h.fail(w, r, http.StatusForbidden, id, "assertion", err)
+		return
+	}
+	a.ProviderID = id
+	h.completeLogin(w, r, c, id, flow, a)
+}
 
-	userID, err := LinkOrCreate(ctx, h.Identity, &GoogleClaims{
-		Sub:           fmt.Sprintf("gh-%d", user.ID),
-		Email:         user.Email,
-		EmailVerified: true,
-		Name:          user.Name,
-		Picture:       user.Avatar,
+// completeLogin resolves a verified assertion (SPEC §7.3) and finishes the
+// flow: a new session and a redirect for a login, or the Sign-in methods
+// page for a link. Shared by the OIDC/GitHub callback and the SAML ACS.
+func (h *Handler) completeLogin(w http.ResponseWriter, r *http.Request, c Connector, id string, flow *Flow, a *Assertion) {
+	presented := ""
+	if ck, err := r.Cookie(CookieName); err == nil {
+		presented = ck.Value
+	}
+	res, err := h.Resolver.Resolve(r.Context(), LoginRequest{
+		Assertion:        a,
+		Policy:           c.Policy(),
+		AuthMethod:       c.AuthMethod(),
+		PresentedSession: presented,
+		IP:               ClientIP(r),
+		UA:               r.UserAgent(),
+		Intent:           flow.Intent,
+		LinkSessionHash:  flow.LinkSessionHash,
+		InviteToken:      flow.InviteToken,
+		BootstrapHash:    bootstrapHash(flow),
 	})
-	if err != nil {
-		http.Error(w, "internal server error: "+err.Error(), http.StatusInternalServerError)
+	if flow.Intent == IntentLink {
+		h.finishLink(w, r, id, res, err)
 		return
 	}
-
-	// Platform admins (bootstrap admins) get an Org Owner membership in the
-	// platform sentinel org (see ensurePlatformAdmin).
-	h.ensurePlatformAdmin(ctx, w, userID, user.Email)
-
-	// WU-406: encrypt the OAuth access token at rest so the github.connect
-	// action can reuse it (and Phase-5 wiki edits can commit as this user).
-	if len(h.SecretKey) == 32 && user.Token != "" {
-		enc, err := tenant.Encrypt(h.SecretKey, user.Token)
-		if err != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+	if err != nil {
+		var ref *RefusedError
+		if errors.As(err, &ref) {
+			h.fail(w, r, http.StatusForbidden, id, ref.Reason, err)
 			return
 		}
-		if err := h.Identity.SetIdentityToken(ctx, userID, "github", enc); err != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	raw, _, err := h.Store.Create(ctx, userID, r.RemoteAddr, r.UserAgent())
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		h.fail(w, r, http.StatusInternalServerError, id, "resolve", err)
 		return
 	}
-
-	h.SessionCfg.SetCookie(w, raw, time.Now().Add(SlidingTTL))
-	http.Redirect(w, r, h.BaseURL+"/app", http.StatusSeeOther)
+	if flow.Bootstrap {
+		clearSetupCookie(w)
+	}
+	setSessionCookie(w, res.RawToken, res.Session.ExpiresAt)
+	dest := SafeReturnTo(flow.ReturnTo)
+	if res.InviteOrgID != "" {
+		// The invite was accepted with the sign-up; its landing page (the
+		// usual return_to for invite flows) has nothing left to do.
+		dest = DefaultReturnTo
+	}
+	// Re-validated: the cookie is sealed, but the check is cheap and keeps
+	// the redirect target provably same-origin.
+	http.Redirect(w, r, h.BaseURL+dest, http.StatusSeeOther) //nolint:gosec // G710: BaseURL + a SafeReturnTo path, see above
 }
 
-// DBIdentityStore implements IdentityStore using sqlc.
-type DBIdentityStore struct {
-	q *sqlc.Queries
-}
-
-func NewDBIdentityStore(d *sql.DB) *DBIdentityStore {
-	return &DBIdentityStore{q: sqlc.New(d)}
-}
-
-func (s *DBIdentityStore) FindUserByEmail(ctx context.Context, email string) (string, error) {
-	u, err := s.q.FindUserByEmail(ctx, email)
+// finishLink ends a link flow back on the Sign-in methods page. The session
+// cookie is left alone: linking issues no new session. A refusal travels as
+// its fixed reason code (the page maps known codes to copy); anything else
+// gets the generic failure page.
+func (h *Handler) finishLink(w http.ResponseWriter, r *http.Request, id string, res *LoginResult, err error) {
 	if err != nil {
-		return "", err
+		var ref *RefusedError
+		if !errors.As(err, &ref) {
+			h.fail(w, r, http.StatusInternalServerError, id, "link", err)
+			return
+		}
+		slog.Warn("auth: link refused", "provider", id, "reason", ref.Reason)
+		http.Redirect(w, r, h.BaseURL+SignInMethodsURL+"?error="+url.QueryEscape(ref.Reason), http.StatusSeeOther)
+		return
 	}
-	return u.ID, nil
+	notice := "linked"
+	if res.AlreadyLinked {
+		notice = "already_linked"
+	}
+	http.Redirect(w, r, h.BaseURL+SignInMethodsURL+"?notice="+notice, http.StatusSeeOther)
 }
 
-func (s *DBIdentityStore) CreateUser(ctx context.Context, email, name, avatarURL string) (string, error) {
-	b := make([]byte, 16)
+// fail logs err with a fresh reference code and renders the generic failure
+// page. err is never written to the client.
+func (h *Handler) fail(w http.ResponseWriter, r *http.Request, status int, provider, reason string, err error) {
+	ref := newRef()
+	reqID := ""
+	if h.RequestID != nil {
+		reqID = h.RequestID(r.Context())
+	}
+	slog.Warn("auth: login failed",
+		"ref", ref, "req_id", reqID, "provider", provider, "reason", reason, "status", status, "err", err)
+	if reason != "logout" {
+		// auth.login_failed (SPEC §7.3 step 6): the fixed reason code and the
+		// reference only; never err, tokens, codes or claims.
+		h.audit(r, "anonymous", "", "auth.login_failed", provider, map[string]string{
+			"reason": reason, "provider": provider, "ref": ref,
+		})
+	}
+	msg, ok := refusalCopy[reason]
+	if !ok {
+		msg = msgGeneric
+	}
+	LoginFailedHandler(w, r, status, msg, ref)
+}
+
+// maxAuditUA bounds the user agent kept in an audit row.
+const maxAuditUA = 256
+
+func truncateUA(ua string) string {
+	if len(ua) > maxAuditUA {
+		return ua[:maxAuditUA]
+	}
+	return ua
+}
+
+// audit writes an authentication audit row outside any transaction, best
+// effort: a failed write is logged and the response carries on. The client
+// IP and user agent are added here.
+func (h *Handler) audit(r *http.Request, actorType, actorID, act, subject string, detail map[string]string) {
+	if h.Resolver == nil || h.Resolver.DB == nil {
+		return
+	}
+	detail["ua"] = truncateUA(r.UserAgent())
+	now := h.Sessions.now().UTC().Format(timeFormat)
+	if err := writeAuditAs(r.Context(), sqlc.New(h.Resolver.DB), actorType, actorID, act, subject,
+		ClientIP(r), now, detail); err != nil {
+		slog.Error("auth: audit", "action", act, "err", err)
+	}
+}
+
+// newRef returns a short reference code users can quote to an admin.
+func newRef() string {
+	b := make([]byte, 5)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("auth: generate user id: %w", err)
+		return "unknown"
 	}
-	id := hex.EncodeToString(b)
-	if err := s.q.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:        id,
-		Email:     email,
-		Name:      name,
-		AvatarUrl: avatarURL,
-	}); err != nil {
-		return "", err
-	}
-	return id, nil
+	return strings.ToUpper(hex.EncodeToString(b))
 }
 
-func (s *DBIdentityStore) LinkIdentity(ctx context.Context, userID, provider, subject, email string) error {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return fmt.Errorf("auth: generate identity id: %w", err)
-	}
-	id := hex.EncodeToString(b)
-	return s.q.LinkIdentity(ctx, sqlc.LinkIdentityParams{
-		ID:       id,
-		UserID:   userID,
-		Provider: provider,
-		Subject:  subject,
-		Email:    email,
-	})
-}
-
-// SetIdentityToken stores an encrypted OAuth token against the user's identity.
-func (s *DBIdentityStore) SetIdentityToken(ctx context.Context, userID, provider, tokenEnc string) error {
-	return s.q.SetIdentityToken(ctx, sqlc.SetIdentityTokenParams{
-		TokenEnc: []byte(tokenEnc),
-		UserID:   userID,
-		Provider: provider,
-	})
-}
-
-// newID returns a random hex id (16 bytes) for platform-admin membership rows.
+// newID returns a random hex id (16 bytes).
 func newID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -346,30 +429,10 @@ func newID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// DBBootstrapStore implements BootstrapChecker using sqlc.
-type DBBootstrapStore struct {
-	q *sqlc.Queries
-}
-
-func NewDBBootstrapStore(d *sql.DB) *DBBootstrapStore {
-	return &DBBootstrapStore{q: sqlc.New(d)}
-}
-
-func (s *DBBootstrapStore) IsBootstrapped(ctx context.Context) (bool, error) {
-	ps, err := s.q.GetPlatformSettings(ctx)
-	if err != nil {
-		return false, err
+// bootstrapHash is the token hash a bootstrap flow proved ("" otherwise).
+func bootstrapHash(f *Flow) string {
+	if !f.Bootstrap {
+		return ""
 	}
-	return ps.BootstrapDone != 0, nil
-}
-
-func (s *DBBootstrapStore) IsAdminEmail(email string) bool {
-	// Admin email check is now handled at the OAuthHandler level via the
-	// AdminEmails field. This stub satisfies the interface; the real gating
-	// logic is in bootstrapGate.
-	return false
-}
-
-func (s *DBBootstrapStore) MarkBootstrapped(ctx context.Context) error {
-	return s.q.SetBootstrapDone(ctx)
+	return f.BootstrapHash
 }

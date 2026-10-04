@@ -64,6 +64,14 @@ templ Base(s Shell) {
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="20" height="20" aria-hidden="true"><path d="M12 3a6 6 0 0 0 0 12 6 6 0 0 0 0-12zM12 15v4M12 3V1M12 15v3M9 17h6"/></svg>
 					</span>
 				</button>
+				// Signed in (a CSRF token exists only with a session): local
+				// logout, CSRF-protected like every POST (WU-601).
+				if s.CSRF != "" {
+					<form method="post" action="/auth/logout" hx-boost="false">
+						<input type="hidden" name="csrf_token" value={ s.CSRF }/>
+						<button type="submit" class="bc-btn bc-btn-ghost bc-btn-sm">Sign out</button>
+					</form>
+				}
 			</header>
 			<div class="bc-shell">
 				<nav class="bc-sidebar" aria-label="Primary">
@@ -88,6 +96,9 @@ templ Base(s Shell) {
 			<script src={ templ.URL(s.Assets.AppJS) } nonce={ s.Nonce } defer></script>
 			<script src={ templ.URL(s.Assets.Alpine) } nonce={ s.Nonce } defer></script>
 			<script src={ templ.URL(s.Assets.Sortable) } nonce={ s.Nonce } defer></script>
+			if s.Assets.Passkey != "" {
+				<script src={ templ.URL(s.Assets.Passkey) } nonce={ s.Nonce } defer></script>
+			}
 			@HelpDialog()
 			// PWA service worker registration. Reads the SW URL from
 			// data-sw-url on <body> so templ can interpolate it.

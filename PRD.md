@@ -38,6 +38,7 @@ This document governs scope. Anything not in here is out of scope until added he
 | Markdown | goldmark, mermaid rendered client-side, sanitised SVG |
 | Git operations (wiki) | go-git |
 | Sessions | Secure cookie sessions, server-side session store in SQLite |
+| Identity | coreos/go-oidc (OIDC), crewjam/saml (SAML SP), go-webauthn (passkeys); see QUESTIONS Q7 |
 | Secrets at rest | AES-GCM, key from `BC_SECRET_KEY` |
 | Logging | slog, structured JSON, level via env |
 | Metrics | Prometheus `/metrics` |
@@ -66,12 +67,51 @@ The action layer is the architectural spine. It exists before any client.
 
 ## 4. Identity & Auth
 
-- **SSO only**: Google OIDC and GitHub OAuth. No passwords, no separate MFA; the identity provider handles auth strength.
-- Account linking: the same verified email across providers maps to one user.
+Boardchestrator never stores a password. People prove who they are with an external identity provider (IdP) or a passkey; the platform maps that identity to a user and enforces access through roles (§5).
+
+### Sign-in methods
+
+- **OIDC providers.** Any OpenID Connect provider with discovery. Presets ship for **Google, Microsoft Entra ID, GitLab, Okta, Auth0, Keycloak, Zitadel and Authentik**; anything else uses **Generic OIDC** (issuer URL + client credentials). Authorisation-code flow with PKCE, `state` and `nonce`; ID tokens are signature-verified against the provider's JWKS with `iss`, `aud`, `exp` and `nonce` checks.
+- **GitHub OAuth.** GitHub is not an OIDC provider; it keeps its own OAuth flow (verified primary email from the API). Its token also powers wiki edits (§12).
+- **SAML 2.0.** Service-provider-initiated SSO for enterprises without OIDC (Entra, Okta, ADFS, generic). Signed assertions required; SP metadata published per provider.
+- **Passkeys (WebAuthn).** Passwordless sign-in with a platform or roaming authenticator. Users add passkeys in settings after signing in; on instances with no IdP, an invite or the bootstrap token lets a person register a passkey as their first sign-in method.
+- No passwords and no separate MFA: authentication strength comes from the IdP or the authenticator.
+
+### Provider management
+
+- **Platform providers** are configured by the Platform Admin in the UI (client secrets encrypted at rest) or via environment variables for unattended installs. Env-configured providers are shown read-only. Google and GitHub are optional; an instance may run on any mix of providers, including none (passkeys only).
+- **Organisation SSO.** An Org Owner can attach the organisation's own IdP (OIDC or SAML), verify the organisation's **email domains** (DNS TXT record), and choose:
+  - **Enforce SSO**: members may only act in the org from a session signed in through one of the org's providers (agents and API keys are unaffected; API keys are bound to their creator's access).
+  - **Just-in-time provisioning**: a first sign-in through the org IdP with an email on a verified domain creates the user and an org membership with a default role.
+  - **Group → role mapping**: IdP group claims (OIDC `groups` or a configured claim, SAML attribute) map to roles at org, team or project scope. Mapped memberships are re-synced at every sign-in; manually granted memberships are never touched by sync.
+- **Home-realm discovery.** The login page offers the platform providers plus "Sign in with SSO": entering an email on a verified domain routes the browser to that organisation's IdP.
+
+### Account linking
+
+- A sign-in is resolved by **(provider, subject)** first; email is never the primary key.
+- An unseen identity is linked to an existing user by email only when the provider is marked **trusted for email** and asserts the email verified. Org-owned providers are trusted only for emails on that organisation's verified domains. Presets default sensibly (Google and GitHub trusted; Entra and generic providers not trusted until an admin opts in), because an untrusted IdP linking by email is an account takeover.
+- Otherwise users link additional sign-in methods explicitly from **Settings → Sign-in methods** while signed in, and may unlink any method except the last.
+
+### Sign-up policy
+
+- A new user is created only when one of: the provider allows open sign-up; the email has a pending invite; the org IdP is JIT-provisioning on a verified domain; or the person is claiming the platform bootstrap. Otherwise the login is refused with a friendly page.
 - **First user bootstrap.** The first login can claim Platform Admin only when it matches `BC_ADMIN_EMAILS` or presents `BC_BOOTSTRAP_TOKEN` (printed to logs on first start). This stops a public instance being hijacked by the first random visitor.
-- OIDC `state` and `nonce` validated; sessions rotated on login; login attempts rate-limited.
-- Session management: users view and revoke their active sessions.
-- **API keys**: users generate scoped, revocable keys (hashed at rest) for the REST API and MCP server. A key may be narrowed to an org/team/project and to a subset of the user's permissions. Agents get their own internal service credentials.
+
+### Provisioning (SCIM 2.0)
+
+- Each organisation can issue **SCIM tokens** so its IdP (Entra, Okta, Authentik, Zitadel and others) pushes users and groups. SCIM-created users join the org; deactivation removes their org memberships and revokes their org API keys immediately; SCIM groups feed the same group → role mapping as sign-in claims.
+
+### Sessions & logout
+
+- Sessions are rotated on login, carry the sign-in method used, and expire on a sliding window with an absolute cap.
+- **Logout** ends the local session and, where the provider supports it, the IdP session too (OIDC RP-initiated logout, SAML single logout).
+- **OIDC back-channel logout**: the IdP can terminate Boardchestrator sessions server-to-server when a user signs out or is disabled upstream.
+- Users view and revoke their active sessions and can sign out everywhere; org owners can see and revoke members' API keys.
+- Login attempts are rate-limited; sign-in, sign-out, link/unlink, failed logins and every IdP/SSO configuration change are written to the audit log (§17).
+
+### API keys
+
+- Users generate scoped, revocable, optionally expiring keys (hashed at rest) for the REST API and MCP server. A key is bound to an org and may be narrowed to a team/project and to a subset of the user's permissions. Agents get their own internal service credentials.
 
 ---
 
@@ -102,7 +142,7 @@ Roles are **configurable**: a role is a named set of permission grants. Permissi
 
 ### Membership
 
-- Invite by email; invitee completes signup via SSO.
+- Invite by email; invitee completes signup via any enabled sign-in method (§4).
 - Agents can invite and manage members if their permissions allow it.
 
 ---
@@ -363,7 +403,7 @@ Boardchestrator is both an **agent host** (consumes providers) and an **MCP host
 ## 20. Out of Scope (v1)
 
 - Email notifications.
-- Password auth, MFA, SAML.
+- Password auth and separate MFA (authentication strength is delegated to the IdP or passkey).
 - Data import from Jira/Linear/ADO.
 - Nested task hierarchy (epics).
 - Native mobile apps (the PWA covers mobile).
@@ -385,5 +425,7 @@ Boardchestrator is both an **agent host** (consumes providers) and an **MCP host
 **Phase 4 — API Surface.** REST API + OpenAPI, MCP server (tools/resources/prompts/approvals), API-key auth + rate limiting, outbound webhooks (retry/DLQ/SSRF guard), GitHub integration (links, inbound webhooks, transitions), scheduled agent triggers.
 
 **Phase 5 — Wiki & Reporting.** Wiki (read, render, edit-commits as linked user, history, per-team ref config), sprint charts, cycle/lead time, agent usage dashboard, CSV export, S3 attachment backend, backup subcommand.
+
+**Phase 7 — Identity & Access Management.** Provider registry (OIDC presets + generic, GitHub, SAML), login page + home-realm discovery, explicit account linking, organisation SSO (domains, enforcement, JIT, group → role), SCIM 2.0, OIDC/SAML logout incl. back-channel, passkeys, session and API-key lifecycle.
 
 Each phase lands as PRs to `main` for review.

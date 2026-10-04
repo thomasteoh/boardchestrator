@@ -118,6 +118,7 @@ type Hub struct {
 	bus      *event.Bus
 	resolve  UserResolver
 	orgs     MembershipResolver
+	filter   OrgFilter
 	buffer   int
 	interval time.Duration
 
@@ -145,6 +146,17 @@ func WithClientBuffer(n int) Option { return func(h *Hub) { h.buffer = n } }
 // query over the memberships table.
 func WithMembershipResolver(f MembershipResolver) Option {
 	return func(h *Hub) { h.orgs = f }
+}
+
+// OrgFilter narrows the orgs whose events a connection receives, given the
+// request (WU-613: organisation SSO enforcement drops orgs the session was
+// not signed in for). It runs once per connection, after the membership
+// resolver.
+type OrgFilter func(r *http.Request, orgIDs []string) []string
+
+// WithOrgFilter wires an OrgFilter.
+func WithOrgFilter(f OrgFilter) Option {
+	return func(h *Hub) { h.filter = f }
 }
 
 // New builds a Hub over bus using resolve to authenticate connections.
@@ -303,8 +315,12 @@ func (h *Hub) Handler(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve the client's org memberships once (snapshot) for tenant scoping
 	// (WU-521). A membership change mid-stream is picked up on reconnect.
+	member := h.orgs(userID)
+	if h.filter != nil {
+		member = h.filter(r, member)
+	}
 	orgs := map[string]struct{}{}
-	for _, o := range h.orgs(userID) {
+	for _, o := range member {
 		orgs[o] = struct{}{}
 	}
 	c := &client{userID: userID, orgs: orgs, ch: make(chan sseMessage, h.buffer)}

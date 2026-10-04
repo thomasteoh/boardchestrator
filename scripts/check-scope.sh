@@ -17,6 +17,10 @@
 #                      org); rows are written by the dispatch audit hook, not
 #                      via org-scoped reads, so an org_id-required grep would
 #                      be wrong here.
+#   auth_providers   — org_id is NULLABLE (NULL = platform sign-in provider,
+#                      SPEC s7.1); the login registry resolves every enabled
+#                      row by provider id before any org is known. Org-owned
+#                      provider management (WU-607) scopes in its actions.
 #   idempotency_keys — has no org_id at all; keyed globally by the
 #                      idempotency key.
 #   jobs             — agent queue infrastructure; org_id lives in payload,
@@ -33,7 +37,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-TENANT_TABLES="org_secrets,teams,projects,roles,memberships,invites,labels,custom_field_defs,sprints,attachments,task_templates,provider_orgs,agents,agent_skills,skills,runs,run_steps,approvals,chat_sessions,chat_messages,scheduled_triggers,org_cap_alerts,webhooks,webhook_deliveries,project_github,github_links"  # comma-separated
+TENANT_TABLES="org_secrets,org_domains,org_sso_settings,idp_group_mappings,scim_tokens,scim_users,scim_groups,scim_group_members,teams,projects,roles,memberships,invites,labels,custom_field_defs,sprints,attachments,task_templates,provider_orgs,agents,agent_skills,skills,runs,run_steps,approvals,chat_sessions,chat_messages,scheduled_triggers,org_cap_alerts,webhooks,webhook_deliveries,project_github,github_links"  # comma-separated
 # orgs is the root tenant (no org_id column) — exempted.
 # model_pricing is platform-global (no org_id) — exempted, like orgs.
 QUERIES_DIR="internal/db/queries"

@@ -1,0 +1,148 @@
+package views
+
+// OrgProvisioningURL is the JIT / group sync settings form target (WU-608).
+func OrgProvisioningURL(orgID string) string {
+	return OrgSSOURL(orgID) + "/provisioning"
+}
+
+// OrgMappingsURL is the group mappings base path (WU-608).
+func OrgMappingsURL(orgID string) string {
+	return OrgSSOURL(orgID) + "/mappings"
+}
+
+// SelectOption is one <option>.
+type SelectOption struct {
+	Value string
+	Label string
+}
+
+// OrgMappingRow is one group -> role mapping.
+type OrgMappingRow struct {
+	ID       string
+	Group    string
+	Provider string // display name, "" = all providers
+	Scope    string // "Organisation", "Team: Ops", "Project: Web"
+	Role     string
+}
+
+// OrgProvisioningData is the "Provisioning" section.
+type OrgProvisioningData struct {
+	OrgID          string
+	CSRF           string
+	JITEnabled     bool
+	JITRoleID      string
+	GroupSync      bool
+	GroupClaim     string
+	JITRoles       []SelectOption // roles allowed as the JIT default (no owner roles)
+	Roles          []SelectOption // roles for mappings
+	Targets        []SelectOption // "org:<id>", "team:<id>", "project:<id>"
+	Providers      []SelectOption // org providers ("" = all)
+	Mappings       []OrgMappingRow
+}
+
+// OrgProvisioningSection shows JIT provisioning and group → role mappings.
+templ OrgProvisioningSection(d OrgProvisioningData) {
+	<form method="post" action={ templ.SafeURL(OrgProvisioningURL(d.OrgID)) } class="bc-form bc-form-wide" hx-boost="false">
+		<input type="hidden" name="csrf_token" value={ d.CSRF }/>
+		<fieldset class="bc-fieldset">
+			<legend>Just-in-time provisioning</legend>
+			<label class="bc-check">
+				<input class="bc-checkbox" type="checkbox" name="jit_enabled" value="1" checked?={ d.JITEnabled }/>
+				Create an account on first sign-in
+			</label>
+			<p class="bc-hint">When on, a person with an address on one of this organisation's verified domains who signs in through its identity provider gets an account and joins the organisation with the default role. Platform sign-in providers never do this.</p>
+			<label>
+				Default role
+				<select name="jit_default_role_id" class="bc-input">
+					<option value="" selected?={ d.JITRoleID == "" }>Choose a role</option>
+					for _, r := range d.JITRoles {
+						<option value={ r.Value } selected?={ r.Value == d.JITRoleID }>{ r.Label }</option>
+					}
+				</select>
+			</label>
+			<p class="bc-hint">Owner roles can't be the default.</p>
+		</fieldset>
+		<fieldset class="bc-fieldset">
+			<legend>Group sync</legend>
+			<label class="bc-check">
+				<input class="bc-checkbox" type="checkbox" name="group_sync" value="1" checked?={ d.GroupSync }/>
+				Sync memberships from identity provider groups at every sign-in
+			</label>
+			<p class="bc-hint">Only memberships created by group sync are added or removed. Memberships granted by hand, by invitation or by just-in-time provisioning are never changed.</p>
+			<label>
+				Group claim
+				<input type="text" name="group_claim" value={ d.GroupClaim } maxlength="256" placeholder="Provider default (usually groups)" autocomplete="off" spellcheck="false" class="bc-input"/>
+			</label>
+		</fieldset>
+		<div class="bc-form-actions">
+			<button type="submit" class="bc-btn bc-btn-primary">Save provisioning settings</button>
+		</div>
+	</form>
+	<h3>Group mappings</h3>
+	if len(d.Mappings) == 0 {
+		<p class="bc-empty-state">No group mappings yet.</p>
+	} else {
+		<table class="bc-table" aria-label="Group mappings">
+			<thead>
+				<tr><th scope="col">Group</th><th scope="col">Provider</th><th scope="col">Grants</th><th scope="col">Role</th><th scope="col"><span class="bc-sr-only">Actions</span></th></tr>
+			</thead>
+			<tbody>
+				for _, m := range d.Mappings {
+					<tr>
+						<td><code>{ m.Group }</code></td>
+						<td>
+							if m.Provider == "" {
+								All providers
+							} else {
+								{ m.Provider }
+							}
+						</td>
+						<td>{ m.Scope }</td>
+						<td>{ m.Role }</td>
+						<td>
+							<form method="post" action={ templ.SafeURL(OrgMappingsURL(d.OrgID) + "/" + m.ID + "/delete") } class="bc-inline-form" hx-boost="false">
+								<input type="hidden" name="csrf_token" value={ d.CSRF }/>
+								<button type="submit" class="bc-btn bc-btn-sm bc-btn-danger">Delete</button>
+							</form>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+	<form method="post" action={ templ.SafeURL(OrgMappingsURL(d.OrgID)) } class="bc-form bc-form-wide" hx-boost="false">
+		<input type="hidden" name="csrf_token" value={ d.CSRF }/>
+		<label>
+			Group value
+			<input type="text" name="group_value" required maxlength="256" autocomplete="off" spellcheck="false" class="bc-input"/>
+		</label>
+		<label>
+			Provider
+			<select name="provider_id" class="bc-input">
+				<option value="">All providers</option>
+				for _, p := range d.Providers {
+					<option value={ p.Value }>{ p.Label }</option>
+				}
+			</select>
+		</label>
+		<label>
+			Grants membership of
+			<select name="target" class="bc-input">
+				for _, t := range d.Targets {
+					<option value={ t.Value }>{ t.Label }</option>
+				}
+			</select>
+		</label>
+		<label>
+			Role
+			<select name="role_id" class="bc-input" required>
+				for _, r := range d.Roles {
+					<option value={ r.Value }>{ r.Label }</option>
+				}
+			</select>
+		</label>
+		<div class="bc-form-actions">
+			<button type="submit" class="bc-btn bc-btn-primary">Add mapping</button>
+		</div>
+	</form>
+}
