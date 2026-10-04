@@ -15,7 +15,9 @@ templ ErrorPageWithLink(s Shell, status int, title, message string, href templ.S
 			<div class="bc-error-code">{ fmt.Sprintf("%d", status) }</div>
 			<h2>{ title }</h2>
 			<p class="bc-error-message">{ message }</p>
-			<a href={ href } class="bc-btn bc-btn-primary">{ label }</a>
+			// Not boosted: the link usually leads on to an identity provider,
+			// which an htmx XHR cannot follow across origins (WU-614).
+			<a href={ href } class="bc-btn bc-btn-primary" hx-boost="false">{ label }</a>
 		</div>
 	}
 }

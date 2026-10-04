@@ -28,7 +28,7 @@ func ContinueTo(w http.ResponseWriter, dest string) {
 	_, _ = w.Write([]byte(`<!DOCTYPE html><html lang="en-AU"><head><meta charset="utf-8">` +
 		`<meta http-equiv="refresh" content="0;url=` + esc + `">` +
 		`<meta name="viewport" content="width=device-width, initial-scale=1">` +
-		`<title>Continuing · Boardchestrator</title></head><body>` +
+		`<link rel="icon" type="image/svg+xml" href="/favicon.svg"><title>Continuing · Boardchestrator</title></head><body>` +
 		`<p>Continuing&hellip; <a href="` + esc + `" data-bc-continue>Continue</a></p>` +
 		`</body></html>`))
 }

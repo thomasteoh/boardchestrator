@@ -79,3 +79,15 @@ func TestErrorPageCustom(t *testing.T) {
 		}
 	}
 }
+
+// WU-614: the SSO-required page's "Sign in with ..." link leads to an
+// identity provider. The page body is hx-boost="true", so a boosted link
+// became an htmx XHR that could not follow the cross-origin redirect and the
+// click did nothing (found in a real browser).
+func TestErrorPageWithLinkNotBoosted(t *testing.T) {
+	s := Shell{Title: "Test", Nonce: "abc", CSRF: "xyz"}
+	html := renderComponent(t, ErrorPageWithLink(s, 403, "This organisation requires single sign-on", "m", templ.SafeURL("/auth/acme-sso?return_to=%2Fapp"), "Sign in with Acme"))
+	if !strings.Contains(html, `href="/auth/acme-sso?return_to=%2Fapp" class="bc-btn bc-btn-primary" hx-boost="false"`) {
+		t.Fatalf("SSO sign-in link is boosted:\n%s", html)
+	}
+}
