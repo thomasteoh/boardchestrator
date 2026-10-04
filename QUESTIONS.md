@@ -154,3 +154,18 @@ To be precise about which way this fails: it is a **broken API, not a CSRF bypas
 **Options:** (a) keep; (b) make UV `required` for sign-up and sign-in (stronger, but refuses some security keys without a PIN); (c) add an email-verification step for bootstrap claims (needs outbound email, which the product does not have).
 **Recommendation:** (a).
 **Answer:**
+
+## Q16 — Session and API-key lifecycle choices (WU-613)
+
+**Context:** The WU-613 brief left several details to the worker. None blocks; each is a security-relevant default worth confirming.
+
+**Decisions taken in WU-613 (non-blocking):**
+1. **API key format.** SPEC §7.10 says `bc_<prefix>_<secret>`, but WU-109 shipped `<8 hex prefix><64 hex secret>` and keys in that format are in use. WU-613 kept it (expiry, constant-time compare and org management do not depend on the format). Changing it needs the middleware to accept both and is left for a later WU.
+2. **Expiry default.** New keys expire in 90 days unless the creator picks 30, 365 days or never (API: `expires_in_days` absent = 90, 0 = never, max 3650). Existing keys keep `expires_at` NULL (never).
+3. **SCIM deactivation of an org's last owner** keeps that one org membership (audited `membership.last_owner_preserved`), but still revokes the person's API keys for the org and, when the preserved membership is all they have left, their sessions: the IdP has cut them off, and the kept membership exists only so the org is not orphaned. An owner must then hand over ownership and remove them.
+4. **`user.delete` is not guarded** by last-owner protection: it is the platform admin's erasure path, and a platform admin (who is exempt from org SSO and can grant memberships) can repair an ownerless org. Blocking erasure on org ownership would let an org hold a person's data hostage.
+5. **Unlink revokes by provider.** Sessions are matched on (user, provider), not (provider, IdP subject): a user has at most one identity per provider (WU-604), and SAML sessions store the NameID as `idp_subject` even when the identity's subject comes from an attribute.
+
+**Options:** (a) keep; (b) for 3, keep the sessions too (the person stays signed in to an org the IdP removed them from); (c) for 4, refuse `user.delete` of an org's last owner until ownership moves.
+**Recommendation:** (a).
+**Answer:**

@@ -20,10 +20,11 @@ import (
 // --- Action definitions for API keys (WU-109; lifecycle WU-613, SPEC §7.10) ---
 
 // Org-wide key management (WU-613): org owners (org.permissions) list and
-// revoke any key bound to their org.
+// revoke any key bound to their org. gosec's G101 matches "key" in the
+// identifiers; these are action names, not credentials.
 const (
-	ActionAPIKeyOrgList   = "apikey.org_list"
-	ActionAPIKeyOrgRevoke = "apikey.org_revoke"
+	ActionAPIKeyOrgList   = "apikey.org_list"   //nolint:gosec // G101: action name, not a credential
+	ActionAPIKeyOrgRevoke = "apikey.org_revoke" //nolint:gosec // G101: action name, not a credential
 )
 
 // PermissionOrgPermissions is the org owner permission that manages roles,

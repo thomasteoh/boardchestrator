@@ -259,7 +259,7 @@ func TestAPIKeyCreateSecretNeverStored(t *testing.T) {
 	}
 	// Default expiry is 90 days.
 	exp, err := time.Parse("2006-01-02T15:04:05.000Z", k.ExpiresAt)
-	if err != nil || exp.Sub(time.Now()) < 89*24*time.Hour || exp.Sub(time.Now()) > 91*24*time.Hour {
+	if err != nil || time.Until(exp) < 89*24*time.Hour || time.Until(exp) > 91*24*time.Hour {
 		t.Errorf("expires %s", k.ExpiresAt)
 	}
 	secret := k.Secret[8:]
