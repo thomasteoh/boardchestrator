@@ -10,8 +10,10 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -36,6 +38,10 @@ type Site struct {
 	Description string `yaml:"description"`
 	Repo        string `yaml:"repo"`
 	Pages       []Page `yaml:"-"`
+	// Base is the path prefix the site is served under, derived from URL
+	// ("/boardchestrator" for a GitHub project site, "" at a domain root).
+	// Every internal link is written through it.
+	Base string `yaml:"-"`
 }
 
 var md = goldmark.New(
@@ -46,9 +52,20 @@ var md = goldmark.New(
 
 func main() {
 	root := flag.String("root", ".", "website root")
-	flag.Parse()
+	baseFlag := flag.String("base", "", "override the path prefix derived from site.yaml url (use / for a domain root)")
+	// Accept both "bc-site -root ." and the CI form "bc-site build -root .";
+	// flag stops parsing at the first positional argument, so drop "build".
+	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "build" {
+		args = args[1:]
+	}
+	flag.CommandLine.Parse(args)
 
 	cfg := loadSite(filepath.Join(*root, "site.yaml"))
+	cfg.Base = basePath(cfg.URL)
+	if *baseFlag != "" {
+		cfg.Base = strings.TrimSuffix(*baseFlag, "/")
+	}
 	loaded := loadPages(filepath.Join(*root, "content"))
 	// Merge markdown pages into the site config (they carry order/desc/title).
 	cfg.Pages = append(cfg.Pages, loaded...)
@@ -90,11 +107,18 @@ func main() {
 	writeLlmstxt(cfg, out)
 	write404(tmpl, cfg, filepath.Join(out, "404.html"))
 
-	fmt.Printf("built %d pages to %s\n", len(cfg.Pages)+1, out)
+	if broken := checkLinks(cfg, out); len(broken) > 0 {
+		for _, b := range broken {
+			fmt.Fprintln(os.Stderr, "broken link:", b)
+		}
+		os.Exit(1)
+	}
+
+	fmt.Printf("built %d pages to %s (base %q)\n", len(cfg.Pages)+1, out, cfg.Base+"/")
 }
 
 func renderPage(tmpl *template.Template, cfg Site, p Page, dst string) {
-	body := renderMarkdown(p.Body)
+	body := withBase(cfg.Base, renderMarkdown(p.Body))
 	// Docs pages: wrap in a simple prose layout. Home gets the marketing
 	// chrome (hero + features + animated brand) from the template.
 	layout := "page"
@@ -250,4 +274,62 @@ func write404(tmpl *template.Template, cfg Site, dst string) {
 	p := Page{Title: "Not found", Desc: "This page doesn't exist.", Slug: "404", Path: "/404/"}
 	tmpl.ExecuteTemplate(buf, "base", map[string]any{"Site": cfg, "Page": p, "Body": template.HTML("<p>Move on — nothing here.</p>"), "Layout": "page"})
 	os.WriteFile(dst, buf.Bytes(), 0644)
+}
+
+// basePath returns the path component of the site URL without a trailing
+// slash: "https://example.github.io/boardchestrator" -> "/boardchestrator".
+func basePath(siteURL string) string {
+	u, err := url.Parse(siteURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "site.yaml url: %v\n", err)
+		os.Exit(1)
+	}
+	return strings.TrimSuffix(u.Path, "/")
+}
+
+// rootRelative matches href/src attributes holding a root-relative path
+// (but not a protocol-relative "//host" URL).
+var rootRelative = regexp.MustCompile(`((?:href|src)=")(/[^/"][^"]*|/)"`)
+
+// withBase prefixes root-relative links in rendered markdown with the base
+// path, so content can link to "/sign-in/" wherever the site is served.
+func withBase(base, html string) string {
+	if base == "" {
+		return html
+	}
+	return rootRelative.ReplaceAllString(html, `${1}`+base+`${2}"`)
+}
+
+// checkLinks reports internal href/src targets that do not exist in out.
+func checkLinks(cfg Site, out string) []string {
+	var broken []string
+	filepath.Walk(out, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".html") {
+			return err
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(out, path)
+		for _, m := range rootRelative.FindAllStringSubmatch(string(b), -1) {
+			target := m[2]
+			if i := strings.IndexAny(target, "#?"); i >= 0 {
+				target = target[:i]
+			}
+			if !strings.HasPrefix(target, cfg.Base+"/") {
+				broken = append(broken, fmt.Sprintf("%s: %s (outside base %s/)", rel, m[2], cfg.Base))
+				continue
+			}
+			p := filepath.Join(out, filepath.FromSlash(strings.TrimPrefix(target, cfg.Base)))
+			if strings.HasSuffix(target, "/") {
+				p = filepath.Join(p, "index.html")
+			}
+			if _, err := os.Stat(p); err != nil {
+				broken = append(broken, fmt.Sprintf("%s: %s", rel, m[2]))
+			}
+		}
+		return nil
+	})
+	return broken
 }

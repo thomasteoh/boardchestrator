@@ -85,7 +85,7 @@ Mount `bc-data` on durable storage. Put `backups/` on a separate persistent volu
 | `BC_AGENT_WORKERS` | int | `4` | worker pool size |
 | `BC_SCHED_POLL_INTERVAL` | int | `60` | scheduler poll seconds |
 
-`BC_OIDC_<NAME>_*` configures one OpenID Connect provider per `<NAME>`: the provider ID is `<NAME>` lower-cased with `_` becoming `-`, so `BC_OIDC_CORP_SSO_CLIENT_ID` sets up provider `corp-sso` with callback `<BC_BASE_URL>/auth/corp-sso/callback`. See [Sign-in and identity](/docs/sign-in/) for every provider, the URLs to register, organisation SSO and passkeys.
+`BC_OIDC_<NAME>_*` configures one OpenID Connect provider per `<NAME>`: the provider ID is `<NAME>` lower-cased with `_` becoming `-`, so `BC_OIDC_CORP_SSO_CLIENT_ID` sets up provider `corp-sso` with callback `<BC_BASE_URL>/auth/corp-sso/callback`. See [Sign-in and identity](/sign-in/) for every provider, the URLs to register, organisation SSO and passkeys.
 
 ## Operations
 

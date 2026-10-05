@@ -28,11 +28,11 @@ The server listens on `0.0.0.0:8080` by default. Open `http://localhost:8080` an
 
 ## First run
 
-While nobody has claimed the instance, the server logs a claim URL at every start: `<BC_BASE_URL>/setup?token=…`. Open it and sign in; the first person to finish becomes platform owner. Set `BC_BOOTSTRAP_TOKEN` to choose the token, or `BC_ADMIN_EMAILS` to let listed addresses claim it by signing in. See [Sign-in and identity](/docs/sign-in/).
+While nobody has claimed the instance, the server logs a claim URL at every start: `<BC_BASE_URL>/setup?token=…`. Open it and sign in; the first person to finish becomes platform owner. Set `BC_BOOTSTRAP_TOKEN` to choose the token, or `BC_ADMIN_EMAILS` to let listed addresses claim it by signing in. See [Sign-in and identity](/sign-in/).
 
 ## Configuration
 
-Every setting is an environment variable prefixed with `BC_`. See the [deployment reference](/docs/deployment/) for the full table. The two non-negotiable secrets:
+Every setting is an environment variable prefixed with `BC_`. See the [deployment reference](/deployment/) for the full table. The two non-negotiable secrets:
 
 - `BC_SESSION_SECRET` — HMAC key for session CSRF tokens. **Required, ≥32 chars.**
 - `BC_SECRET_KEY` — encryption key for secrets at rest. **Required.**
