@@ -1,6 +1,6 @@
 module github.com/thomasteoh/boardchestrator
 
-go 1.25.0
+go 1.26.10
 
 require (
 	github.com/a-h/templ v0.3.1001
@@ -10,7 +10,7 @@ require (
 	github.com/beevik/etree v1.7.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/crewjam/saml v0.5.1
-	github.com/go-chi/chi/v5 v5.2.1
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-webauthn/webauthn v0.18.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
@@ -63,7 +63,7 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/text v0.41.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
